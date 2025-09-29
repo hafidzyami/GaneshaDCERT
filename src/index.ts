@@ -1,7 +1,9 @@
 import express, { Request, Response, Application } from 'express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
-import { kafkaService } from './services/kafka.service';
+import { rabbitmqService } from './services/rabbitmq.service';
+import { delayedDeletionService } from './services/delayed-deletion.service';
+import { closeRabbitMQ } from './config/rabbitmq.config';
 import requestRoutes from './routes/request.route';
 import issuanceRoutes from './routes/issuance.route';
 
@@ -19,31 +21,35 @@ const swaggerOptions: swaggerJsdoc.Options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'GaneshaDCERT API with Kafka Integration',
-      version: '1.0.0',
+      title: 'GaneshaDCERT API with RabbitMQ Integration',
+      version: '2.0.0',
       description: `
-        ## Dokumentasi API untuk layanan GaneshaDCERT dengan Apache Kafka Integration
+        ## Dokumentasi API untuk layanan GaneshaDCERT dengan RabbitMQ Integration
         
-        ### Event-Driven Architecture
-        API ini menggunakan **Apache Kafka** untuk arsitektur event-driven dalam pemrosesan 
-        Verifiable Credentials (VC). Setiap request VC dikirim ke Kafka topic untuk diproses 
-        secara asynchronous oleh worker consumers.
+        ### Message Queue Architecture
+        API ini menggunakan **RabbitMQ** untuk message queue dalam pemrosesan 
+        Verifiable Credentials (VC). Setiap VC request dikirim ke RabbitMQ dan 
+        **otomatis terhapus setelah 5 menit** (TTL native).
         
-        ### Kafka Topics:
-        - **vc_requests**: Topic untuk VC request submissions
-        - **vc_issuances**: Topic untuk completed VC issuances
+        ### RabbitMQ Exchanges:
+        - **vc.requests.exchange**: Exchange untuk VC requests
+        - **vc.issuances.exchange**: Exchange untuk VC issuances
+        
+        ### Key Features:
+        - ✅ **No TTL on storage**: Messages stay until processed
+        - ✅ **Delayed deletion**: VCs deleted 5 minutes AFTER holder retrieves them
+        - ✅ **Routing by DID**: Topic-based routing using issuer/holder DID
+        - ✅ **Lightweight**: Simple and efficient message queue
         
         ### Architecture Flow:
-        1. Client mengirim POST request ke \`/api/requests\`
-        2. API memvalidasi data dan mengirim ke Kafka topic \`vc_requests\` 
-        3. Consumer workers memproses request secara asynchronous
-        4. Client dapat check status menggunakan \`request_id\`
-        
-        ### Kafka Configuration:
-        - **Broker**: Apache Kafka single node (localhost:9092)
-        - **Consumer Group**: request-processors  
-        - **Partitions**: 3 per topic
-        - **Replication Factor**: 1 (development setup)
+        1. Client sends POST request to \`/api/requests\`
+        2. API publishes message to RabbitMQ exchange
+        3. Message routed to queue based on DID (routing key)
+        4. Issuer fetches requests (messages stay in queue)
+        5. Issuer issues VC via POST /api/issuances
+        6. Holder fetches VCs with GET request
+        7. **5-minute deletion timer starts** after holder retrieves VCs
+        8. Messages **automatically deleted** after 5 minutes
       `,
       contact: {
         name: 'Hafidz Yami',
@@ -58,19 +64,18 @@ const swaggerOptions: swaggerJsdoc.Options = {
     servers: [
       {
         url: `http://localhost:${PORT}`,
-        description: 'Development Server (Apache Kafka)',
+        description: 'Development Server (RabbitMQ)',
       },
       {
         url: 'https://api.ganesha-dcert.com',
-        description: 'Production Server (Kafka Cluster)',
+        description: 'Production Server',
       }
     ],
     externalDocs: {
-      description: 'Apache Kafka Documentation',
-      url: 'https://kafka.apache.org/documentation/'
+      description: 'RabbitMQ Documentation',
+      url: 'https://www.rabbitmq.com/documentation.html'
     }
   },
-  // Path ke file API yang ingin didokumentasikan
   apis: [
     './src/routes/*.ts',
     './src/controllers/*.ts',
@@ -106,39 +111,29 @@ app.use('/api/issuances', issuanceRoutes);
  * /:
  *   get:
  *     summary: API Welcome & Status
- *     description: |
- *       Endpoint utama yang menampilkan welcome message dan status koneksi Kafka.
- *       Berguna untuk health check awal dan memverifikasi bahwa API dan Kafka terhubung dengan baik.
+ *     description: Welcome endpoint dengan status RabbitMQ connection
  *     tags:
  *       - System
  *     responses:
  *       200:
- *         description: API dan Kafka status berhasil diperoleh
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: "Welcome to GaneshaDCERT API with Kafka Integration"
- *                 version:
- *                   type: string
- *                   example: "1.0.0"
- *                 kafka_status:
- *                   type: boolean
- *                   example: true
- *                   description: Status koneksi ke Apache Kafka
- *                 timestamp:
- *                   type: string
- *                   format: date-time
- *                   example: "2024-09-26T08:30:00.000Z"
+ *         description: API status
  */
 app.get('/', (req: Request, res: Response) => {
+  const deletionStatus = delayedDeletionService.getStatus();
+  
   res.json({
-    message: 'Welcome to GaneshaDCERT API with Kafka Integration',
-    version: '1.0.0',
-    kafka_status: kafkaService.isConnected,
+    message: 'Welcome to GaneshaDCERT API with RabbitMQ Integration',
+    version: '2.0.0',
+    rabbitmq_status: rabbitmqService.isConnected,
+    features: {
+      storage: 'No TTL - Messages persist',
+      deletion: '5 minutes after holder retrieves VCs',
+      routing: 'topic-based by DID'
+    },
+    deletion_service: {
+      active: deletionStatus.isRunning,
+      scheduled_deletions: deletionStatus.scheduledCount
+    },
     timestamp: new Date().toISOString()
   });
 });
@@ -147,128 +142,86 @@ app.get('/', (req: Request, res: Response) => {
  * @swagger
  * /health:
  *   get:
- *     summary: Comprehensive Health Check
- *     description: |
- *       Endpoint untuk monitoring kesehatan sistem termasuk:
- *       - Status server Express.js
- *       - Koneksi ke Apache Kafka broker
- *       - Timestamp untuk tracking uptime
- *       
- *       Endpoint ini berguna untuk:
- *       - Load balancer health checks
- *       - Monitoring & alerting systems  
- *       - DevOps automation scripts
+ *     summary: Health Check
+ *     description: Check system health including RabbitMQ connection
  *     tags:
  *       - System
  *     responses:
  *       200:
- *         description: Sistem berjalan dengan baik
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: "ok"
- *                   enum: [ok, degraded, down]
- *                 timestamp:
- *                   type: string
- *                   format: date-time
- *                   example: "2024-09-26T08:30:00.000Z"
- *                 services:
- *                   type: object
- *                   properties:
- *                     server:
- *                       type: string
- *                       example: "running"
- *                       enum: [running, stopped]
- *                     kafka:
- *                       type: string
- *                       example: "connected"
- *                       enum: [connected, disconnected, error]
- *                 uptime:
- *                   type: number
- *                   example: 3600
- *                   description: Server uptime in seconds
- *       503:
- *         description: Service unavailable - Kafka disconnected
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: "degraded"
- *                 services:
- *                   type: object
- *                   properties:
- *                     server:
- *                       type: string
- *                       example: "running"
- *                     kafka:
- *                       type: string
- *                       example: "disconnected"
+ *         description: System healthy
  */
 app.get('/health', (req: Request, res: Response) => {
+  const deletionStatus = delayedDeletionService.getStatus();
+  
   const healthStatus = {
-    status: kafkaService.isConnected ? 'ok' : 'degraded',
+    status: rabbitmqService.isConnected ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     services: {
       server: 'running',
-      kafka: kafkaService.isConnected ? 'connected' : 'disconnected'
+      rabbitmq: rabbitmqService.isConnected ? 'connected' : 'disconnected',
+      delayed_deletion: deletionStatus.isRunning ? 'running' : 'stopped'
+    },
+    deletion_info: {
+      scheduled_count: deletionStatus.scheduledCount,
+      deletion_delay_minutes: deletionStatus.deletionDelayMinutes,
+      check_interval_seconds: deletionStatus.checkIntervalSeconds,
+      scheduled: deletionStatus.scheduledDeletions
     },
     uptime: process.uptime()
   };
 
-  const statusCode = kafkaService.isConnected ? 200 : 503;
+  const statusCode = rabbitmqService.isConnected ? 200 : 503;
   res.status(statusCode).json(healthStatus);
 });
 
-// Fungsi untuk inisialisasi Kafka
-async function initializeKafka() {
+// Fungsi untuk inisialisasi RabbitMQ
+async function initializeRabbitMQ() {
   try {
-    console.log('🚀 Initializing Apache Kafka services...');
+    console.log('🚀 Initializing RabbitMQ services...');
     
-    // Connect Producer
-    await kafkaService.connectProducer();
+    await rabbitmqService.initialize();
     
-    // Create Topics
-    await kafkaService.createTopics();
+    // Start delayed deletion service
+    delayedDeletionService.start();
     
-    console.log('✅ Apache Kafka services initialized successfully');
+    console.log('✅ RabbitMQ services initialized successfully');
+    console.log('   📋 Storage: No TTL - Messages persist until processed');
+    console.log('   🗑️  Deletion: 5 minutes after holder retrieves VCs');
   } catch (error) {
-    console.error('❌ Failed to initialize Kafka services:', error);
-    console.error('⚠️ Server will continue running, but Kafka features may not work');
+    console.error('❌ Failed to initialize RabbitMQ services:', error);
+    console.error('⚠️  Server will continue running, but RabbitMQ features may not work');
   }
 }
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('🛑 Received SIGTERM, shutting down gracefully...');
-  await kafkaService.disconnect();
+  delayedDeletionService.stop();
+  await closeRabbitMQ();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('🛑 Received SIGINT, shutting down gracefully...');
-  await kafkaService.disconnect();
+  delayedDeletionService.stop();
+  await closeRabbitMQ();
   process.exit(0);
 });
 
 // Start server
 const startServer = async () => {
   try {
-    // Initialize Kafka first
-    await initializeKafka();
+    // Initialize RabbitMQ first
+    await initializeRabbitMQ();
     
     // Start Express server
     app.listen(PORT, () => {
       console.log(`🚀 GaneshaDCERT API Server running at http://localhost:${PORT}`);
       console.log(`📖 Swagger API Documentation: http://localhost:${PORT}/api-docs`);
       console.log(`🔍 Health Check Endpoint: http://localhost:${PORT}/health`);
-      console.log(`🎯 Apache Kafka UI: http://localhost:8080`);
+      console.log(`🐰 RabbitMQ Management UI: http://localhost:15672`);
+      console.log(`   Username: admin`);
+      console.log(`   Password: admin123`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);

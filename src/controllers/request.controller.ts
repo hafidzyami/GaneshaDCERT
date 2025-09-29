@@ -1,10 +1,10 @@
 import { Request, Response } from 'express';
-import { kafkaService } from '../services/kafka.service';
-import { KAFKA_TOPICS } from '../config/kafka.config';
+import { rabbitmqService } from '../services/rabbitmq.service';
+import { delayedDeletionService } from '../services/delayed-deletion.service';
 
 export interface VCRequestData {
-  issuer_did: string;  // Changed from issuer_id to issuer_did
-  holder_did: string;  // Changed from holder_id to holder_did
+  issuer_did: string;
+  holder_did: string;
   credential_type: string;
   credential_data: any;
   requested_at?: Date;
@@ -14,13 +14,13 @@ export interface VCIssuanceData {
   holder_did: string;
   issuer_did: string;
   credential_type: string;
-  credential: any;  // The actual VC
+  credential: any;
   issued_at?: Date;
 }
 
 /**
- * Controller untuk membuat VC Request dan mengirimnya ke Kafka
- * Key: issuer_did (agar issuer bisa query requests mereka)
+ * Controller untuk membuat VC Request dan mengirimnya ke RabbitMQ
+ * Routing key: issuer_did (agar issuer bisa query requests mereka)
  */
 export const createVCRequest = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -59,32 +59,27 @@ export const createVCRequest = async (req: Request, res: Response): Promise<void
       status: 'pending'
     };
 
-    // Kirim ke Kafka menggunakan issuer_did sebagai key
-    // Ini akan masuk ke partition berdasarkan issuer_did
-    await kafkaService.sendMessage(
-      KAFKA_TOPICS.VC_REQUESTS, 
-      requestData.issuer_did,  // Key = issuer_did
-      vcRequest
-    );
+    // Kirim ke RabbitMQ
+    await rabbitmqService.sendVCRequest(requestData.issuer_did, vcRequest);
 
     console.log(`📋 VC Request created:`, {
       request_id: vcRequest.request_id,
       issuer_did: vcRequest.issuer_did,
       holder_did: vcRequest.holder_did,
-      credential_type: vcRequest.credential_type,
-      partition_key: requestData.issuer_did
+      credential_type: vcRequest.credential_type
     });
 
     res.status(201).json({
       success: true,
-      message: 'VC Request submitted successfully to issuer partition',
+      message: 'VC Request submitted successfully. Stored in queue until issuer processes it.',
       data: {
         request_id: vcRequest.request_id,
         issuer_did: vcRequest.issuer_did,
         holder_did: vcRequest.holder_did,
         credential_type: vcRequest.credential_type,
         requested_at: vcRequest.requested_at,
-        status: vcRequest.status
+        status: vcRequest.status,
+        note: 'No TTL - Request stays in queue'
       }
     });
 
@@ -101,7 +96,7 @@ export const createVCRequest = async (req: Request, res: Response): Promise<void
 
 /**
  * Controller untuk issuer melihat semua VC requests yang masuk ke mereka
- * Query dari partition berdasarkan issuer_did
+ * Messages are NOT deleted - they stay in queue
  */
 export const getVCRequestsByIssuer = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -117,19 +112,19 @@ export const getVCRequestsByIssuer = async (req: Request, res: Response): Promis
 
     console.log(`🔍 Fetching VC requests for issuer: ${issuer_did}`);
 
-    // Consume messages dari partition issuer ini
-    const requests = await kafkaService.consumeMessagesByKey(
-      KAFKA_TOPICS.VC_REQUESTS,
-      issuer_did,
-      10000 // timeout 10 seconds
-    );
+    // Get messages from RabbitMQ (NOT deleted, kept in queue)
+    const requests = await rabbitmqService.getVCRequestsByIssuer(issuer_did);
 
     res.status(200).json({
       success: true,
+      message: requests.length > 0 
+        ? 'Requests retrieved (kept in queue)' 
+        : 'No pending requests found',
       data: {
         issuer_did: issuer_did,
         total_requests: requests.length,
-        requests: requests
+        requests: requests,
+        note: 'These requests remain in the queue and can be fetched again'
       }
     });
 
@@ -146,7 +141,7 @@ export const getVCRequestsByIssuer = async (req: Request, res: Response): Promis
 
 /**
  * Controller untuk issuer mengeluarkan/issue VC
- * Key: holder_did (agar holder bisa query VCs mereka)
+ * Routing key: holder_did (agar holder bisa query VCs mereka)
  */
 export const createVCIssuance = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -185,32 +180,27 @@ export const createVCIssuance = async (req: Request, res: Response): Promise<voi
       status: 'issued'
     };
 
-    // Kirim ke Kafka menggunakan holder_did sebagai key
-    // Ini akan masuk ke partition berdasarkan holder_did
-    await kafkaService.sendMessage(
-      KAFKA_TOPICS.VC_ISSUANCES,
-      issuanceData.holder_did,  // Key = holder_did
-      vcIssuance
-    );
+    // Kirim ke RabbitMQ
+    await rabbitmqService.sendVCIssuance(issuanceData.holder_did, vcIssuance);
 
     console.log(`✅ VC Issued:`, {
       issuance_id: vcIssuance.issuance_id,
       issuer_did: vcIssuance.issuer_did,
       holder_did: vcIssuance.holder_did,
-      credential_type: vcIssuance.credential_type,
-      partition_key: issuanceData.holder_did
+      credential_type: vcIssuance.credential_type
     });
 
     res.status(201).json({
       success: true,
-      message: 'VC issued successfully to holder partition',
+      message: 'VC issued successfully. Stored in queue until holder retrieves it.',
       data: {
         issuance_id: vcIssuance.issuance_id,
         issuer_did: vcIssuance.issuer_did,
         holder_did: vcIssuance.holder_did,
         credential_type: vcIssuance.credential_type,
         issued_at: vcIssuance.issued_at,
-        status: vcIssuance.status
+        status: vcIssuance.status,
+        note: 'No TTL - Will be deleted 5 minutes after holder retrieves it'
       }
     });
 
@@ -227,7 +217,7 @@ export const createVCIssuance = async (req: Request, res: Response): Promise<voi
 
 /**
  * Controller untuk holder melihat semua VCs yang diterbitkan untuk mereka
- * Query dari partition berdasarkan holder_did
+ * TRIGGERS 5-MINUTE DELETION TIMER after successful retrieval
  */
 export const getVCIssuancesByHolder = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -243,19 +233,27 @@ export const getVCIssuancesByHolder = async (req: Request, res: Response): Promi
 
     console.log(`🔍 Fetching VCs for holder: ${holder_did}`);
 
-    // Consume messages dari partition holder ini
-    const issuances = await kafkaService.consumeMessagesByKey(
-      KAFKA_TOPICS.VC_ISSUANCES,
-      holder_did,
-      10000 // timeout 10 seconds
-    );
+    // Get messages from RabbitMQ (NOT deleted, kept in queue)
+    const issuances = await rabbitmqService.getVCIssuancesByHolder(holder_did);
+
+    // IMPORTANT: Schedule 5-minute deletion ONLY if messages found
+    if (issuances.length > 0) {
+      delayedDeletionService.scheduleHolderDeletion(holder_did);
+      console.log(`⏰ 5-minute deletion timer started for holder: ${holder_did}`);
+    }
 
     res.status(200).json({
       success: true,
+      message: issuances.length > 0 
+        ? '5-minute deletion timer started' 
+        : 'No credentials found',
       data: {
         holder_did: holder_did,
         total_credentials: issuances.length,
-        credentials: issuances
+        credentials: issuances,
+        deletion_note: issuances.length > 0 
+          ? 'These credentials will be automatically deleted after 5 minutes'
+          : undefined
       }
     });
 
