@@ -1,7 +1,7 @@
 {
   "name": "ganeshadcert",
   "version": "1.0.0",
-  "description": "API GaneshaDCERT dengan dokumentasi Swagger",
+  "description": "API GaneshaDCERT dengan dokumentasi Swagger dan Kafka Integration (Apache Kafka Official)",
   "main": "dist/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -9,14 +9,35 @@
     "start": "node dist/index.js",
     "dev": "nodemon src/index.ts",
     "dev-simple": "nodemon src/index-simple.ts",
+    "worker": "nodemon src/worker.ts",
+    "worker-build": "node dist/worker.js",
     "clean": "rm -rf dist",
-    "prebuild": "npm run clean"
+    "prebuild": "npm run clean",
+    "kafka:start": "docker-compose up -d",
+    "kafka:stop": "docker-compose down",
+    "kafka:restart": "docker-compose down && docker-compose up -d",
+    "kafka:logs": "docker-compose logs -f broker",
+    "kafka:logs-ui": "docker logs -f kafka-ui",
+    "kafka:status": "docker-compose ps",
+    "kafka:clean": "docker-compose down -v && docker system prune -f",
+    "kafka:health": "docker exec broker kafka-broker-api-versions.sh --bootstrap-server localhost:9092"
   },
-  "keywords": ["api", "swagger", "typescript", "express"],
+  "keywords": [
+    "api",
+    "swagger",
+    "typescript",
+    "express",
+    "kafka",
+    "event-driven",
+    "single-node",
+    "apache-kafka"
+  ],
   "author": "Hafidz Yami",
   "license": "ISC",
   "dependencies": {
+    "dotenv": "^17.2.2",
     "express": "^5.1.0",
+    "kafkajs": "^2.2.4",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
   },
