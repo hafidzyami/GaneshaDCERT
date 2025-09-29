@@ -1,0 +1,43 @@
+# Node.js
+# ========================
+# node_modules folder is where all the packages are installed
+node_modules/
+# npm-debug.log* files are generated during npm errors
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+# ========================
+# .env files contain sensitive information and should not be committed
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+# .env.example should be kept to show the required variables
+
+# TypeScript build artifacts
+# ========================
+# The compiled JavaScript and source map files
+# These files are generated from your TypeScript source (.ts)
+# The output directory for compiled files (often 'dist' or 'build')
+dist/
+build/
+*.js
+*.js.map
+
+# Operating system files
+# ========================
+# macOS
+.DS_Store
+
+# Visual Studio Code
+# ========================
+# VScode temporary files and configuration
+.vscode/
+
+# Other temporary files
+# ========================
+# Any log files created during runtime
+*.log
