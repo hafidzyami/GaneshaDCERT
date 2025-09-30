@@ -108,15 +108,15 @@ The API documentation is available via Swagger UI at:
 ### Manual VC Signing Workflow
 
 1. **Start the API Server**
-```bash
-npm run dev:api
-```
+    ```bash
+    npm run dev:api
+    ```
 
 2. **Fetch Pending Request**
-Run the test client to simulate a credential request:
-```bash
-npx ts-node client.ts
-```
+    Run the test client to simulate a credential request:
+    ```bash
+    npx ts-node client.ts
+    ```
 3. **Fetch Pending Request**
    ```bash
    # Use the API endpoint to fetch next request
