@@ -1,0 +1,59 @@
+name: Deploy GaneshaDCERT to VPS
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: DEV
+    env:
+      PORT: ${{ secrets.PORT }}
+      RABBITMQ_URL: ${{ secrets.RABBITMQ_URL }}
+      MESSAGE_TTL: ${{ secrets.MESSAGE_TTL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Deploy to Development
+        if: github.ref == 'refs/heads/dev'
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST_DEV }}
+          username: ${{ secrets.VPS_USER_DEV }}
+          key: ${{ secrets.VPS_SSH_KEY_DEV }}
+          script: |
+            cd /www/ganeshadcert
+            git pull origin dev
+            
+            # Check if Docker Compose is installed
+            if ! command -v docker-compose &> /dev/null; then
+              echo "Docker Compose not found, please install it first"
+              exit 1
+            fi
+            
+            # Check and start RabbitMQ if not running
+            if ! docker-compose ps | grep -q "rabbitmq.*Up"; then
+              echo "Starting RabbitMQ with Docker Compose..."
+              docker-compose up -d
+              echo "Waiting for RabbitMQ to be ready..."
+              sleep 10
+            else
+              echo "RabbitMQ is already running"
+            fi
+            
+            # Install dependencies
+            npm install
+            
+            # Build the project
+            rm -rf dist
+            npm run build
+            
+            # Restart PM2 process
+            pm2 delete ganeshadcert || true
+            pm2 startOrRestart pm2.config.js --env dev
+            pm2 save
+            pm2 startup
