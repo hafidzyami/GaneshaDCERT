@@ -107,29 +107,35 @@ The API documentation is available via Swagger UI at:
 
 ### Manual VC Signing Workflow
 
-1. **Fetch Pending Request**
+1. **Start the API Server**
+```bash
+npm run dev:api
+```
+
+2. **Fetch Pending Request**
+Run the test client to simulate a credential request:
+```bash
+npx ts-node client.ts
+```
+3. **Fetch Pending Request**
    ```bash
    # Use the API endpoint to fetch next request
    curl "http://localhost:3000/api/manual-worker/next-request?issuer_did=YOUR_ISSUER_DID"
    ```
 
-2. **Sign VC Using Python Tool**
+4. **Sign VC Using Python Tool**
    ```bash
    # Use the provided Python script to sign the VC
    python sign-vc.py
    ```
 
-3. **Submit Signed VC**
+5. **Submit Signed VC**
    ```bash
    # Submit the signed VC back through the API
    curl -X POST http://localhost:3000/api/manual-worker/issue-vc -H "Content-Type: application/json" -d '{"jobDetails": {...}, "signedVc": {...}}'
    ```
 
-### Test Client
-Run the test client to simulate a credential request:
-```bash
-ts-node client.ts
-```
+
 
 ## 📁 Project Structure
 
