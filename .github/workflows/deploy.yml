@@ -9,6 +9,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: DEV
+
     env:
       PORT: ${{ secrets.PORT }}
       RABBITMQ_URL: ${{ secrets.RABBITMQ_URL }}
@@ -18,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Deploy to Development
+      - name: Deploy to Development Server
         if: github.ref == 'refs/heads/dev'
         uses: appleboy/ssh-action@master
         with:
@@ -29,30 +30,21 @@ jobs:
             cd /www/ganeshadcert
             git pull origin dev
             
-            # Check if Docker Compose is installed
-            if ! command -v docker-compose &> /dev/null; then
-              echo "Docker Compose not found, please install it first"
+            if ! docker compose version &> /dev/null; then
+              echo "Docker Compose plugin not found, please install it first"
               exit 1
             fi
             
-            # Check and start RabbitMQ if not running
-            if ! docker-compose ps | grep -q "rabbitmq.*Up"; then
-              echo "Starting RabbitMQ with Docker Compose..."
-              docker-compose up -d
-              echo "Waiting for RabbitMQ to be ready..."
+            if ! docker compose ps | grep -q "rabbitmq.*Up"; then
+              docker compose up -d
               sleep 10
-            else
-              echo "RabbitMQ is already running"
             fi
             
-            # Install dependencies
             npm install
             
-            # Build the project
             rm -rf dist
             npm run build
             
-            # Restart PM2 process
             pm2 delete ganeshadcert || true
             pm2 startOrRestart pm2.config.js --env dev
             pm2 save
