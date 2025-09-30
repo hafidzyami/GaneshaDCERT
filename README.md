@@ -112,7 +112,7 @@ The API documentation is available via Swagger UI at:
     npm run dev:api
     ```
 
-2. **Fetch Pending Request**
+2. **Run Test Client (holder)**
     Run the test client to simulate a credential request:
     ```bash
     npx ts-node client.ts
