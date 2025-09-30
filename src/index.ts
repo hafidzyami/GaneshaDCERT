@@ -22,7 +22,7 @@ const swaggerOptions: swaggerJsdoc.Options = {
     openapi: '3.0.0',
     info: {
       title: 'GaneshaDCERT API with RabbitMQ Integration',
-      version: '2.0.0',
+      version: '1.0.0',
       description: `
         ## Dokumentasi API untuk layanan GaneshaDCERT dengan RabbitMQ Integration
         
