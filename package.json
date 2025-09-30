@@ -1,26 +1,44 @@
 {
   "name": "ganeshadcert",
-  "version": "1.0.0",
-  "description": "API GaneshaDCERT dengan dokumentasi Swagger",
+  "version": "2.0.0",
+  "description": "API GaneshaDCERT dengan RabbitMQ Integration",
   "main": "dist/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "test:auto-delete": "ts-node src/tests/auto-delete.test.ts",
+    "test:auto-delete:quick": "ts-node src/tests/auto-delete.quick.test.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "nodemon src/index.ts",
-    "dev-simple": "nodemon src/index-simple.ts",
     "clean": "rm -rf dist",
-    "prebuild": "npm run clean"
+    "prebuild": "npm run clean",
+    "rabbitmq:start": "docker-compose -f docker-compose.yml up -d",
+    "rabbitmq:stop": "docker-compose -f docker-compose.yml down",
+    "rabbitmq:restart": "docker-compose -f docker-compose.yml restart",
+    "rabbitmq:logs": "docker-compose -f docker-compose.yml logs -f",
+    "rabbitmq:status": "docker-compose -f docker-compose.yml ps",
+    "rabbitmq:clean": "docker-compose -f docker-compose.yml down -v"
   },
-  "keywords": ["api", "swagger", "typescript", "express"],
+  "keywords": [
+    "api",
+    "swagger",
+    "typescript",
+    "express",
+    "rabbitmq",
+    "message-queue",
+    "verifiable-credentials"
+  ],
   "author": "Hafidz Yami",
   "license": "ISC",
   "dependencies": {
+    "amqplib": "^0.10.3",
+    "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
+    "@types/amqplib": "^0.10.7",
     "@types/express": "^5.0.3",
     "@types/node": "^24.5.2",
     "@types/swagger-jsdoc": "^6.0.4",
