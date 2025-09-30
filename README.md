@@ -1,49 +1,154 @@
-# GaneshaDCERT API
+# GaneshaDCERT - Verifiable Credentials Issuance System
 
-Simple API with Swagger documentation using Express, TypeScript, and Swagger UI.
+A Node.js-based system for issuing and managing Verifiable Credentials (VCs) using RabbitMQ for message queuing. The system supports manual credential issuance workflow with digital signatures.
 
-## 🚀 How to Run
+## 🏗️ System Architecture
 
-### 1. Install Dependencies
+The system consists of several components:
+- REST API server for credential requests and manual worker operations
+- RabbitMQ message broker for request queue management
+- Python-based VC signing tool
+- TypeScript client for testing credential requests
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js and npm
+- Python 3.x
+- Docker and Docker Compose (for RabbitMQ)
+- TypeScript
+
+### Installation
+
+1. **Install Node.js Dependencies**
 ```bash
 npm install
 ```
 
-### 2. Development Mode (Recommended for testing)
+2. **Install Python Dependencies**
 ```bash
-npm run dev
+pip install -r requirements.txt
 ```
 
-### 3. Production Mode
+3. **Start RabbitMQ Server**
 ```bash
-# Build the application
+docker-compose up -d
+```
+
+This will start RabbitMQ with:
+- AMQP port: 5672
+- Management UI port: 15672
+- Default credentials: user/password
+
+## 🔧 Configuration
+
+### Environment Variables
+Create a `.env` file with:
+```env
+API_PORT=3000
+RABBITMQ_URL=amqp://user:password@localhost:5672
+```
+
+## 💻 Running the Application
+
+### Development Mode
+
+1. **Start the API Server**
+```bash
+npm run dev:api
+```
+
+2. **Start the Worker (if needed)**
+```bash
+npm run dev:worker
+```
+
+### Production Mode
+
+1. **Build the TypeScript Code**
+```bash
 npm run build
-
-# Run the application
-npm start
 ```
 
-## 📚 API Documentation
+2. **Start the API Server**
+```bash
+npm run start:api
+```
 
-After the server is running, access the Swagger documentation at:
-- **http://localhost:3000/api-docs**
+3. **Start the Worker (if needed)**
+```bash
+npm run start:worker
+```
 
-## 🔧 Available Endpoints
+## � API Documentation
 
-### GET /
-- Main application route
-- Response: Welcome message
+The API documentation is available via Swagger UI at:
+- http://localhost:3000/api-docs
+
+### Main Endpoints
+
+1. **Request VC Issuance**
+   - `POST /api/vc-issuance`
+   - Request a new Verifiable Credential
+
+2. **Manual Worker Endpoints**
+   - `GET /api/manual-worker/next-request?issuer_did={DID}`
+   - `POST /api/manual-worker/issue-vc`
+
+## 🛠️ Tools and Scripts
+
+### VC Signing Tool
+A Python script for manually signing VCs:
+```bash
+python sign-vc.py
+```
+
+### Test Client
+Run the test client to simulate a credential request:
+```bash
+ts-node client.ts
+```
 
 ## 📁 Project Structure
 
 ```
 GaneshaDCERT/
 ├── src/
-│   └── index.ts          # Main application file
-├── dist/                 # Compiled JavaScript files
-├── node_modules/         # Dependencies
-├── package.json          # Project configuration
-├── tsconfig.json         # TypeScript configuration
-├── nodemon.json          # Nodemon configuration
-└── README.md             # This file
+│   ├── config/
+│   │   ├── rabbitmq.ts         # RabbitMQ configuration
+│   │   └── swaggerDef.ts       # Swagger API documentation
+│   ├── controllers/
+│   │   ├── issuanceController.ts
+│   │   └── manualWorkerController.ts
+│   ├── routes/
+│   │   ├── issuanceRoutes.ts
+│   │   └── manualWorkerRoutes.ts
+│   ├── services/
+│   │   └── signatureService.ts
+│   ├── index.ts                # Main API server
+│   └── worker.ts               # Worker process
+├── client.ts                   # Test client
+├── sign-vc.py                 # Python VC signing tool
+├── docker-compose.yml         # Docker configuration
+└── package.json
 ```
+
+## 🔐 Security Features
+
+- Digital signature verification for VC requests
+- Queue-based message handling
+- Correlation IDs for request tracking
+- DID-based routing for multi-issuer support
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## 📝 License
+
+This project is licensed under the MIT License.

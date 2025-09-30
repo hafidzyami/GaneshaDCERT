@@ -1,6 +1,16 @@
+
 {
   "name": "ganeshadcert-final",
   "version": "1.0.0",
+  "scripts": {
+    "build": "tsc",
+    "swagger": "ts-node ./generate-swagger.ts",
+    "start:api": "node dist/index.js",
+    "start:worker": "node dist/worker.js",
+    "dev:api": "nodemon src/index.ts",
+    "dev:worker": "nodemon src/worker.ts",
+    "sign-vc": "node --loader ts-node/esm ./sign-vc.ts"
+  },
   "dependencies": {
     "amqplib": "^0.10.3",
     "dotenv": "^16.3.1",

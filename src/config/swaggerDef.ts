@@ -27,11 +27,21 @@ export const swaggerSpec = {
     },
     '/api/manual-worker/next-request': {
       get: {
-        summary: 'Fetch the next pending VC request',
+        summary: 'Fetch the next pending VC request for a specific issuer',
         tags: ['Manual Worker'],
+        parameters: [
+          {
+            name: 'issuer_did',
+            in: 'query',
+            description: 'The DID of the issuer to fetch requests for.',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
         responses: {
           '200': { description: 'A pending request was successfully fetched.' },
           '404': { description: 'No new requests were found in the queue.' },
+          '400': { description: 'Missing required query parameter: issuer_did.' }
         },
       },
     },
@@ -46,8 +56,10 @@ export const swaggerSpec = {
               schema: {
                 type: 'object',
                 properties: {
-                  signedVcJwt: { type: 'string', description: 'The pre-signed VC JWT.' },
+                  jobDetails: { type: 'object', description: 'The job details from the fetched request.' },
+                  signedVc: { type: 'object', description: 'The pre-signed VC object in JSON-LD format.' }
                 },
+                required: ['jobDetails', 'signedVc'],
               },
             },
           },
@@ -71,6 +83,7 @@ export const swaggerSpec = {
         properties: {
           payload: { $ref: '#/components/schemas/Payload' },
           signature: { type: 'string' },
+          issuer_did: { type: 'string' },
         },
       },
     },
