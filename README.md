@@ -1,13 +1,30 @@
 # GaneshaDCERT - Verifiable Credentials Issuance System
 
-A Node.js-based system for issuing and managing Verifiable Credentials (VCs) using RabbitMQ for message queuing. The system supports manual credential issuance workflow with digital signatures.
+A Node.js-based ## 🔍 API Documentation
+
+The API documentation is available via Swagger UI at:
+- http://localhost:3000/api-docs
+
+### Main Endpoints
+
+1. **Request VC Issuance**
+   - `POST /api/vc-issuance`
+   - Request a new Verifiable Credential
+
+2. **Manual Worker Endpoints**
+   - `GET /api/manual-worker/next-request?issuer_did={DID}`
+     - Fetch next pending request for manual processing
+   - `POST /api/manual-worker/issue-vc`
+     - Submit manually signed VC for the fetched request
+
+The manual worker endpoints allow operators to process VC requests one at a time, with manual verification and signing steps in between.uing and managing Verifiable Credentials (VCs) using RabbitMQ for message queuing. The system supports manual credential issuance workflow with digital signatures.
 
 ## 🏗️ System Architecture
 
 The system consists of several components:
-- REST API server for credential requests and manual worker operations
+- REST API server for credential requests with manual worker interface
 - RabbitMQ message broker for request queue management
-- Python-based VC signing tool
+- Python-based VC signing tool for manual credential signing
 - TypeScript client for testing credential requests
 
 ## 🚀 Getting Started
@@ -59,11 +76,6 @@ RABBITMQ_URL=amqp://user:password@localhost:5672
 npm run dev:api
 ```
 
-2. **Start the Worker (if needed)**
-```bash
-npm run dev:worker
-```
-
 ### Production Mode
 
 1. **Build the TypeScript Code**
@@ -74,11 +86,6 @@ npm run build
 2. **Start the API Server**
 ```bash
 npm run start:api
-```
-
-3. **Start the Worker (if needed)**
-```bash
-npm run start:worker
 ```
 
 ## � API Documentation
@@ -98,11 +105,25 @@ The API documentation is available via Swagger UI at:
 
 ## 🛠️ Tools and Scripts
 
-### VC Signing Tool
-A Python script for manually signing VCs:
-```bash
-python sign-vc.py
-```
+### Manual VC Signing Workflow
+
+1. **Fetch Pending Request**
+   ```bash
+   # Use the API endpoint to fetch next request
+   curl "http://localhost:3000/api/manual-worker/next-request?issuer_did=YOUR_ISSUER_DID"
+   ```
+
+2. **Sign VC Using Python Tool**
+   ```bash
+   # Use the provided Python script to sign the VC
+   python sign-vc.py
+   ```
+
+3. **Submit Signed VC**
+   ```bash
+   # Submit the signed VC back through the API
+   curl -X POST http://localhost:3000/api/manual-worker/issue-vc -H "Content-Type: application/json" -d '{"jobDetails": {...}, "signedVc": {...}}'
+   ```
 
 ### Test Client
 Run the test client to simulate a credential request:
@@ -120,14 +141,13 @@ GaneshaDCERT/
 │   │   └── swaggerDef.ts       # Swagger API documentation
 │   ├── controllers/
 │   │   ├── issuanceController.ts
-│   │   └── manualWorkerController.ts
+│   │   └── manualWorkerController.ts  # Manual processing endpoints
 │   ├── routes/
 │   │   ├── issuanceRoutes.ts
 │   │   └── manualWorkerRoutes.ts
 │   ├── services/
 │   │   └── signatureService.ts
-│   ├── index.ts                # Main API server
-│   └── worker.ts               # Worker process
+│   └── index.ts                # Main API server
 ├── client.ts                   # Test client
 ├── sign-vc.py                 # Python VC signing tool
 ├── docker-compose.yml         # Docker configuration
