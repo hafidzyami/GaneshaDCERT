@@ -3,7 +3,8 @@ import {
   getRabbitMQChannel,
   EXCHANGES,
   QUEUE_PATTERNS,
-  QUEUE_OPTIONS,
+  getQueueOptionsWithDLX,
+  DLQ_OPTIONS,
   EXCHANGE_OPTIONS,
   MESSAGE_OPTIONS,
 } from '../config/rabbitmq.config';
@@ -26,17 +27,7 @@ class RabbitMQService {
   }
 
   /**
-   * Get channel (for delayed deletion service)
-   */
-  public async getChannel(): Promise<RabbitChannel> {
-    if (!this.channel) {
-      this.channel = await getRabbitMQChannel();
-    }
-    return this.channel;
-  }
-
-  /**
-   * Initialize RabbitMQ - Setup exchanges
+   * Initialize RabbitMQ - Setup exchanges, DLX, and DLQ
    */
   public async initialize(): Promise<void> {
     try {
@@ -49,7 +40,7 @@ class RabbitMQService {
       
       this.channel = await getRabbitMQChannel();
 
-      // Create exchanges
+      // Create main exchanges
       await this.channel.assertExchange(
         EXCHANGES.VC_REQUESTS,
         'topic',
@@ -62,10 +53,48 @@ class RabbitMQService {
         EXCHANGE_OPTIONS
       );
 
+      // Create Dead Letter Exchanges (DLX)
+      await this.channel.assertExchange(
+        EXCHANGES.VC_REQUESTS_DLX,
+        'fanout',
+        EXCHANGE_OPTIONS
+      );
+
+      await this.channel.assertExchange(
+        EXCHANGES.VC_ISSUANCES_DLX,
+        'fanout',
+        EXCHANGE_OPTIONS
+      );
+
+      // Create Dead Letter Queues (DLQ)
+      await this.channel.assertQueue(
+        QUEUE_PATTERNS.VC_REQUESTS_DLQ,
+        DLQ_OPTIONS
+      );
+
+      await this.channel.assertQueue(
+        QUEUE_PATTERNS.VC_ISSUANCES_DLQ,
+        DLQ_OPTIONS
+      );
+
+      // Bind DLQs to DLX
+      await this.channel.bindQueue(
+        QUEUE_PATTERNS.VC_REQUESTS_DLQ,
+        EXCHANGES.VC_REQUESTS_DLX,
+        '' // Fanout exchange doesn't use routing keys
+      );
+
+      await this.channel.bindQueue(
+        QUEUE_PATTERNS.VC_ISSUANCES_DLQ,
+        EXCHANGES.VC_ISSUANCES_DLX,
+        ''
+      );
+
       this.isInitialized = true;
       console.log('✅ RabbitMQ initialized successfully');
-      console.log(`   📮 Exchange: ${EXCHANGES.VC_REQUESTS}`);
-      console.log(`   📮 Exchange: ${EXCHANGES.VC_ISSUANCES}`);
+      console.log(`   📮 Main Exchanges: ${EXCHANGES.VC_REQUESTS}, ${EXCHANGES.VC_ISSUANCES}`);
+      console.log(`   ☠️  Dead Letter Exchanges: ${EXCHANGES.VC_REQUESTS_DLX}, ${EXCHANGES.VC_ISSUANCES_DLX}`);
+      console.log(`   🗑️  Dead Letter Queues: ${QUEUE_PATTERNS.VC_REQUESTS_DLQ}, ${QUEUE_PATTERNS.VC_ISSUANCES_DLQ}`);
     } catch (error) {
       console.error('❌ Failed to initialize RabbitMQ:', error);
       throw error;
@@ -97,7 +126,7 @@ class RabbitMQService {
       console.log(`📤 VC Request sent:`, {
         exchange: EXCHANGES.VC_REQUESTS,
         routingKey,
-        expiresIn: '5 minutes'
+        note: 'Message persists until consumed'
       });
     } catch (error) {
       console.error('❌ Failed to send VC Request:', error);
@@ -130,7 +159,7 @@ class RabbitMQService {
       console.log(`📤 VC Issuance sent:`, {
         exchange: EXCHANGES.VC_ISSUANCES,
         routingKey,
-        expiresIn: '5 minutes'
+        note: 'Message persists until consumed'
       });
     } catch (error) {
       console.error('❌ Failed to send VC Issuance:', error);
@@ -139,8 +168,8 @@ class RabbitMQService {
   }
 
   /**
-   * Get VC Requests for specific issuer
-   * Peek at messages WITHOUT consuming them (messages stay in queue)
+   * Get VC Requests for specific issuer - CONSUME & DELETE PATTERN
+   * Messages are consumed and PERMANENTLY deleted after acknowledgment
    * @param issuerDid - Issuer DID
    * @returns Array of VC requests
    */
@@ -153,13 +182,13 @@ class RabbitMQService {
       const queueName = `${QUEUE_PATTERNS.VC_REQUESTS}.${issuerDid}`;
       const routingKey = `${QUEUE_PATTERNS.VC_REQUESTS}.${issuerDid}`;
 
-      // Assert queue WITHOUT TTL
-      await this.channel.assertQueue(queueName, QUEUE_OPTIONS);
+      // Assert queue WITH Dead Letter Exchange
+      await this.channel.assertQueue(queueName, getQueueOptionsWithDLX('requests'));
 
       // Bind queue to exchange with routing key
       await this.channel.bindQueue(queueName, EXCHANGES.VC_REQUESTS, routingKey);
 
-      console.log(`🔍 Fetching VC requests from queue: ${queueName}`);
+      console.log(`🔍 Consuming VC requests from queue: ${queueName}`);
 
       // Check queue status
       const queueInfo = await this.channel.checkQueue(queueName);
@@ -170,9 +199,8 @@ class RabbitMQService {
       }
 
       const messages: any[] = [];
-      const messagesToRequeue: any[] = [];
 
-      // Consume messages and store them for requeuing
+      // Consume ALL messages and delete them permanently
       for (let i = 0; i < queueInfo.messageCount; i++) {
         const msg = await this.channel.get(queueName, { noAck: false });
         
@@ -181,29 +209,31 @@ class RabbitMQService {
         }
 
         try {
+          // Parse message content
           const content = JSON.parse(msg.content.toString());
           messages.push(content);
-          messagesToRequeue.push({ msg, content });
           
-          // ACK the message first
+          // ACK the message - THIS DELETES IT PERMANENTLY
           this.channel.ack(msg);
           
-          console.log(`✅ Message consumed (will republish)`);
+          console.log(`✅ Message consumed and deleted:`, {
+            request_id: content.request_id || 'unknown',
+            action: 'DELETED from queue'
+          });
         } catch (parseError) {
           console.error('❌ Failed to parse message:', parseError);
-          // Reject bad message
+          console.log('📨 Raw message content:', msg.content.toString());
+          
+          // NACK with requeue=false - sends to DLX
           this.channel.nack(msg, false, false);
+          
+          console.log(`☠️  Malformed message sent to Dead Letter Queue`);
         }
       }
 
-      // Republish all messages back to queue
-      for (const item of messagesToRequeue) {
-        const messageBuffer = Buffer.from(JSON.stringify(item.content));
-        this.channel.sendToQueue(queueName, messageBuffer, MESSAGE_OPTIONS);
-        console.log(`🔄 Message republished to queue`);
-      }
-
-      console.log(`📊 Found ${messages.length} requests for issuer: ${issuerDid}`);
+      console.log(`📊 Consumed ${messages.length} requests for issuer: ${issuerDid}`);
+      console.log(`🗑️  All messages have been PERMANENTLY DELETED from queue`);
+      
       return messages;
 
     } catch (error) {
@@ -213,8 +243,8 @@ class RabbitMQService {
   }
 
   /**
-   * Get VC Issuances for specific holder
-   * Peek at messages WITHOUT consuming them (messages stay in queue)
+   * Get VC Issuances for specific holder - CONSUME & DELETE PATTERN
+   * Messages are consumed and PERMANENTLY deleted after acknowledgment
    * @param holderDid - Holder DID
    * @returns Array of VC issuances
    */
@@ -227,13 +257,13 @@ class RabbitMQService {
       const queueName = `${QUEUE_PATTERNS.VC_ISSUANCES}.${holderDid}`;
       const routingKey = `${QUEUE_PATTERNS.VC_ISSUANCES}.${holderDid}`;
 
-      // Assert queue WITHOUT TTL
-      await this.channel.assertQueue(queueName, QUEUE_OPTIONS);
+      // Assert queue WITH Dead Letter Exchange
+      await this.channel.assertQueue(queueName, getQueueOptionsWithDLX('issuances'));
 
       // Bind queue to exchange with routing key
       await this.channel.bindQueue(queueName, EXCHANGES.VC_ISSUANCES, routingKey);
 
-      console.log(`🔍 Fetching VC issuances from queue: ${queueName}`);
+      console.log(`🔍 Consuming VC issuances from queue: ${queueName}`);
 
       // Check queue status
       const queueInfo = await this.channel.checkQueue(queueName);
@@ -244,9 +274,8 @@ class RabbitMQService {
       }
 
       const messages: any[] = [];
-      const messagesToRequeue: any[] = [];
 
-      // Consume messages and store them for requeuing
+      // Consume ALL messages and delete them permanently
       for (let i = 0; i < queueInfo.messageCount; i++) {
         const msg = await this.channel.get(queueName, { noAck: false });
         
@@ -255,33 +284,78 @@ class RabbitMQService {
         }
 
         try {
+          // Parse message content
           const content = JSON.parse(msg.content.toString());
           messages.push(content);
-          messagesToRequeue.push({ msg, content });
           
-          // ACK the message first
+          // ACK the message - THIS DELETES IT PERMANENTLY
           this.channel.ack(msg);
           
-          console.log(`✅ Message consumed (will republish)`);
+          console.log(`✅ Message consumed and deleted:`, {
+            issuance_id: content.issuance_id || 'unknown',
+            action: 'DELETED from queue'
+          });
         } catch (parseError) {
           console.error('❌ Failed to parse message:', parseError);
-          // Reject bad message
+          console.log('📨 Raw message content:', msg.content.toString());
+          
+          // NACK with requeue=false - sends to DLX
           this.channel.nack(msg, false, false);
+          
+          console.log(`☠️  Malformed message sent to Dead Letter Queue`);
         }
       }
 
-      // Republish all messages back to queue
-      for (const item of messagesToRequeue) {
-        const messageBuffer = Buffer.from(JSON.stringify(item.content));
-        this.channel.sendToQueue(queueName, messageBuffer, MESSAGE_OPTIONS);
-        console.log(`🔄 Message republished to queue`);
-      }
-
-      console.log(`📊 Found ${messages.length} issuances for holder: ${holderDid}`);
+      console.log(`📊 Consumed ${messages.length} issuances for holder: ${holderDid}`);
+      console.log(`🗑️  All messages have been PERMANENTLY DELETED from queue`);
+      
       return messages;
 
     } catch (error) {
       console.error('❌ Failed to get VC Issuances:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get messages from Dead Letter Queue (for debugging/monitoring)
+   */
+  public async getDeadLetterMessages(queueType: 'requests' | 'issuances'): Promise<any[]> {
+    try {
+      if (!this.channel) {
+        this.channel = await getRabbitMQChannel();
+      }
+
+      const dlqName = queueType === 'requests' 
+        ? QUEUE_PATTERNS.VC_REQUESTS_DLQ 
+        : QUEUE_PATTERNS.VC_ISSUANCES_DLQ;
+
+      console.log(`🔍 Checking Dead Letter Queue: ${dlqName}`);
+
+      const queueInfo = await this.channel.checkQueue(dlqName);
+      console.log(`☠️  DLQ has ${queueInfo.messageCount} failed message(s)`);
+
+      const messages: any[] = [];
+
+      // Peek at DLQ messages (don't consume them)
+      for (let i = 0; i < Math.min(queueInfo.messageCount, 100); i++) {
+        const msg = await this.channel.get(dlqName, { noAck: true });
+        
+        if (!msg) {
+          break;
+        }
+
+        messages.push({
+          raw: msg.content.toString(),
+          headers: msg.properties.headers,
+          timestamp: msg.properties.timestamp,
+        });
+      }
+
+      return messages;
+
+    } catch (error) {
+      console.error('❌ Failed to get DLQ messages:', error);
       throw error;
     }
   }

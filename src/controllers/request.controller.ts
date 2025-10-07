@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import { rabbitmqService } from '../services/rabbitmq.service';
-import { delayedDeletionService } from '../services/delayed-deletion.service';
 
 export interface VCRequestData {
   issuer_did: string;
@@ -71,7 +70,7 @@ export const createVCRequest = async (req: Request, res: Response): Promise<void
 
     res.status(201).json({
       success: true,
-      message: 'VC Request submitted successfully. Stored in queue until issuer processes it.',
+      message: 'VC Request submitted successfully. Will persist until issuer retrieves it.',
       data: {
         request_id: vcRequest.request_id,
         issuer_did: vcRequest.issuer_did,
@@ -79,7 +78,7 @@ export const createVCRequest = async (req: Request, res: Response): Promise<void
         credential_type: vcRequest.credential_type,
         requested_at: vcRequest.requested_at,
         status: vcRequest.status,
-        note: 'No TTL - Request stays in queue'
+        note: 'Message will be deleted when issuer fetches requests'
       }
     });
 
@@ -96,7 +95,7 @@ export const createVCRequest = async (req: Request, res: Response): Promise<void
 
 /**
  * Controller untuk issuer melihat semua VC requests yang masuk ke mereka
- * Messages are NOT deleted - they stay in queue
+ * Messages are CONSUMED and DELETED permanently
  */
 export const getVCRequestsByIssuer = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -112,19 +111,21 @@ export const getVCRequestsByIssuer = async (req: Request, res: Response): Promis
 
     console.log(`🔍 Fetching VC requests for issuer: ${issuer_did}`);
 
-    // Get messages from RabbitMQ (NOT deleted, kept in queue)
+    // Get messages from RabbitMQ - THEY WILL BE DELETED
     const requests = await rabbitmqService.getVCRequestsByIssuer(issuer_did);
 
     res.status(200).json({
       success: true,
       message: requests.length > 0 
-        ? 'Requests retrieved (kept in queue)' 
+        ? 'Requests retrieved and deleted from queue' 
         : 'No pending requests found',
       data: {
         issuer_did: issuer_did,
         total_requests: requests.length,
         requests: requests,
-        note: 'These requests remain in the queue and can be fetched again'
+        note: requests.length > 0 
+          ? 'These requests have been PERMANENTLY DELETED from the queue' 
+          : undefined
       }
     });
 
@@ -200,7 +201,7 @@ export const createVCIssuance = async (req: Request, res: Response): Promise<voi
         credential_type: vcIssuance.credential_type,
         issued_at: vcIssuance.issued_at,
         status: vcIssuance.status,
-        note: 'No TTL - Will be deleted 5 minutes after holder retrieves it'
+        note: 'Message will be deleted when holder fetches credentials'
       }
     });
 
@@ -217,7 +218,7 @@ export const createVCIssuance = async (req: Request, res: Response): Promise<voi
 
 /**
  * Controller untuk holder melihat semua VCs yang diterbitkan untuk mereka
- * TRIGGERS 5-MINUTE DELETION TIMER after successful retrieval
+ * Messages are CONSUMED and DELETED permanently
  */
 export const getVCIssuancesByHolder = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -233,26 +234,20 @@ export const getVCIssuancesByHolder = async (req: Request, res: Response): Promi
 
     console.log(`🔍 Fetching VCs for holder: ${holder_did}`);
 
-    // Get messages from RabbitMQ (NOT deleted, kept in queue)
+    // Get messages from RabbitMQ - THEY WILL BE DELETED
     const issuances = await rabbitmqService.getVCIssuancesByHolder(holder_did);
-
-    // IMPORTANT: Schedule 5-minute deletion ONLY if messages found
-    if (issuances.length > 0) {
-      delayedDeletionService.scheduleHolderDeletion(holder_did);
-      console.log(`⏰ 5-minute deletion timer started for holder: ${holder_did}`);
-    }
 
     res.status(200).json({
       success: true,
       message: issuances.length > 0 
-        ? '5-minute deletion timer started' 
+        ? 'Credentials retrieved and deleted from queue' 
         : 'No credentials found',
       data: {
         holder_did: holder_did,
         total_credentials: issuances.length,
         credentials: issuances,
-        deletion_note: issuances.length > 0 
-          ? 'These credentials will be automatically deleted after 5 minutes'
+        note: issuances.length > 0 
+          ? 'These credentials have been PERMANENTLY DELETED from the queue' 
           : undefined
       }
     });
