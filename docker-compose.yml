@@ -1,12 +1,11 @@
 services:
-  # Service untuk RabbitMQ (sudah ada)
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: rabbitmq
     hostname: rabbitmq
     ports:
-      - "5672:5672"    # AMQP port
-      - "15672:15672"  # Management UI
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: admin
       RABBITMQ_DEFAULT_PASS: admin123
@@ -21,24 +20,32 @@ services:
     restart: unless-stopped
 
   ganeshadcert-api:
-    # Membangun image dari Dockerfile di direktori saat ini
     build: .
     container_name: ganeshadcert-api
     restart: unless-stopped
-    # Mengambil environment variables dari file .env
     env_file:
       - .env
     ports:
-      # Mapping port container ke port di host
-      - "3000:3000"
-    # Service ini bergantung pada rabbitmq. Akan dimulai setelah rabbitmq sehat.
+      - "127.0.0.1:3000:3000"
     depends_on:
       rabbitmq:
         condition: service_healthy
-    # Mengubah RABBITMQ_URL agar menunjuk ke container rabbitmq
+      redis:
+        condition: service_started
     environment:
       - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+      - REDIS_URL=redis://redis:6379
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --save 60 1 --loglevel warning
 
 volumes:
   rabbitmq-data:
-    driver: local
+  redis-data:
