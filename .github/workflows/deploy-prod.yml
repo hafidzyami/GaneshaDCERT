@@ -28,7 +28,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY_PROD }}      # <-- Gunakan secrets untuk PROD
           script: |
             # Pindah ke direktori aplikasi
-            cd /www/ganeshadcert-prod
+            cd /var/www/ganeshadcert-prod
 
             # Ambil source code terbaru dari branch main
             git pull origin main
