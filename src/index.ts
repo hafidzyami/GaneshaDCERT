@@ -184,7 +184,7 @@ app.get('/health', (req: Request, res: Response) => {
  */
 app.get('/dlq/requests', async (req: Request, res: Response) => {
   try {
-    const messages = await rabbitmqService.getDeadLetterMessages('requests');
+    const messages = await rabbitmqService.getDeadLetterMessages();
     res.json({
       success: true,
       dlq: 'vc.requests.dlq',
@@ -215,7 +215,7 @@ app.get('/dlq/requests', async (req: Request, res: Response) => {
  */
 app.get('/dlq/issuances', async (req: Request, res: Response) => {
   try {
-    const messages = await rabbitmqService.getDeadLetterMessages('issuances');
+    const messages = await rabbitmqService.getDeadLetterMessages();
     res.json({
       success: true,
       dlq: 'vc.issuances.dlq',
