@@ -1,8 +1,13 @@
 import amqplib from 'amqplib';
 
+
+if (!process.env.RABBITMQ_URL) {
+  throw new Error("FATAL_ERROR: RABBITMQ_URL environment variable is not set.");
+}
+
 // RabbitMQ Configuration
 export const RABBITMQ_CONFIG = {
-  url: process.env.RABBITMQ_URL || 'amqp://admin:admin123@localhost:5672',
+  url: process.env.RABBITMQ_URL,
   reconnectDelay: 5000, // 5 seconds
 };
 
