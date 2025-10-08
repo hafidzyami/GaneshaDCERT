@@ -9,19 +9,30 @@ export const RABBITMQ_CONFIG = {
 // Exchange and Queue names
 export const EXCHANGES = {
   VC_REQUESTS: 'vc.requests.exchange',
-  VC_ISSUANCES: 'vc.issuances.exchange',
+  // Dead Letter Exchange (only for requests)
+  VC_REQUESTS_DLX: 'vc.requests.dlx',
 };
 
 export const QUEUE_PATTERNS = {
   VC_REQUESTS: 'vc.requests',      // Base pattern for requests
-  VC_ISSUANCES: 'vc.issuances',    // Base pattern for issuances
+  // Dead Letter Queue (only for requests)
+  VC_REQUESTS_DLQ: 'vc.requests.dlq',
 };
 
-// Queue Options WITHOUT TTL (messages stay until manually deleted)
+// Queue Options with Dead Letter Exchange configuration
 export const QUEUE_OPTIONS = {
   durable: true,                      // Queue bertahan setelah restart
   autoDelete: false,                  // Don't auto-delete queue
   maxLength: 10000,                   // Max 10000 messages per queue
+  // Dead Letter Exchange configuration
+  deadLetterExchange: '',             // Will be set dynamically per queue type
+};
+
+// DLQ Queue Options (no DLX for DLQ itself)
+export const DLQ_OPTIONS = {
+  durable: true,
+  autoDelete: false,
+  maxLength: 10000,
 };
 
 // Exchange Options
@@ -113,4 +124,14 @@ export async function closeRabbitMQ(): Promise<void> {
   } catch (error) {
     console.error('❌ Error closing RabbitMQ:', error);
   }
+}
+
+/**
+ * Helper function to get queue options with DLX for requests
+ */
+export function getQueueOptionsWithDLX() {
+  return {
+    ...QUEUE_OPTIONS,
+    deadLetterExchange: EXCHANGES.VC_REQUESTS_DLX,
+  };
 }
