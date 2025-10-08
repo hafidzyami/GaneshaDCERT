@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # Service untuk RabbitMQ (sudah ada)
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: rabbitmq
@@ -20,6 +21,25 @@ services:
       timeout: 10s
       retries: 5
     restart: unless-stopped
+
+  ganeshadcert-api:
+    # Membangun image dari Dockerfile di direktori saat ini
+    build: .
+    container_name: ganeshadcert-api
+    restart: unless-stopped
+    # Mengambil environment variables dari file .env
+    env_file:
+      - .env
+    ports:
+      # Mapping port container ke port di host
+      - "3000:3000"
+    # Service ini bergantung pada rabbitmq. Akan dimulai setelah rabbitmq sehat.
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    # Mengubah RABBITMQ_URL agar menunjuk ke container rabbitmq
+    environment:
+      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
 
 volumes:
   rabbitmq-data:

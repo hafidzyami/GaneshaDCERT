@@ -1,0 +1,47 @@
+name: Deploy GaneshaDCERT to VPS (Production)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: PROD
+
+    env:
+      PORT: ${{ secrets.PORT }}
+      RABBITMQ_URL: ${{ secrets.RABBITMQ_URL }}
+      MESSAGE_TTL: ${{ secrets.MESSAGE_TTL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Deploy to Production Server
+        if: github.ref == 'refs/heads/main'
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST_PROD }}      # <-- Gunakan secrets untuk PROD
+          username: ${{ secrets.VPS_USER_PROD }}   # <-- Gunakan secrets untuk PROD
+          key: ${{ secrets.VPS_SSH_KEY_PROD }}      # <-- Gunakan secrets untuk PROD
+          script: |
+            # Pindah ke direktori aplikasi
+            cd /www/ganeshadcert-prod
+
+            # Ambil source code terbaru dari branch main
+            git pull origin main
+            
+            # Buat file .env dari secrets GitHub
+            echo "${{ secrets.ENTIRE_ENV_FILE }}" > .env
+
+            # Hentikan container yang sedang berjalan (jika ada) dan build ulang
+            docker compose down
+            docker compose build --no-cache
+
+            # Jalankan container di background (detached mode)
+            docker compose up -d
+
+            # Bersihkan image Docker yang tidak terpakai untuk menghemat ruang
+            docker image prune -af
