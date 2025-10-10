@@ -1,0 +1,51 @@
+name: Deploy GaneshaDCERT to VPS (Production)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: PROD
+
+    env:
+      PORT: ${{ secrets.PORT }}
+      RABBITMQ_URL: ${{ secrets.RABBITMQ_URL }}
+      MESSAGE_TTL: ${{ secrets.MESSAGE_TTL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Deploy to Production Server
+        if: github.ref == 'refs/heads/main'
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST_PROD }}      # <-- Gunakan secrets untuk PROD
+          username: ${{ secrets.VPS_USER_PROD }}   # <-- Gunakan secrets untuk PROD
+          key: ${{ secrets.VPS_SSH_KEY_PROD }}      # <-- Gunakan secrets untuk PROD
+          script: |
+            # Pindah ke direktori aplikasi
+            cd /var/www/ganeshadcert-prod
+
+            # Ambil source code terbaru dari branch main
+            git pull origin main
+            
+            # Buat file .env dari secrets GitHub
+            echo "${{ secrets.ENTIRE_ENV_FILE }}" > .env
+
+            # 1. Build dulu, jika gagal, skrip akan berhenti
+            docker compose build --no-cache
+
+            # 2. Hentikan yang lama
+            docker compose down
+
+            # 3. Jalankan migrasi di kontainer baru secara sementara
+            docker compose run --rm ganeshadcert-api npx prisma migrate deploy
+
+            # 4. Jalankan semua service di background
+            docker compose up -d
+
+            docker image prune -af
