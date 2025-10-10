@@ -14,6 +14,8 @@ RUN npm install
 # Copy sisa source code
 COPY . .
 
+RUN npx prisma generate
+
 # Build TypeScript menjadi JavaScript
 RUN npm run build
 
