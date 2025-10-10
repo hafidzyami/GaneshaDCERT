@@ -56,3 +56,5 @@ tmp/
 temp/
 
 keys/
+
+/src/generated/prisma

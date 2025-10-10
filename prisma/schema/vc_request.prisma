@@ -1,0 +1,16 @@
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model VcRequest {
+  id         String   @id @default(uuid())
+  schema_id  String
+  issuer_did String
+  holder_did String
+  status     RequestStatus @default(PENDING)    
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+}
