@@ -14,13 +14,71 @@ enum RequestStatus {
   REJECTED
 }
 
-model VcRequest {
+enum RequestType {
+  ISSUANCE
+  RENEWAL
+  UPDATE
+  REVOKE
+}
+
+model VCIssuanceRequest {
   id         String   @id @default(uuid())
   schema_id  String
   issuer_did String
   holder_did String
   status     RequestStatus @default(PENDING)    
   createdAt  DateTime @default(now())
-  updatedAt  DateTime  @updatedAt
+  updatedAt  DateTime @updatedAt
   deletedAt  DateTime?
 }
+
+model VCRenewalRequest {
+  id         String   @id @default(uuid())
+  VCs_id     String[] @default(uuid())
+  issuer_did String
+  holder_did String
+  status     RequestStatus @default(PENDING)    
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+}
+
+model VCUpdateRequest {
+  id         String   @id @default(uuid())
+  VCs_id     String[] @default(uuid()) 
+  issuer_did String
+  holder_did String
+  status     RequestStatus @default(PENDING)    
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+}
+
+model VCRevokeRequest {
+  id         String   @id @default(uuid())
+  VCs_id     String[] @default(uuid()) 
+  issuer_did String
+  holder_did String
+  status     RequestStatus @default(PENDING)    
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+}
+
+model VPSharing {
+  id         String @id @default(uuid())
+  holder_did String
+  VP         Json
+}
+
+model VCResponse {
+  id           String @id @default(uuid())
+  request_id   String @default(uuid())
+  request_type RequestType
+  schema_id    String
+  issuer_did   String
+  holder_did   String
+  VC           Json?
+}
+
+
