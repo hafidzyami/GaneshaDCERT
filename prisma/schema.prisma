@@ -21,6 +21,12 @@ enum RequestType {
   REVOKE
 }
 
+enum PaymentStatus {
+  UNPAID
+  PAID
+  CANCELED
+} 
+
 model VCIssuanceRequest {
   id         String   @id @default(uuid())
   schema_id  String
@@ -73,6 +79,7 @@ model VPSharing {
 
 model VCResponse {
   id           String @id @default(uuid())
+  order_id     String @default(uuid())
   request_id   String @default(uuid())
   request_type RequestType
   schema_id    String
@@ -81,4 +88,38 @@ model VCResponse {
   VC           Json?
 }
 
+model Order {
+  id                String @id @default(uuid())
+  payment_method_id String @default(uuid())
+  payment_payload   Json
+  VCs_id            String[] @default(uuid())
+  schemas_id        String[]
+  request_type      RequestType
+  holder_did        String
+  issuer_did        String
+  payment_status    PaymentStatus @default(UNPAID)
+  product_fee       Decimal
+  service_fee       Decimal
+  total_fee         Decimal
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  deletedAt         DateTime?
+}
 
+model PaymentMethod {
+  id                String @id @default(uuid())
+  type              String
+  group             String
+  name              String
+  bank_code         String
+  sender_bank_type  String
+  description       String
+  deadline          Int
+  icon              String
+  availability      Boolean @default(false)
+  fee_fixed         Decimal
+  fee_percent       Decimal
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  deletedAt         DateTime?
+}

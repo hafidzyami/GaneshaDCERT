@@ -1,6 +1,8 @@
 import express, { Request, Response, Application } from "express";
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
+import cors from "cors";
+import didRoutes from "./routes/did";
 
 // Load environment variables
 require("dotenv").config();
@@ -10,6 +12,7 @@ const PORT: number = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 // Middleware untuk parsing JSON
 app.use(express.json());
+app.use(cors());
 
 // Opsi Konfigurasi untuk swagger-jsdoc
 const swaggerOptions: swaggerJsdoc.Options = {
@@ -31,7 +34,7 @@ const swaggerOptions: swaggerJsdoc.Options = {
       },
     ],
   },
-  apis: ["./src/routes/*.ts", "./src/controllers/*.ts", "./src/index.ts"],
+  apis: ["./src/routes/*.ts", "./src/index.ts"],
 };
 
 // Generate spesifikasi Swagger
@@ -57,7 +60,6 @@ app.use(
   })
 );
 
-
 /**
  * @swagger
  * /:
@@ -78,11 +80,9 @@ app.get("/", (req: Request, res: Response) => {
   });
 });
 
-
 // Start server
 const startServer = async () => {
   try {
-
     // Start Express server
     app.listen(PORT, () => {
       console.log(
