@@ -9,17 +9,17 @@ const router: Router = express.Router();
 
 /**
  * @swagger
- * /api/credential-requests:
+ * /credential-requests:
  *  post:
  *      summary: Request a Verifiable Credential
  *      description: A holder sends an encrypted request for a VC to an issuer.
  *      tags:
- *      - Verifiable Credential (VC) Lifecycle
+ *          - Verifiable Credential (VC) Lifecycle
  *      requestBody:
  *          required: true
  *          content:
  *              application/json:
- *                  schemas:
+ *                  schema:
  *                      type: object
  *                      properties:
  *                          encrypted_body:
@@ -38,7 +38,7 @@ const router: Router = express.Router();
  *              description: Request successfully created.
  *              content:
  *                  application/json:
- *                      schemas:
+ *                      schema:
  *                          type: object
  *                          properties:
  *                              message:
@@ -47,9 +47,8 @@ const router: Router = express.Router();
  *                                  type: string
  *                                  format: uuid
  */
-
 router.post(
-  "/api/credential-requests",
+  "/credential-requests",
   [
     // Updated validation rules for the new request body
     body("encrypted_body", "encrypted_body must not be empty!").trim().not().isEmpty(),

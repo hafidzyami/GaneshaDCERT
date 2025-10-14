@@ -132,4 +132,5 @@ model InstitutionRegistration {
   website          String
   address          String
   status           RequestStatus @default(PENDING)
+  otp              String?
 }
