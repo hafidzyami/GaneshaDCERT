@@ -4,7 +4,8 @@ import swaggerUi from "swagger-ui-express";
 import cors from "cors";
 import didRoutes from "./routes/did";
 import institutionRegistrationRoutes from "./routes/institutionRegistration";
-import credentialRoutes from "./routes/credential"; 
+import credentialRoutes from "./routes/credential";
+import schemaRoutes from "./routes/schema";
 // Load environment variables
 require("dotenv").config();
 
@@ -82,8 +83,9 @@ app.get("/", (req: Request, res: Response) => {
 });
 
 // Routes
-app.use("/did", didRoutes);
+app.use("/dids", didRoutes);
 app.use("/institution-registration", institutionRegistrationRoutes);
+app.use("/schemas", schemaRoutes);
 app.use("/api", credentialRoutes);
 // Error handling middleware
 app.use((error: any, req: Request, res: Response, next: any) => {
@@ -91,9 +93,9 @@ app.use((error: any, req: Request, res: Response, next: any) => {
   const message = error.message || "An error occurred";
   const data = error.data;
 
-  res.status(status).json({ 
+  res.status(status).json({
     message: message,
-    ...(data && { data })
+    ...(data && { data }),
   });
 });
 

@@ -28,14 +28,14 @@ enum PaymentStatus {
 } 
 
 model VCIssuanceRequest {
-  id         String   @id @default(uuid())
+  id              String   @id @default(uuid())
   encrypted_body  String
-  issuer_did String
-  holder_did String
-  status     RequestStatus @default(PENDING)    
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  deletedAt  DateTime?
+  issuer_did      String
+  holder_did      String
+  status          RequestStatus @default(PENDING)    
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
 }
 
 model VCRenewalRequest {
@@ -133,4 +133,15 @@ model InstitutionRegistration {
   address          String
   status           RequestStatus @default(PENDING)
   otp              String?
+}
+
+model VCSchema {
+  id         String   @id @default(uuid())
+  name       String
+  schema     Json
+  issuer_did String
+  version    Int      @default(1)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
