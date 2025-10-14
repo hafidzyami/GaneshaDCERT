@@ -9,104 +9,143 @@ import {
   hasNoValidationErrors,
 } from "../utils/error";
 
-export const person: RequestHandler = async (req, res, next) => {
+/**
+ * Registers a new DID for a person or institution.
+ * @param req
+ * @param res
+ * @param next
+ */
+export const registerDID: RequestHandler = async (req, res, next) => {
   if (hasNoValidationErrors(validationResult(req))) {
     const { did_string, public_key, role } = req.body;
 
     try {
-      // Checking Role of Registry
-      if (role == "holder") {
-        // Logic of Registry as a Holder
-      } else {
-        // Logic of Registry as a Issuer
-      }
+      // TODO: Implement logic to check if the DID already exists on the blockchain.
+      // const didExists = await checkDIDOnBlockchain(did_string);
+      // if (didExists) {
+      //   throwCustomError("A DID Document already exists with this DID.", 409);
+      // }
 
-      // Call API of created Block into Blockchain
-      const apiUrl = "APIofBlockChain";
-      const response = await axios.post(apiUrl);
+      // TODO: Call the smart contract to write the new DID document to the blockchain.
+      console.log(`Registering DID: ${did_string} with role: ${role}`);
+      // const transaction = await registerDIDOnBlockchain(did_string, public_key, role);
 
-      if (response.status != 200) {
-        throwCustomError("Invalid to created DID Document's block", 500);
-      }
+      // Placeholder for blockchain transaction response
+      const transactionHash =
+        "0x" +
+        [...Array(64)]
+          .map(() => Math.floor(Math.random() * 16).toString(16))
+          .join("");
 
-      const externalData = response.data;
-
-      return res
-        .status(201)
-        .json({ message: "Create DID document successfully" }); // Add DID and transactionHash if Blockchain already to use
+      return res.status(201).json({
+        message: "DID registered successfully",
+        did: did_string,
+        transactionHash: transactionHash,
+      });
     } catch (error) {
       next(addStatusCodeTo(error as Error));
     }
   }
 };
 
+/**
+ * Rotates the key associated with a DID.
+ * @param req
+ * @param res
+ * @param next
+ */
 export const keyRotation: RequestHandler = async (req, res, next) => {
   if (hasNoValidationErrors(validationResult(req))) {
     const { old_public_key, new_public_key, iteration_number } = req.body;
-    const did = req.params.did;
+    const { did } = req.params;
 
     try {
-      // Create block with old_public_key with status false and create block with new_public_key with status true
+      // TODO: Implement logic to find the DID on the blockchain.
+      // const didDocument = await findDIDOnBlockchain(did);
+      // if (!didDocument) {
+      //   throwCustomError("DID not found.", 404);
+      // }
 
-      // Call API of Smart Contract
-      const apiUrl = "APIofBlockChain";
-      const response = await axios.post(apiUrl);
+      // TODO: Call the smart contract to update the key for the DID.
+      console.log(`Rotating key for DID: ${did}`);
+      // await rotateKeyOnBlockchain(did, old_public_key, new_public_key, iteration_number);
 
-      if (response.status != 200) {
-        throwCustomError("Invalid to created DID Document's block", 500);
-      }
-
-      const externalData = response.data;
-
-      return res.status(201).json({ message: "DID key rotation successfully" }); // Add DID and transactionHash if Blockchain already to use
+      return res.status(200).json({ message: "DID key rotated successfully" });
     } catch (error) {
       next(addStatusCodeTo(error as Error));
     }
   }
 };
 
+/**
+ * Deletes a holder's account (DID).
+ * @param req
+ * @param res
+ * @param next
+ */
 export const deleteDID: RequestHandler = async (req, res, next) => {
   if (hasNoValidationErrors(validationResult(req))) {
-    const did = req.params.did;
+    const { did } = req.params;
 
     try {
-      // Revoke All associated VC of DID Holder
+      // TODO: Implement logic to find the DID on the blockchain.
+      // const didDocument = await findDIDOnBlockchain(did);
+      // if (!didDocument) {
+      //   throwCustomError("DID not found.", 404);
+      // }
 
-      // Call API of Smart Contract
-      const apiUrl = "APIofBlockChain";
-      const response = await axios.post(apiUrl);
+      // TODO: Call the smart contract to revoke the DID.
+      // This might involve setting a 'revoked' flag in the DID document.
+      console.log(`Deleting DID: ${did}`);
+      // await revokeDIDOnBlockchain(did);
 
-      if (response.status != 200) {
-        throwCustomError("Invalid to created DID Document's block", 500);
-      }
+      // TODO: Asynchronously initiate batch revocation for all associated VCs.
+      // This could be done via a message queue (RabbitMQ).
 
-      const externalData = response.data;
-
-      return res.status(201).json({ message: "DID key rotation successfully" }); // Add DID and transactionHash if Blockchain already to use
+      return res.status(200).json({ message: "Account deleted successfully" });
     } catch (error) {
       next(addStatusCodeTo(error as Error));
     }
   }
 };
 
+/**
+ * Fetches the public DID document for a given DID.
+ * @param req
+ * @param res
+ * @param next
+ */
 export const getDIDDocument: RequestHandler = async (req, res, next) => {
   if (hasNoValidationErrors(validationResult(req))) {
-    const did = req.params.did;
+    const { did } = req.params;
 
     try {
-      // Revoke All associated VC of DID Holder
+      // TODO: Call the DID resolver on the blockchain to get the document.
+      console.log(`Fetching document for DID: ${did}`);
+      // const didDocument = await resolveDIDOnBlockchain(did);
 
-      // Call API of Smart Contract
-      const apiUrl = "APIofBlockChain";
-      const response = await axios.post(apiUrl);
+      // Placeholder for a DID document
+      const didDocument = {
+        "@context": "https://www.w3.org/ns/did/v1",
+        id: did,
+        verificationMethod: [
+          {
+            id: `${did}#keys-1`,
+            type: "EcdsaSecp256k1VerificationKey2019",
+            controller: did,
+            publicKeyHex: "04e6a...",
+          },
+        ],
+        authentication: [`${did}#keys-1`],
+      };
 
-      if (response.status != 200) {
-        throwCustomError("Invalid to created DID Document's block", 500);
+      if (!didDocument) {
+        throwCustomError("DID Document not found.", 404);
       }
 
-      const externalData = response.data;
-
-      return res.status(201).json({ message: "DID key rotation successfully" }); // Add DID and transactionHash if Blockchain already to use
+      return res.status(200).json({
+        did_document: didDocument,
+      });
     } catch (error) {
       next(addStatusCodeTo(error as Error));
     }

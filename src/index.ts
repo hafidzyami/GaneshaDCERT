@@ -82,7 +82,7 @@ app.get("/", (req: Request, res: Response) => {
 });
 
 // Routes
-app.use("/did", didRoutes);
+app.use("/dids", didRoutes);
 app.use("/institution-registration", institutionRegistrationRoutes);
 
 // Error handling middleware
