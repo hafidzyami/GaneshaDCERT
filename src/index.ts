@@ -2,6 +2,8 @@ import express, { Request, Response, Application } from "express";
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 import cors from "cors";
+import didRoutes from "./routes/did";
+import institutionRegistrationRoutes from "./routes/institutionRegistration";
 
 // Load environment variables
 require("dotenv").config();
@@ -76,6 +78,22 @@ app.get("/", (req: Request, res: Response) => {
     message: "Welcome to GaneshaDCERT API",
     version: "1.0.0",
     timestamp: new Date().toISOString(),
+  });
+});
+
+// Routes
+app.use("/did", didRoutes);
+app.use("/institution-registration", institutionRegistrationRoutes);
+
+// Error handling middleware
+app.use((error: any, req: Request, res: Response, next: any) => {
+  const status = error.statusCode || 500;
+  const message = error.message || "An error occurred";
+  const data = error.data;
+
+  res.status(status).json({
+    message: message,
+    ...(data && { data }),
   });
 });
 
