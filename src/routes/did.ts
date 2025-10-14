@@ -7,7 +7,7 @@ const router: Router = express.Router();
 
 /**
  * @swagger
- * /:
+ * /dids:
  *   post:
  *     summary: API of DID Registry
  *     description: Created DID Document of Holder or Issuer
@@ -18,7 +18,7 @@ const router: Router = express.Router();
  *         description: API status
  */
 router.post(
-  "/",
+  "/dids",
   [
     body("did_string", "A DID Document already exists with this DID.").custom(
       (value: string) => {

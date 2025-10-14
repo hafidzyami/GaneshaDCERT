@@ -29,7 +29,7 @@ enum PaymentStatus {
 
 model VCIssuanceRequest {
   id         String   @id @default(uuid())
-  schema_id  String
+  encrypted_body  String
   issuer_did String
   holder_did String
   status     RequestStatus @default(PENDING)    
@@ -40,7 +40,7 @@ model VCIssuanceRequest {
 
 model VCRenewalRequest {
   id         String   @id @default(uuid())
-  VCs_id     String[] @default(uuid())
+  encrypted_body  String
   issuer_did String
   holder_did String
   status     RequestStatus @default(PENDING)    
@@ -51,7 +51,7 @@ model VCRenewalRequest {
 
 model VCUpdateRequest {
   id         String   @id @default(uuid())
-  VCs_id     String[] @default(uuid()) 
+  encrypted_body  String
   issuer_did String
   holder_did String
   status     RequestStatus @default(PENDING)    
@@ -62,7 +62,7 @@ model VCUpdateRequest {
 
 model VCRevokeRequest {
   id         String   @id @default(uuid())
-  VCs_id     String[] @default(uuid()) 
+  encrypted_body  String
   issuer_did String
   holder_did String
   status     RequestStatus @default(PENDING)    
@@ -82,10 +82,9 @@ model VCResponse {
   order_id     String @default(uuid())
   request_id   String @default(uuid())
   request_type RequestType
-  schema_id    String
   issuer_did   String
   holder_did   String
-  VC           Json?
+  encrypted_body  String
 }
 
 model Order {

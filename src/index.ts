@@ -62,15 +62,15 @@ app.use(
 
 /**
  * @swagger
- * /:
- *   get:
- *     summary: API Welcome & Status
- *     description: Welcome endpoint dengan status RabbitMQ connection
- *     tags:
- *       - System
- *     responses:
- *       200:
- *         description: API status
+ * /
+ * get:
+ * summary: API Welcome & Status
+ * description: Welcome endpoint dengan status RabbitMQ connection
+ * tags:
+ * - System
+ * responses:
+ * 200:
+ * description: API status
  */
 app.get("/", (req: Request, res: Response) => {
   res.json({
