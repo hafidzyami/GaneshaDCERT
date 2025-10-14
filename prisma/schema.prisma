@@ -28,19 +28,19 @@ enum PaymentStatus {
 } 
 
 model VCIssuanceRequest {
-  id         String   @id @default(uuid())
-  schema_id  String
-  issuer_did String
-  holder_did String
-  status     RequestStatus @default(PENDING)    
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  deletedAt  DateTime?
+  id              String   @id @default(uuid())
+  encrypted_body  String
+  issuer_did      String
+  holder_did      String
+  status          RequestStatus @default(PENDING)    
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
 }
 
 model VCRenewalRequest {
   id         String   @id @default(uuid())
-  VCs_id     String[] @default(uuid())
+  encrypted_body  String
   issuer_did String
   holder_did String
   status     RequestStatus @default(PENDING)    
@@ -51,7 +51,7 @@ model VCRenewalRequest {
 
 model VCUpdateRequest {
   id         String   @id @default(uuid())
-  VCs_id     String[] @default(uuid()) 
+  encrypted_body  String
   issuer_did String
   holder_did String
   status     RequestStatus @default(PENDING)    
@@ -62,7 +62,7 @@ model VCUpdateRequest {
 
 model VCRevokeRequest {
   id         String   @id @default(uuid())
-  VCs_id     String[] @default(uuid()) 
+  encrypted_body  String
   issuer_did String
   holder_did String
   status     RequestStatus @default(PENDING)    
@@ -82,10 +82,9 @@ model VCResponse {
   order_id     String @default(uuid())
   request_id   String @default(uuid())
   request_type RequestType
-  schema_id    String
   issuer_did   String
   holder_did   String
-  VC           Json?
+  encrypted_body  String
 }
 
 model Order {
@@ -133,4 +132,16 @@ model InstitutionRegistration {
   website          String
   address          String
   status           RequestStatus @default(PENDING)
+  otp              String?
+}
+
+model VCSchema {
+  id         String   @id @default(uuid())
+  name       String
+  schema     Json
+  issuer_did String
+  version    Int      @default(1)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }

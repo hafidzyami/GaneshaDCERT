@@ -4,7 +4,8 @@ import swaggerUi from "swagger-ui-express";
 import cors from "cors";
 import didRoutes from "./routes/did";
 import institutionRegistrationRoutes from "./routes/institutionRegistration";
-
+import credentialRoutes from "./routes/credential";
+import schemaRoutes from "./routes/schema";
 // Load environment variables
 require("dotenv").config();
 
@@ -64,14 +65,14 @@ app.use(
 /**
  * @swagger
  * /:
- *   get:
- *     summary: API Welcome & Status
- *     description: Welcome endpoint dengan status RabbitMQ connection
- *     tags:
- *       - System
- *     responses:
- *       200:
- *         description: API status
+ *  get:
+ *    summary: API Welcome & Status
+ *    description: Welcome endpoint dengan status RabbitMQ connection
+ *    tags:
+ *      - System
+ *    responses:
+ *      200:
+ *        description: API status
  */
 app.get("/", (req: Request, res: Response) => {
   res.json({
@@ -84,7 +85,8 @@ app.get("/", (req: Request, res: Response) => {
 // Routes
 app.use("/dids", didRoutes);
 app.use("/institution-registration", institutionRegistrationRoutes);
-
+app.use("/schemas", schemaRoutes);
+app.use("/api", credentialRoutes);
 // Error handling middleware
 app.use((error: any, req: Request, res: Response, next: any) => {
   const status = error.statusCode || 500;

@@ -57,7 +57,7 @@ const router: Router = express.Router();
  *        description: Failed to register DID.
  */
 router.post(
-  "/",
+  "/dids",
   [
     body("did_string", "A DID must not be empty!").trim().not().isEmpty(),
     body("public_key", "Public key must not be empty!").trim().not().isEmpty(),
