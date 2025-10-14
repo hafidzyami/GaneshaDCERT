@@ -123,3 +123,14 @@ model PaymentMethod {
   updatedAt         DateTime @updatedAt
   deletedAt         DateTime?
 }
+
+model InstitutionRegistration {
+  id               String @id @default(uuid())
+  email            String @unique
+  name             String
+  phone            String
+  country          String
+  website          String
+  address          String
+  status           RequestStatus @default(PENDING)
+}
