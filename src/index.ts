@@ -2,7 +2,6 @@ import express, { Request, Response, Application } from "express";
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 import cors from "cors";
-import didRoutes from "./routes/did";
 
 // Load environment variables
 require("dotenv").config();
