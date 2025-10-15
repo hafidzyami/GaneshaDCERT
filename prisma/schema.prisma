@@ -135,13 +135,10 @@ model InstitutionRegistration {
   otp              String?
 }
 
-model VCSchema {
-  id         String   @id @default(uuid())
-  name       String
-  schema     Json
-  issuer_did String
-  version    Int      @default(1)
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+model VPRequest {
+  id             String   @id @default(uuid())
+  holder_did     String
+  verifier_did   String
+  list_schema_id String[]
+  createdAt      DateTime @default(now())
 }
