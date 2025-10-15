@@ -32,9 +32,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-    environment:
-      - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672
-      - REDIS_URL=redis://redis:6379
+    env_file:
+      - .env
 
   redis:
     image: redis:7-alpine
