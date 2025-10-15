@@ -86,7 +86,7 @@ app.get("/", (req: Request, res: Response) => {
 app.use("/dids", didRoutes);
 app.use("/institution-registration", institutionRegistrationRoutes);
 app.use("/schemas", schemaRoutes);
-app.use("/api", credentialRoutes);
+app.use("/credential", credentialRoutes);
 // Error handling middleware
 app.use((error: any, req: Request, res: Response, next: any) => {
   const status = error.statusCode || 500;
