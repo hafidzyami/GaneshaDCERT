@@ -134,14 +134,3 @@ model InstitutionRegistration {
   status           RequestStatus @default(PENDING)
   otp              String?
 }
-
-model VCSchema {
-  id         String   @id @default(uuid())
-  name       String
-  schema     Json
-  issuer_did String
-  version    Int      @default(1)
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-}
