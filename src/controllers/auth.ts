@@ -1,36 +1,25 @@
 import { Request, Response } from 'express';
 import { PrismaClient, RequestStatus } from '@prisma/client';
+import { validationResult } from 'express-validator';
 import { generateMagicLinkToken, verifyMagicLinkToken, generateSessionToken } from '../utils/jwtService';
 import { sendMagicLinkEmail } from '../utils/emailService';
 
 const prisma = new PrismaClient();
 
-/**
- * 1. REGISTRASI INSTITUSI
- * POST /api/auth/register
- */
 export const registerInstitution = async (req: Request, res: Response): Promise<void> => {
   try {
+    // Validasi input dari express-validator
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: errors.array(),
+      });
+      return;
+    }
+
     const { name, email, phone, country, website, address } = req.body;
-
-    // Validasi input
-    if (!name || !email || !phone || !country || !website || !address) {
-      res.status(400).json({
-        success: false,
-        message: 'Semua field harus diisi',
-      });
-      return;
-    }
-
-    // Validasi format email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      res.status(400).json({
-        success: false,
-        message: 'Format email tidak valid',
-      });
-      return;
-    }
 
     // Cek apakah email sudah terdaftar
     const existingInstitution = await prisma.institutionRegistration.findUnique({
@@ -77,10 +66,6 @@ export const registerInstitution = async (req: Request, res: Response): Promise<
   }
 };
 
-/**
- * 2. MENDAPATKAN DAFTAR INSTITUSI PENDING (untuk admin)
- * GET /api/auth/pending-institutions
- */
 export const getPendingInstitutions = async (req: Request, res: Response): Promise<void> => {
   try {
     const pendingInstitutions = await prisma.institutionRegistration.findMany({
@@ -116,10 +101,6 @@ export const getPendingInstitutions = async (req: Request, res: Response): Promi
   }
 };
 
-/**
- * 3. MENDAPATKAN SEMUA INSTITUSI (untuk admin)
- * GET /api/auth/institutions
- */
 export const getAllInstitutions = async (req: Request, res: Response): Promise<void> => {
   try {
     const { status } = req.query;
@@ -163,23 +144,21 @@ export const getAllInstitutions = async (req: Request, res: Response): Promise<v
   }
 };
 
-/**
- * 4. APPROVE INSTITUSI & KIRIM MAGIC LINK (untuk admin)
- * POST /api/auth/approve/:institutionId
- */
 export const approveInstitution = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { institutionId } = req.params;
-    const { approvedBy } = req.body;
-
-    // Validasi approvedBy
-    if (!approvedBy) {
+    // Validasi input dari express-validator
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
       res.status(400).json({
         success: false,
-        message: 'approvedBy harus diisi',
+        message: 'Validation error',
+        errors: errors.array(),
       });
       return;
     }
+
+    const { institutionId } = req.params;
+    const { approvedBy } = req.body;
 
     // Cek apakah institusi ada dan masih pending
     const institution = await prisma.institutionRegistration.findUnique({
@@ -229,7 +208,7 @@ export const approveInstitution = async (req: Request, res: Response): Promise<v
     });
 
     // Buat URL magic link (sesuaikan dengan URL frontend Anda)
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl = process.env.FRONTEND_URL;
     const magicLinkUrl = `${frontendUrl}/auth/verify?token=${token}`;
 
     // Kirim email magic link
@@ -266,6 +245,17 @@ export const approveInstitution = async (req: Request, res: Response): Promise<v
  */
 export const rejectInstitution = async (req: Request, res: Response): Promise<void> => {
   try {
+    // Validasi input dari express-validator
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: errors.array(),
+      });
+      return;
+    }
+
     const { institutionId } = req.params;
 
     // Cek apakah institusi ada dan masih pending
@@ -322,15 +312,18 @@ export const rejectInstitution = async (req: Request, res: Response): Promise<vo
  */
 export const verifyMagicLink = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { token } = req.body;
-
-    if (!token) {
+    // Validasi input dari express-validator
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
       res.status(400).json({
         success: false,
-        message: 'Token harus diisi',
+        message: 'Validation error',
+        errors: errors.array(),
       });
       return;
     }
+
+    const { token } = req.body;
 
     // Verifikasi JWT token
     const decoded = verifyMagicLinkToken(token);

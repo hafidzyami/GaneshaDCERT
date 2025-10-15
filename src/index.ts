@@ -3,7 +3,6 @@ import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 import cors from "cors";
 import didRoutes from "./routes/did";
-import institutionRegistrationRoutes from "./routes/institutionRegistration";
 import credentialRoutes from "./routes/credential";
 import schemaRoutes from "./routes/schema";
 import authRoutes from "./routes/auth";
@@ -28,11 +27,11 @@ const swaggerOptions: swaggerJsdoc.Options = {
     },
     servers: [
       {
-        url: `http://localhost:${PORT}`,
+        url: `http://localhost:${PORT}/api/v1`,
         description: "Development Server",
       },
       {
-        url: "https://api-dcert.ganeshait.com",
+        url: "https://api-dcert.ganeshait.com/api/v1",
         description: "Production Server",
       },
     ],
@@ -90,12 +89,11 @@ app.get("/", (req: Request, res: Response) => {
   });
 });
 
-// Routes
-app.use("/dids", didRoutes);
-app.use("/institution-registration", institutionRegistrationRoutes);
-app.use("/schemas", schemaRoutes);
-app.use("/credential", credentialRoutes);
-app.use("/api/auth", authRoutes);
+// Routes with /api/v1 prefix
+app.use("/api/v1/dids", didRoutes);
+app.use("/api/v1/schemas", schemaRoutes);
+app.use("/api/v1/credentials", credentialRoutes);
+app.use("/api/v1/auth", authRoutes);
 // Error handling middleware
 app.use((error: any, req: Request, res: Response, next: any) => {
   const status = error.statusCode || 500;
