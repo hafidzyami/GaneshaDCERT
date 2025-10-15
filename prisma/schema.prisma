@@ -25,50 +25,50 @@ enum PaymentStatus {
   UNPAID
   PAID
   CANCELED
-} 
+}
 
 model VCIssuanceRequest {
-  id              String   @id @default(uuid())
-  encrypted_body  String
-  issuer_did      String
-  holder_did      String
-  status          RequestStatus @default(PENDING)    
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  deletedAt       DateTime?
+  id             String        @id @default(uuid())
+  encrypted_body String
+  issuer_did     String
+  holder_did     String
+  status         RequestStatus @default(PENDING)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
 }
 
 model VCRenewalRequest {
-  id         String   @id @default(uuid())
-  encrypted_body  String
-  issuer_did String
-  holder_did String
-  status     RequestStatus @default(PENDING)    
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  deletedAt  DateTime?
+  id             String        @id @default(uuid())
+  encrypted_body String
+  issuer_did     String
+  holder_did     String
+  status         RequestStatus @default(PENDING)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
 }
 
 model VCUpdateRequest {
-  id         String   @id @default(uuid())
-  encrypted_body  String
-  issuer_did String
-  holder_did String
-  status     RequestStatus @default(PENDING)    
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  deletedAt  DateTime?
+  id             String        @id @default(uuid())
+  encrypted_body String
+  issuer_did     String
+  holder_did     String
+  status         RequestStatus @default(PENDING)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
 }
 
 model VCRevokeRequest {
-  id         String   @id @default(uuid())
-  encrypted_body  String
-  issuer_did String
-  holder_did String
-  status     RequestStatus @default(PENDING)    
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  deletedAt  DateTime?
+  id             String        @id @default(uuid())
+  encrypted_body String
+  issuer_did     String
+  holder_did     String
+  status         RequestStatus @default(PENDING)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
 }
 
 model VPSharing {
@@ -78,20 +78,20 @@ model VPSharing {
 }
 
 model VCResponse {
-  id           String @id @default(uuid())
-  order_id     String @default(uuid())
-  request_id   String @default(uuid())
-  request_type RequestType
-  issuer_did   String
-  holder_did   String
-  encrypted_body  String
+  id             String      @id @default(uuid())
+  order_id       String      @default(uuid())
+  request_id     String      @default(uuid())
+  request_type   RequestType
+  issuer_did     String
+  holder_did     String
+  encrypted_body String
 }
 
 model Order {
-  id                String @id @default(uuid())
-  payment_method_id String @default(uuid())
+  id                String        @id @default(uuid())
+  payment_method_id String        @default(uuid())
   payment_payload   Json
-  VCs_id            String[] @default(uuid())
+  VCs_id            String[]      @default(uuid())
   schemas_id        String[]
   request_type      RequestType
   holder_did        String
@@ -100,39 +100,43 @@ model Order {
   product_fee       Decimal
   service_fee       Decimal
   total_fee         Decimal
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
   deletedAt         DateTime?
 }
 
 model PaymentMethod {
-  id                String @id @default(uuid())
-  type              String
-  group             String
-  name              String
-  bank_code         String
-  sender_bank_type  String
-  description       String
-  deadline          Int
-  icon              String
-  availability      Boolean @default(false)
-  fee_fixed         Decimal
-  fee_percent       Decimal
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  deletedAt         DateTime?
+  id               String    @id @default(uuid())
+  type             String
+  group            String
+  name             String
+  bank_code        String
+  sender_bank_type String
+  description      String
+  deadline         Int
+  icon             String
+  availability     Boolean   @default(false)
+  fee_fixed        Decimal
+  fee_percent      Decimal
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
 }
 
 model InstitutionRegistration {
-  id               String @id @default(uuid())
-  email            String @unique
-  name             String
-  phone            String
-  country          String
-  website          String
-  address          String
-  status           RequestStatus @default(PENDING)
-  otp              String?
+  id           String        @id @default(uuid())
+  email        String        @unique
+  name         String
+  phone        String
+  country      String
+  website      String
+  address      String
+  status       RequestStatus @default(PENDING)
+  approvedBy   String?
+  approvedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  magicLinks   MagicLink[]
 }
 
 model VCSchema {
@@ -144,4 +148,19 @@ model VCSchema {
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+
+model MagicLink {
+  id             String                   @id @default(uuid())
+  institutionId  String
+  token          String                   @unique
+  expiresAt      DateTime
+  used           Boolean                  @default(false)
+  usedAt         DateTime?
+  createdAt      DateTime                 @default(now())
+  institution    InstitutionRegistration  @relation(fields: [institutionId], references: [id])
+
+  @@index([token])
+  @@index([institutionId])
 }

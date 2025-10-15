@@ -6,6 +6,7 @@ import didRoutes from "./routes/did";
 import institutionRegistrationRoutes from "./routes/institutionRegistration";
 import credentialRoutes from "./routes/credential";
 import schemaRoutes from "./routes/schema";
+import authRoutes from "./routes/auth";
 // Load environment variables
 require("dotenv").config();
 
@@ -94,6 +95,7 @@ app.use("/dids", didRoutes);
 app.use("/institution-registration", institutionRegistrationRoutes);
 app.use("/schemas", schemaRoutes);
 app.use("/api", credentialRoutes);
+app.use("/api/auth", authRoutes);
 // Error handling middleware
 app.use((error: any, req: Request, res: Response, next: any) => {
   const status = error.statusCode || 500;
