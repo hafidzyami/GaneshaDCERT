@@ -36,7 +36,14 @@ const swaggerOptions: swaggerJsdoc.Options = {
       },
     ],
   },
-  apis: ["./src/routes/*.ts", "./src/index.ts"],
+  apis: [
+    `./${process.env.NODE_ENV === "production" ? "dist" : "src"}/routes/*.${
+      process.env.NODE_ENV === "production" ? "js" : "ts"
+    }`,
+    `./${process.env.NODE_ENV === "production" ? "dist" : "src"}/index.${
+      process.env.NODE_ENV === "production" ? "js" : "ts"
+    }`,
+  ],
 };
 
 // Generate spesifikasi Swagger
