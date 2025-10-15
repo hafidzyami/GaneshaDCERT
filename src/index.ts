@@ -21,7 +21,7 @@ const swaggerOptions: swaggerJsdoc.Options = {
   definition: {
     openapi: "3.0.0",
     info: {
-      title: "GaneshaDCERT API with RabbitMQ Integration",
+      title: "GaneshaDCERT API Documentation",
       version: "1.0.0",
       description: "",
     },
@@ -31,7 +31,7 @@ const swaggerOptions: swaggerJsdoc.Options = {
         description: "Development Server",
       },
       {
-        url: "https://api.ganesha-dcert.com",
+        url: "https://api-dcert.ganeshait.com",
         description: "Production Server",
       },
     ],
