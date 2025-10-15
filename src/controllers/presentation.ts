@@ -42,26 +42,44 @@ export const requestVP: RequestHandler = async (req, res, next) => {
 };
 
 /**
- * Endpoint untuk 'POST /api/presentations'.
- * Sesuai alur "Initiated by Holder" (Hal. 39), fungsi ini adalah tempat
- * Holder mengirimkan VP yang sudah disiapkan ke backend untuk disimpan sementara.
+ * Holder fetches the request VP to assign it.
+ */
+export const getVPRequestDetails: RequestHandler = async (req, res, next) => {
+  if (hasNoValidationErrors(validationResult(req))) {
+    const vpRequestId = req.params.vpReqId;
+
+    try {
+      const vpRequest = await prisma.vPRequest.findUnique({
+        where: { vpRequestId },
+      });
+
+      if (!vpRequest) {
+        throwCustomError("VP Request not found.", 404);
+      }
+
+      return res.status(201).json({
+        verifier_did: vpRequest.verifier_did,
+        list_schema_id: vpRequest.list_schema_id,
+      });
+    } catch (error) {
+      next(addStatusCodeTo(error as Error));
+    }
+  }
+};
+
+/**
+ * Holder creates and stores a VP in response to a request.
  */
 export const storeVP: RequestHandler = async (req, res, next) => {
   if (hasNoValidationErrors(validationResult(req))) {
     const { holder_did, vp } = req.body;
     try {
-      // Menggunakan model `VPSharing` sebagai pengganti Redis untuk penyimpanan
-      // sementara, sesuai dengan diagram "Set VP in Redis".
       const sharedVp = await prisma.vPSharing.create({
         data: {
           holder_did,
           VP: vp,
         },
       });
-
-      console.log(
-        `[VP Flow] Holder [${holder_did}] menyimpan VP dengan ID: ${sharedVp.id}`
-      );
 
       return res.status(201).json({
         message: "VP stored successfully and is available for retrieval.",
@@ -74,9 +92,7 @@ export const storeVP: RequestHandler = async (req, res, next) => {
 };
 
 /**
- * Endpoint untuk 'GET /api/presentations/{vpId}'.
- * Sesuai alur "Initiated by Holder" (Hal. 39), di sinilah Verifier
- * mengambil VP dari backend menggunakan ID unik yang didapat dari QR code.
+ * Verifier fetches the stored VP to verify it.
  */
 export const getVP: RequestHandler = async (req, res, next) => {
   if (hasNoValidationErrors(validationResult(req))) {
@@ -94,15 +110,13 @@ export const getVP: RequestHandler = async (req, res, next) => {
         );
       }
 
-      // Alur "get & delete VP from Redis" pada diagram (Hal. 39)
-      // mengindikasikan bahwa VP dihapus setelah berhasil diambil untuk
-      // memastikan hanya bisa digunakan satu kali.
+      // Flow "get & delete VP from Redis"
       await prisma.vPSharing.delete({
         where: { id: vpId },
       });
 
       console.log(
-        `[VP Flow] Verifier mengambil VP dengan ID: ${vpId}. VP sekarang dihapus.`
+        `Verifier already derive VP with VP_ID: ${vpId}. VP'll delete.`
       );
 
       return res.status(200).json({
