@@ -134,3 +134,11 @@ model InstitutionRegistration {
   status           RequestStatus @default(PENDING)
   otp              String?
 }
+
+model VPRequest {
+  id             String   @id @default(uuid())
+  holder_did     String
+  verifier_did   String
+  list_schema_id String[]
+  createdAt      DateTime @default(now())
+}

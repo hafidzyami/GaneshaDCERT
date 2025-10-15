@@ -21,12 +21,12 @@ export const getAllVCSchemas: RequestHandler = async (req, res, next) => {
     const whereClause = issuerDid ? { issuer_did: issuerDid as string } : {};
 
     // Change with await blockchain response
-    const schemas = await prisma.vCSchema.findMany({
-      where: whereClause,
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+    const schemas = ""; //await prisma.vCSchema.findMany({
+    //   where: whereClause,
+    //   orderBy: {
+    //     createdAt: "desc",
+    //   },
+    // });
 
     return res.status(200).json(schemas);
   } catch (error) {
