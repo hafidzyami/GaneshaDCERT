@@ -28,7 +28,7 @@ services:
     env_file:
       - .env
     ports:
-      - "127.0.0.1:3000:3069"
+      - "127.0.0.1:3069:3069"
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -48,8 +48,8 @@ services:
       - FRONTEND_URL=${FRONTEND_URL}
       - MESSAGE_TTL=${MESSAGE_TTL}
       - BLOCKCHAIN_RPC_URL=${BLOCKCHAIN_RPC_URL}
-      - DID_CONTRACT_ADDRESS={DID_CONTRACT_ADDRESS}
-      - ACCOUNT_PRIVATE_KEY={ACCOUNT_PRIVATE_KEY}
+      - DID_CONTRACT_ADDRESS=${DID_CONTRACT_ADDRESS}
+      - ACCOUNT_PRIVATE_KEY=${ACCOUNT_PRIVATE_KEY}
 
   redis:
     image: redis:7-alpine
