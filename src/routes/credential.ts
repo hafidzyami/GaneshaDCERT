@@ -9,7 +9,7 @@ const router: Router = express.Router();
 
 /**
  * @swagger
- * /credential/requests:
+ * api/v1/credential/requests:
  *  post:
  *      summary: Request a Verifiable Credential
  *      description: A holder sends an encrypted request for a VC to an issuer.
@@ -60,7 +60,7 @@ router.post(
 
 /**
  * @swagger
- * /credential/get-requests:
+ * api/v1/credential/get-requests:
  *  get:
  *      summary: Get all VC requests by type
  *      description: Retrieve all Verifiable Credential lifecycle requests, filtered by a specific type and optionally by the issuer's DID.
@@ -100,7 +100,7 @@ router.get(
 
 /**
  * @swagger
- * /credential/issue:
+ * api/v1/credential/issue:
  *  post:
  *      summary: Issue a Verifiable Credential
  *      description: An issuer sends an encrypted and issued VC to a holder, finalizing the issuance process.
@@ -160,7 +160,7 @@ router.post(
 
 /**
  * @swagger
- * /credential/credentials:
+ * api/v1/credential/credentials:
  *  get:
  *    summary: Get a list of VCs for a specific holder
  *    description: Retrieves a list of all Verifiable Credentials associated with a specific holder DID.
@@ -217,7 +217,7 @@ router.get(
 
 /**
  * @swagger
- * /credential/update-request:
+ * api/v1/credential/update-request:
  *  post:
  *    summary: Request the update of an existing VC
  *    description: A holder sends an encrypted request to an issuer to update an existing Verifiable Credential.
@@ -270,7 +270,7 @@ router.post(
 
 /**
  * @swagger
- * /credential/renew-requests:
+ * api/v1/credential/renew-requests:
  *  post:
  *      summary: Request the renewal of an existing VC
  *      description: A holder sends an encrypted request to an issuer to renew an existing Verifiable Credential.
@@ -322,7 +322,7 @@ router.post(
 
 /**
  * @swagger
- * /credential/revoke-request:
+ * api/v1/credential/revoke-request:
  *  post:
  *      summary: Request the revocation of an existing VC
  *      description: A holder sends an encrypted request to an issuer to revoke an existing Verifiable Credential.
@@ -374,7 +374,7 @@ router.post(
 
 /**
  * @swagger
- * /credential/add-status-block:
+ * api/v1/credential/add-status-block:
  *  post:
  *      summary: Insert a new VC status block to the blockchain
  *      description: Submits a transaction to the blockchain to create a new block for tracking VC status (e.g., active, revoked).
@@ -436,7 +436,7 @@ router.post(
 
 /**
  * @swagger
- * /credential/{vcId}/status:
+ * api/v1/credential/{vcId}/status:
  *  get:
  *    summary: Check the status of a specific VC
  *    description: Performs a publicly verifiable status check of a Verifiable Credential on the blockchain.
