@@ -1,40 +1,52 @@
 services:
-  # rabbitmq:
-  #   image: rabbitmq:3-management-alpine
-  #   container_name: rabbitmq
-  #   hostname: rabbitmq
-  #   ports:
-  #     - "127.0.0.1:5672:5672"
-  #     - "127.0.0.1:15672:15672"
-  #   environment:
-  #     RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
-  #     RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
-  #     RABBITMQ_DEFAULT_VHOST: /
-  #   volumes:
-  #     - rabbitmq-data:/var/lib/rabbitmq
-  #   healthcheck:
-  #     test: ["CMD", "rabbitmq-diagnostics", "ping"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 5
-  #   restart: unless-stopped
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    hostname: rabbitmq
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
 
   ganeshadcert-api:
     build: .
     container_name: ganeshadcert-api
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3000:3069"
     depends_on:
       rabbitmq:
         condition: service_healthy
       redis:
         condition: service_started
     environment:
-      # - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672
+      - DATABASE_URL=${DATABASE_URL}
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672
       - REDIS_URL=redis://redis:6379
+      - PORT=${PORT}
+      - NODE_ENV=${NODE_ENV}
+      - JWT_SECRET=${JWT_SECRET}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - MESSAGE_TTL=${MESSAGE_TTL}
 
   redis:
     image: redis:7-alpine

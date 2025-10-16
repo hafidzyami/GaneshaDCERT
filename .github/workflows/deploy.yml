@@ -29,25 +29,30 @@ jobs:
           script: |
             cd /www/ganeshadcert
             git pull origin dev
+
+            # 1. Hentikan semua container yang sedang berjalan
+            docker compose down
+
+            # 2. Hapus semua image yang tidak terpakai untuk memastikan build fresh
+            docker image prune -af
+
+            # 3. Hapus build cache Docker untuk memastikan build benar-benar fresh
+            docker builder prune -af
+
+            # 4. Ambil source code terbaru dari branch main
+            git pull origin main
             
-            if ! docker compose version &> /dev/null; then
-              echo "Docker Compose plugin not found, please install it first"
-              exit 1
-            fi
-            
-            if ! docker compose ps | grep -q "rabbitmq.*Up"; then
-              docker compose up -d
-              sleep 10
-            fi
-            
-            npm install
-            npx prisma generate
-            npx prisma migrate deploy
-            
-            rm -rf dist
-            npm run build
-            
-            pm2 delete ganeshadcert || true
-            pm2 startOrRestart pm2.config.js --env dev
-            pm2 save
-            pm2 startup
+            # 5. Buat file .env dari secrets GitHub
+            echo "${{ secrets.ENTIRE_ENV_FILE }}" > .env
+
+            # 6. Build ulang dengan --no-cache dan --pull untuk memastikan base image juga fresh
+            docker compose build --no-cache --pull
+
+            # 7. Jalankan migrasi di container sementara
+            docker compose run --rm ganeshadcert-api npx prisma migrate deploy
+
+            # 8. Jalankan semua service di background
+            docker compose up -d
+
+            # 9. Cleanup image yang tidak terpakai lagi
+            docker image prune -af

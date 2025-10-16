@@ -23,29 +23,36 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.VPS_HOST_PROD }}      # <-- Gunakan secrets untuk PROD
+          host: ${{ secrets.VPS_HOST_PROD }}
           username: ${{ secrets.VPS_USER_PROD }}   # <-- Gunakan secrets untuk PROD
           key: ${{ secrets.VPS_SSH_KEY_PROD }}      # <-- Gunakan secrets untuk PROD
           script: |
             # Pindah ke direktori aplikasi
             cd /var/www/ganeshadcert-prod
 
-            # Ambil source code terbaru dari branch main
-            git pull origin main
-            
-            # Buat file .env dari secrets GitHub
-            echo "${{ secrets.ENTIRE_ENV_FILE }}" > .env
-
-            # 1. Build dulu, jika gagal, skrip akan berhenti
-            docker compose build --no-cache
-
-            # 2. Hentikan yang lama
+            # 1. Hentikan semua container yang sedang berjalan
             docker compose down
 
-            # 3. Jalankan migrasi di kontainer baru secara sementara
+            # 2. Hapus semua image yang tidak terpakai untuk memastikan build fresh
+            docker image prune -af
+
+            # 3. Hapus build cache Docker untuk memastikan build benar-benar fresh
+            docker builder prune -af
+
+            # 4. Ambil source code terbaru dari branch main
+            git pull origin main
+            
+            # 5. Buat file .env dari secrets GitHub
+            echo "${{ secrets.ENTIRE_ENV_FILE }}" > .env
+
+            # 6. Build ulang dengan --no-cache dan --pull untuk memastikan base image juga fresh
+            docker compose build --no-cache --pull
+
+            # 7. Jalankan migrasi di container sementara
             docker compose run --rm ganeshadcert-api npx prisma migrate deploy
 
-            # 4. Jalankan semua service di background
+            # 8. Jalankan semua service di background
             docker compose up -d
 
+            # 9. Cleanup image yang tidak terpakai lagi
             docker image prune -af
