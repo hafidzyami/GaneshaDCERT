@@ -69,7 +69,6 @@ router.get(
  *                      properties:
  *                          id:
  *                              type: string
- *                              description: A unique identifier for the schema.
  *                              example: "sch:hid:12345"
  *                          name:
  *                              type: string
@@ -77,18 +76,10 @@ router.get(
  *                          schema:
  *                              type: object
  *                              example:
- *                                  type: "object"
  *                                  properties:
- *                                      major:
- *                                          type: "string"
- *                                          example: "Bachelor's Degree"
- *                                      issuer_did:
- *                                          type: string
- *                                          example: "did:example:issuer123"
- *                                      version:
- *                                          type: integer
- *                                          description: Initial version, defaults to 1.
- *                                          example: 1
+ *                                      major: "Bachelor's Degree"
+ *                                      issuer_did: "did:example:issuer123"
+ *                                      version: 1
  *      responses:
  *          201:
  *              description: VC Schema registered successfully.

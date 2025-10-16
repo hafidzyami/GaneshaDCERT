@@ -46,11 +46,11 @@ export const requestVP: RequestHandler = async (req, res, next) => {
  */
 export const getVPRequestDetails: RequestHandler = async (req, res, next) => {
   if (hasNoValidationErrors(validationResult(req))) {
-    const vpRequestId = req.params.vpReqId;
+    const vpReqId = req.params.vpReqId;
 
     try {
       const vpRequest = await prisma.vPRequest.findUnique({
-        where: { vpRequestId },
+        where: { id: vpReqId },
       });
 
       if (!vpRequest) {
@@ -58,8 +58,8 @@ export const getVPRequestDetails: RequestHandler = async (req, res, next) => {
       }
 
       return res.status(201).json({
-        verifier_did: vpRequest.verifier_did,
-        list_schema_id: vpRequest.list_schema_id,
+        verifier_did: vpRequest?.verifier_did,
+        list_schema_id: vpRequest?.list_schema_id,
       });
     } catch (error) {
       next(addStatusCodeTo(error as Error));
@@ -99,7 +99,7 @@ export const getVP: RequestHandler = async (req, res, next) => {
     const { vpId } = req.params;
     try {
       // Mencari VP di `VPSharing`.
-      const sharedVp = await prisma.vPSharing.findUnique({
+      const sharedVp = await prisma.vPSharing.findFirstOrThrow({
         where: { id: vpId },
       });
 
@@ -120,7 +120,7 @@ export const getVP: RequestHandler = async (req, res, next) => {
       );
 
       return res.status(200).json({
-        vp: sharedVp.VP,
+        vp: sharedVp?.VP,
       });
     } catch (error) {
       next(addStatusCodeTo(error as Error));

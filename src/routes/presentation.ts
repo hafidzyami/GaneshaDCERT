@@ -7,7 +7,7 @@ const router: Router = express.Router();
 
 /**
  * @swagger
- * /presentation/requests:
+ * /presentations/request:
  *  post:
  *    summary: Request a Verifiable Presentation
  *    description: A Verifier requests a Verifiable Presentation (VP) from a Holder. This is the starting point for the Verifier-initiated flow.
@@ -49,7 +49,7 @@ const router: Router = express.Router();
  *                  type: string
  */
 router.post(
-  "/requests",
+  "/request",
   [
     body("holder_did", "Holder DID is required").not().isEmpty(),
     body("verifier_did", "Verifier DID is required").not().isEmpty(),
@@ -63,7 +63,7 @@ router.post(
 
 /**
  * @swagger
- * /api/presentations/{vpReqId}:
+ * /presentations/request/{vpReqId}:
  *  get:
  *    summary: Holder fetches the request VP
  *    description: A Holder fetches the details of a VP request to see what is being asked for.
@@ -95,8 +95,13 @@ router.post(
  *        description: VP request not found.
  */
 router.get(
-  "/presentations/:vpReqId",
-  [param("vpReqId", "A valid VP Request ID is required").isUUID()],
+  "/request/:vpReqId",
+  [
+    param("vpReqId", "A valid VP Request ID is required")
+      .isUUID()
+      .not()
+      .isEmpty(),
+  ],
   vp.getVPRequestDetails
 );
 
