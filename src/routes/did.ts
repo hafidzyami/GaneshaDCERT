@@ -61,9 +61,9 @@ router.post(
   [
     body("did_string", "A DID must not be empty!").trim().not().isEmpty(),
     body("public_key", "Public key must not be empty!").trim().not().isEmpty(),
-    body("role", "Role must be either holder or issuer!")
+    body("role", "Role must be either individual or institution!")
       .trim()
-      .isIn(["holder", "issuer"]),
+      .isIn(["individual", "institution"]),
   ],
   did.registerDID
 );
@@ -215,6 +215,17 @@ router.get(
   "/:did/document",
   [param("did", "DID must not be empty!").trim().not().isEmpty()],
   did.getDIDDocument
+);
+
+router.get(
+  "/check/:did",
+  [param("did", "DID must not be empty!").trim().not().isEmpty()],
+  did.checkDID
+);
+
+router.get(
+  "/blocks",
+  did.numberofBlocks
 );
 
 export default router;

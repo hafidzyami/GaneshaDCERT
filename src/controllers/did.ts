@@ -1,6 +1,7 @@
 import { RequestHandler } from "express";
 import { validationResult } from "express-validator";
 import axios from "axios";
+import * as blockchain from "../utils/blockchainService";
 import "dotenv/config";
 
 import {
@@ -28,25 +29,69 @@ export const registerDID: RequestHandler = async (req, res, next) => {
 
       // TODO: Call the smart contract to write the new DID document to the blockchain.
       console.log(`Registering DID: ${did_string} with role: ${role}`);
+      await blockchain.registerDIDOnChain(did_string, public_key);
       // const transaction = await registerDIDOnBlockchain(did_string, public_key, role);
 
       // Placeholder for blockchain transaction response
-      const transactionHash =
-        "0x" +
-        [...Array(64)]
-          .map(() => Math.floor(Math.random() * 16).toString(16))
-          .join("");
+      // const transactionHash =
+      //   "0x" +
+      //   [...Array(64)]
+      //     .map(() => Math.floor(Math.random() * 16).toString(16))
+      //     .join("");
 
       return res.status(201).json({
         message: "DID registered successfully",
         did: did_string,
-        transactionHash: transactionHash,
+        // transactionHash: transactionHash,
       });
     } catch (error) {
       next(addStatusCodeTo(error as Error));
     }
   }
 };
+
+/**
+ * Registers a new DID for a person or institution.
+ * @param req
+ * @param res
+ * @param next
+ */
+export const checkDID: RequestHandler = async (req, res, next) => {
+  if (hasNoValidationErrors(validationResult(req))) {
+    const { did } = req.params;
+
+    try {
+      const didExists = await blockchain.checkDIDOnChain(did);
+      if (!didExists) {
+        throwCustomError("DID not found.", 404);
+      }
+
+      return res.status(200).json({
+        message: "DID exists",
+        did,
+      });
+    } catch (error) {
+      next(addStatusCodeTo(error as Error));
+    }
+  }
+};
+
+export const numberofBlocks: RequestHandler = async (req, res, next) => {
+  if (hasNoValidationErrors(validationResult(req))) {
+
+    try {
+      const blockCount = await blockchain.getNumberOfBlocksOnChain();
+
+      return res.status(200).json({
+        message: "Number of blocks",
+        blockCount,
+      });
+    } catch (error) {
+      next(addStatusCodeTo(error as Error));
+    }
+  }
+};
+
 
 /**
  * Rotates the key associated with a DID.
