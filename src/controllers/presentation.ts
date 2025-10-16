@@ -1,7 +1,6 @@
 import { RequestHandler } from "express";
 import { validationResult } from "express-validator";
 import { PrismaClient } from "@prisma/client";
-import { v4 as uuidv4 } from "uuid";
 
 import {
   throwCustomError,
@@ -19,8 +18,6 @@ export const requestVP: RequestHandler = async (req, res, next) => {
     const { holder_did, verifier_did, list_schema_id } = req.body;
 
     try {
-      const requestId = uuidv4();
-
       const vpRequest = await prisma.vPRequest.create({
         data: {
           holder_did,
@@ -33,7 +30,7 @@ export const requestVP: RequestHandler = async (req, res, next) => {
 
       return res.status(201).json({
         message: "VP request sent successfully. Awaiting Holder's response.",
-        vp_request_id: requestId,
+        vp_request_id: vpRequest.id,
       });
     } catch (error) {
       next(addStatusCodeTo(error as Error));
