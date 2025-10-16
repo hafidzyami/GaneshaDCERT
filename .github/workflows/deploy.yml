@@ -43,7 +43,7 @@ jobs:
             git pull origin main
             
             # 5. Buat file .env dari secrets GitHub
-            echo "${{ secrets.ENTIRE_ENV_FILE }}" > .env
+            echo "${{ secrets.ENTIRE_ENV_FILE_STAGING }}" > .env
 
             # 6. Build ulang dengan --no-cache dan --pull untuk memastikan base image juga fresh
             docker compose build --no-cache --pull
