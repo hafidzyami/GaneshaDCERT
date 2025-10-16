@@ -23,7 +23,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.VPS_HOST_PROD }}      # <-- Gunakan secrets untuk PROD
+          host: ${{ secrets.VPS_HOST_PROD }}
           username: ${{ secrets.VPS_USER_PROD }}   # <-- Gunakan secrets untuk PROD
           key: ${{ secrets.VPS_SSH_KEY_PROD }}      # <-- Gunakan secrets untuk PROD
           script: |
