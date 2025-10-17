@@ -172,3 +172,12 @@ model VPRequest {
   list_schema_id String[]
   createdAt      DateTime @default(now())
 }
+
+model Admin{
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

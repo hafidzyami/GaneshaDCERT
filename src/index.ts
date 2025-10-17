@@ -6,6 +6,7 @@ import didRoutes from "./routes/did";
 import credentialRoutes from "./routes/credential";
 import schemaRoutes from "./routes/schema";
 import authRoutes from "./routes/auth";
+import adminAuthRoutes from "./routes/adminAuth";
 import presentationRoutes from "./routes/presentation";
 // Load environment variables
 require("dotenv").config();
@@ -95,6 +96,7 @@ app.use("/api/v1/dids", didRoutes);
 app.use("/api/v1/schemas", schemaRoutes);
 app.use("/api/v1/credentials", credentialRoutes);
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/admin/auth", adminAuthRoutes);
 app.use("/api/v1/presentations", presentationRoutes);
 // Error handling middleware
 app.use((error: any, req: Request, res: Response, next: any) => {

@@ -19,6 +19,9 @@ build/
 .env.production.local
 .env.*
 
+# scripts
+scripts/
+
 # Runtime data
 pids
 *.pid
