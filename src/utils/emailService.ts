@@ -33,7 +33,7 @@ export const sendMagicLinkEmail = async ({
     const mailOptions = {
       from: `"GaneshaDCERT" <${process.env.SMTP_USER}>`,
       to,
-      subject: 'Akun Anda Telah Disetujui - Magic Link Login',
+      subject: 'Akun Anda Telah Disetujui',
       html: `
         <!DOCTYPE html>
         <html>
@@ -76,21 +76,21 @@ export const sendMagicLinkEmail = async ({
         <body>
           <div class="container">
             <div class="content">
-              <h2>Selamat, ${name}!</h2>
-              <p>Akun Anda telah disetujui oleh administrator.</p>
-              <p>Klik tombol di bawah ini untuk login ke sistem GaneshaDCERT:</p>
-              <a href="${magicLink}" class="button">Login ke GaneshaDCERT</a>
-              <p><strong>Catatan:</strong></p>
+              <h2>Welcome, ${name}!</h2>
+              <p>Your account has been approved by the administrator.</p>
+              <p>Click the button below to log in to the GaneshaDCERT system:</p>
+              <a href="${magicLink}" class="button">Login to GaneshaDCERT</a>
+              <p><strong>Note:</strong></p>
               <ul>
-                <li>Link ini berlaku selama 24 jam</li>
-                <li>Link ini hanya dapat digunakan satu kali</li>
-                <li>Jangan bagikan link ini ke siapapun</li>
+                <li>This link is valid for 24 hours</li>
+                <li>This link can only be used once</li>
+                <li>Do not share this link with anyone</li>
               </ul>
-              <p>Jika tombol di atas tidak berfungsi, salin dan tempel URL berikut ke browser Anda:</p>
+              <p>If the button above does not work, copy and paste the following URL into your browser:</p>
               <p style="word-break: break-all; color: #666;">${magicLink}</p>
             </div>
             <div class="footer">
-              <p>Email ini dikirim secara otomatis. Mohon tidak membalas email ini.</p>
+              <p>This email was sent automatically. Please do not reply to this email.</p>
               <p>&copy; 2025 GaneshaDCERT. All rights reserved.</p>
             </div>
           </div>
