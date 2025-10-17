@@ -33,7 +33,7 @@ export const sendMagicLinkEmail = async ({
     const mailOptions = {
       from: `"GaneshaDCERT" <${process.env.SMTP_USER}>`,
       to,
-      subject: 'Akun Anda Telah Disetujui',
+      subject: 'Your GaneshaDCERT Institution Account is Approved',
       html: `
         <!DOCTYPE html>
         <html>
