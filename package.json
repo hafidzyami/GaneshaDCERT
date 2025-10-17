@@ -12,6 +12,8 @@
     "dev": "nodemon src/index.ts",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
+    "create-admin": "ts-node scripts/createAdmin.ts",
+    "reset-admin-password": "ts-node scripts/resetAdminPassword.ts",
     "rabbitmq:start": "docker-compose -f docker-compose.yml up -d",
     "rabbitmq:stop": "docker-compose -f docker-compose.yml down",
     "rabbitmq:restart": "docker-compose -f docker-compose.yml restart",

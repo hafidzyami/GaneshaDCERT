@@ -10,6 +10,7 @@ import {
   getProfile,
 } from '../controllers/auth';
 import { authMiddleware } from '../middlewares/auth';
+import { adminAuthMiddleware } from '../middlewares/adminAuth';
 
 const router: Router = express.Router();
 
@@ -201,7 +202,7 @@ router.post(
  *       500:
  *         description: Internal server error
  */
-router.get('/pending-institutions', getPendingInstitutions);
+router.get('/pending-institutions', adminAuthMiddleware, getPendingInstitutions);
 
 /**
  * @swagger
@@ -239,6 +240,7 @@ router.get('/pending-institutions', getPendingInstitutions);
  */
 router.get(
   '/institutions',
+  adminAuthMiddleware,
   [
     query('status')
       .optional()
@@ -303,6 +305,7 @@ router.get(
  */
 router.post(
   '/approve/:institutionId',
+  adminAuthMiddleware,
   [
     param('institutionId', 'Invalid institution ID')
       .trim()
@@ -356,6 +359,7 @@ router.post(
  */
 router.post(
   '/reject/:institutionId',
+  adminAuthMiddleware,
   [
     param('institutionId', 'Invalid institution ID')
       .trim()

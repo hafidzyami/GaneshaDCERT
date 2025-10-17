@@ -7,7 +7,7 @@ const router: Router = express.Router();
 
 /**
  * @swagger
- * /dids:
+ * /:
  *  post:
  *    summary: Register a new DID
  *    description: Register a new DID for a person or institution. The DID is written to the blockchain.
@@ -57,7 +57,7 @@ const router: Router = express.Router();
  *        description: Failed to register DID.
  */
 router.post(
-  "/dids",
+  "/",
   [
     body("did_string", "A DID must not be empty!").trim().not().isEmpty(),
     body("public_key", "Public key must not be empty!").trim().not().isEmpty(),
