@@ -10,60 +10,87 @@ const privateKey = process.env.ACCOUNT_PRIVATE_KEY?.trim();
 if (!privateKey) throw new Error("Missing ACCOUNT_PRIVATE_KEY in environment");
 
 const contractAddress = process.env.DID_CONTRACT_ADDRESS?.trim();
-if (!contractAddress) throw new Error("Missing DID_CONTRACT_ADDRESS in environment");
+if (!contractAddress)
+  throw new Error("Missing DID_CONTRACT_ADDRESS in environment");
 
-export const provider = new ethers.JsonRpcProvider(process.env.BLOCKCHAIN_RPC_URL);
+export const provider = new ethers.JsonRpcProvider(
+  process.env.BLOCKCHAIN_RPC_URL
+);
 export const signer = new ethers.Wallet(privateKey, provider);
-export const contract = new ethers.Contract(contractAddress, contractABI, signer);
+export const contract = new ethers.Contract(
+  contractAddress,
+  contractABI,
+  signer
+);
 
-export const registerDIDOnChain = async (did: string, key: string) => {
-    try {
-        await contract.registerDID(did, "#key-1", key);
-    } catch (error) {
-
-    }
-}
+export const registerDIDOnChain = async (
+  did: string,
+  key: string,
+  role: number
+) => {
+  try {
+    await contract.register(did, role, "#key-1", key);
+  } catch (error) {}
+};
 
 export const registerNewKeyOnChain = async (did: string, key: string) => {
-    try {
-        await contract.registerDID(did, "#key-2", key);
-    } catch (error) {
+  try {
+    // TODO: getCurrentActiveKeyId and increment of activeKeyId
+    const currentKeyId = await contract.getActiveKeyId(did);
+    const stringKeyId = currentKeyId.split("-").pop();
+    const numberKeyId = parseInt(stringKeyId, 10);
 
-    }
-}
+    await contract.registerNewKey(
+      did,
+      "#key-" + (numberKeyId + 1).toString(),
+      key
+    );
+  } catch (error) {}
+};
 
 export const checkDIDOnChain = async (did: string) => {
-    try {
-        const result = await contract.verifyDID(did);
-        return result;
-    } catch (error) {
-        console.log("ERROR", error);
-    }
-}
+  try {
+    const result = await contract.isRegistered(did);
+    return result;
+  } catch (error) {
+    console.log("ERROR", error);
+  }
+};
 
 export const getDIDKeyOnChain = async (did: string, keyId: string) => {
-    try {
-        const result = await contract.getKey(did);
-        return result;
-    } catch (error) {
-        
-    }
-}
+  try {
+    const result = await contract.getKey(did);
+    return result;
+  } catch (error) {}
+};
 
 export const getDIDCountOnChain = async () => {
-    try {
-        const result = await contract.getDIDCount();
-        return result;
-    } catch (error) {
-        
-    }
-}
+  try {
+    const result = await contract.getDIDCount();
+    return result;
+  } catch (error) {}
+};
 
 export const getNumberOfBlocksOnChain = async () => {
-    try {
-        const blockCount = await provider.getBlockNumber();
-        return blockCount;
-    } catch (error) {
-        
-    }
-}
+  try {
+    const blockCount = await provider.getBlockNumber();
+    return blockCount;
+  } catch (error) {}
+};
+
+export const deactivatedDID = async (did: string) => {
+  try {
+    const result = await contract.deactivate(did);
+    return result;
+  } catch (error) {}
+};
+
+export const getDIDDocument = async (did: string) => {
+  try {
+    const result = await contract.getDIDDocument(did);
+    const keyId = await contract.getActiveKeyId(did);
+    const public_key = await contract.getKey(did, keyId);
+    result[keyId] = public_key;
+    return result;
+  } catch (error) {}
+};

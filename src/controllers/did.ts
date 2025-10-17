@@ -22,14 +22,15 @@ export const registerDID: RequestHandler = async (req, res, next) => {
 
     try {
       // TODO: Implement logic to check if the DID already exists on the blockchain.
-      // const didExists = await checkDIDOnBlockchain(did_string);
-      // if (didExists) {
-      //   throwCustomError("A DID Document already exists with this DID.", 409);
-      // }
+      const didExists = await blockchain.checkDIDOnChain(did_string);
+      if (didExists) {
+        throwCustomError("A DID Document already exists with this DID.", 409);
+      }
 
       // TODO: Call the smart contract to write the new DID document to the blockchain.
       console.log(`Registering DID: ${did_string} with role: ${role}`);
-      await blockchain.registerDIDOnChain(did_string, public_key);
+      const numberRole = role.toLowerCase() == "individual" ? 1 : 2;
+      await blockchain.registerDIDOnChain(did_string, public_key, numberRole);
       // const transaction = await registerDIDOnBlockchain(did_string, public_key, role);
 
       // Placeholder for blockchain transaction response
@@ -78,7 +79,6 @@ export const checkDID: RequestHandler = async (req, res, next) => {
 
 export const numberofBlocks: RequestHandler = async (req, res, next) => {
   if (hasNoValidationErrors(validationResult(req))) {
-
     try {
       const blockCount = await blockchain.getNumberOfBlocksOnChain();
 
@@ -91,7 +91,6 @@ export const numberofBlocks: RequestHandler = async (req, res, next) => {
     }
   }
 };
-
 
 /**
  * Rotates the key associated with a DID.
@@ -106,13 +105,14 @@ export const keyRotation: RequestHandler = async (req, res, next) => {
 
     try {
       // TODO: Implement logic to find the DID on the blockchain.
-      // const didDocument = await findDIDOnBlockchain(did);
-      // if (!didDocument) {
-      //   throwCustomError("DID not found.", 404);
-      // }
+      const existDID = await blockchain.checkDIDOnChain(did);
+      if (!existDID) {
+        throwCustomError("DID not found.", 404);
+      }
 
       // TODO: Call the smart contract to update the key for the DID.
       console.log(`Rotating key for DID: ${did}`);
+      await blockchain.registerNewKeyOnChain(did, new_public_key);
       // await rotateKeyOnBlockchain(did, old_public_key, new_public_key, iteration_number);
 
       return res.status(200).json({ message: "DID key rotated successfully" });
@@ -134,15 +134,15 @@ export const deleteDID: RequestHandler = async (req, res, next) => {
 
     try {
       // TODO: Implement logic to find the DID on the blockchain.
-      // const didDocument = await findDIDOnBlockchain(did);
-      // if (!didDocument) {
-      //   throwCustomError("DID not found.", 404);
-      // }
+      const existDID = await blockchain.checkDIDOnChain(did);
+      if (!existDID) {
+        throwCustomError("DID not found.", 404);
+      }
 
-      // TODO: Call the smart contract to revoke the DID.
-      // This might involve setting a 'revoked' flag in the DID document.
+      // TODO: Call the smart contract to deactivate the DID.
+      // This might involve setting a 'inactive' flag in the DID document.
       console.log(`Deleting DID: ${did}`);
-      // await revokeDIDOnBlockchain(did);
+      await blockchain.deactivatedDID(did);
 
       // TODO: Asynchronously initiate batch revocation for all associated VCs.
       // This could be done via a message queue (RabbitMQ).
@@ -166,27 +166,13 @@ export const getDIDDocument: RequestHandler = async (req, res, next) => {
 
     try {
       // TODO: Call the DID resolver on the blockchain to get the document.
-      console.log(`Fetching document for DID: ${did}`);
-      // const didDocument = await resolveDIDOnBlockchain(did);
-
-      // Placeholder for a DID document
-      const didDocument = {
-        "@context": "https://www.w3.org/ns/did/v1",
-        id: did,
-        verificationMethod: [
-          {
-            id: `${did}#keys-1`,
-            type: "EcdsaSecp256k1VerificationKey2019",
-            controller: did,
-            publicKeyHex: "04e6a...",
-          },
-        ],
-        authentication: [`${did}#keys-1`],
-      };
-
-      if (!didDocument) {
-        throwCustomError("DID Document not found.", 404);
+      const existDID = await blockchain.checkDIDOnChain(did);
+      if (!existDID) {
+        throwCustomError("DID not found.", 404);
       }
+
+      console.log(`Fetching document for DID: ${did}`);
+      const didDocument = await blockchain.getDIDDocument(did);
 
       return res.status(200).json({
         did_document: didDocument,
