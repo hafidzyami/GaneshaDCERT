@@ -1,9 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
-import { AppError, ValidationError } from '../utils/errors/AppError';
-import { env } from '../config/env';
+import { AppError, ValidationError } from '../utils';
+import { env, logger } from '../config';
 import { HTTP_STATUS } from '../constants';
 import { TransformHelper } from '../utils/helpers';
-import logger from '../config/logger';
 
 /**
  * Global Error Handler Middleware

@@ -8,3 +8,6 @@ export * from './adminAuth.middleware';
 export * from './errorHandler.middleware';
 export * from './requestLogger.middleware';
 export * from './rateLimit.middleware';
+
+// Export asyncHandler separately for convenience
+export { asyncHandler } from './errorHandler.middleware';

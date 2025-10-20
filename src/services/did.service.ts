@@ -2,10 +2,22 @@ import BlockchainService from "./blockchain.service";
 import { BadRequestError, NotFoundError } from "../utils/errors/AppError";
 
 /**
- * DID Service
+ * DID Service with Dependency Injection
  * Handles DID operations (registration, rotation, deactivation)
  */
 class DIDService {
+  private blockchainService: typeof BlockchainService;
+
+  /**
+   * Constructor with dependency injection
+   * @param dependencies - Optional dependencies for testing
+   */
+  constructor(dependencies?: {
+    blockchainService?: typeof BlockchainService;
+  }) {
+    this.blockchainService = dependencies?.blockchainService || BlockchainService;
+  }
+
   /**
    * Register new DID
    */
@@ -23,7 +35,7 @@ class DIDService {
     const { did_string, public_key, role, email, name, phone, country, website, address } = data;
 
     // Check if DID already exists
-    const didExists = await BlockchainService.isDIDRegistered(did_string);
+    const didExists = await this.blockchainService.isDIDRegistered(did_string);
     if (didExists) {
       throw new BadRequestError("A DID Document already exists with this DID.");
     }
@@ -33,7 +45,7 @@ class DIDService {
 
     if (isIndividual) {
       // Register individual DID
-      const receipt = await BlockchainService.registerIndividualDID(
+      const receipt = await this.blockchainService.registerIndividualDID(
         did_string,
         public_key
       );
@@ -53,7 +65,7 @@ class DIDService {
       }
 
       // Register institutional DID
-      const receipt = await BlockchainService.registerInstitutionalDID(
+      const receipt = await this.blockchainService.registerInstitutionalDID(
         did_string,
         public_key,
         email,
@@ -77,7 +89,7 @@ class DIDService {
    * Check if DID exists
    */
   async checkDID(did: string) {
-    const exists = await BlockchainService.isDIDRegistered(did);
+    const exists = await this.blockchainService.isDIDRegistered(did);
 
     if (!exists) {
       throw new NotFoundError("DID not found");
@@ -94,7 +106,7 @@ class DIDService {
    * Get number of blocks on blockchain
    */
   async getBlockCount() {
-    const blockNumber = await BlockchainService.getBlockNumber();
+    const blockNumber = await this.blockchainService.getBlockNumber();
 
     return {
       message: "Number of blocks retrieved",
@@ -107,13 +119,13 @@ class DIDService {
    */
   async rotateKey(did: string, newPublicKey: string) {
     // Check if DID exists
-    const exists = await BlockchainService.isDIDRegistered(did);
+    const exists = await this.blockchainService.isDIDRegistered(did);
     if (!exists) {
       throw new NotFoundError("DID not found");
     }
 
     // Rotate key
-    const receipt = await BlockchainService.registerNewKey(did, newPublicKey);
+    const receipt = await this.blockchainService.registerNewKey(did, newPublicKey);
 
     return {
       message: "DID key rotated successfully",
@@ -128,13 +140,13 @@ class DIDService {
    */
   async deactivateDID(did: string) {
     // Check if DID exists
-    const exists = await BlockchainService.isDIDRegistered(did);
+    const exists = await this.blockchainService.isDIDRegistered(did);
     if (!exists) {
       throw new NotFoundError("DID not found");
     }
 
     // Deactivate DID
-    const receipt = await BlockchainService.deactivateDID(did);
+    const receipt = await this.blockchainService.deactivateDID(did);
 
     // TODO: Trigger batch revocation for all associated VCs via message queue
 
@@ -150,7 +162,7 @@ class DIDService {
    * Get DID Document
    */
   async getDIDDocument(did: string) {
-    const document = await BlockchainService.getDIDDocument(did);
+    const document = await this.blockchainService.getDIDDocument(did);
 
     return {
       message: "DID document retrieved successfully",
@@ -159,4 +171,8 @@ class DIDService {
   }
 }
 
+// Export singleton instance for backward compatibility
 export default new DIDService();
+
+// Export class for testing and custom instantiation
+export { DIDService };

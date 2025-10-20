@@ -1,17 +1,27 @@
-import { PushToken, Prisma } from "@prisma/client";
+import { PushToken, Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "../config/database";
 import { Expo, ExpoPushMessage, ExpoPushTicket } from "expo-server-sdk";
 import { BadRequestError, NotFoundError } from "../utils/errors/AppError";
+import logger from "../config/logger";
 
 /**
- * Notification Service
+ * Notification Service with Dependency Injection
  * Handles push notification token management and sending notifications
  */
 class NotificationService {
+  private db: PrismaClient;
   private expo: Expo;
 
-  constructor() {
-    this.expo = new Expo();
+  /**
+   * Constructor with dependency injection
+   * @param dependencies - Optional dependencies for testing
+   */
+  constructor(dependencies?: {
+    db?: PrismaClient;
+    expo?: Expo;
+  }) {
+    this.db = dependencies?.db || prisma;
+    this.expo = dependencies?.expo || new Expo();
   }
 
   /**
@@ -30,13 +40,13 @@ class NotificationService {
     }
 
     // Check if token already exists
-    const existingToken = await prisma.pushToken.findUnique({
+    const existingToken = await this.db.pushToken.findUnique({
       where: { token: data.token },
     });
 
     if (existingToken) {
       // Update existing token
-      const updatedToken = await prisma.pushToken.update({
+      const updatedToken = await this.db.pushToken.update({
         where: { token: data.token },
         data: {
           holder_did: data.holder_did,
@@ -46,12 +56,12 @@ class NotificationService {
         },
       });
 
-      console.log(`✅ Push token updated: ${data.token}`);
+      logger.success(`Push token updated: ${data.token}`);
       return updatedToken;
     }
 
     // Create new token
-    const pushToken = await prisma.pushToken.create({
+    const pushToken = await this.db.pushToken.create({
       data: {
         holder_did: data.holder_did,
         token: data.token,
@@ -60,7 +70,7 @@ class NotificationService {
       },
     });
 
-    console.log(`✅ Push token registered: ${data.token}`);
+    logger.success(`Push token registered: ${data.token}`);
     return pushToken;
   }
 
@@ -68,7 +78,7 @@ class NotificationService {
    * Unregister push token
    */
   async unregisterPushToken(token: string): Promise<PushToken> {
-    const pushToken = await prisma.pushToken.findUnique({
+    const pushToken = await this.db.pushToken.findUnique({
       where: { token },
     });
 
@@ -77,7 +87,7 @@ class NotificationService {
     }
 
     // Soft delete by setting isActive to false
-    const updatedToken = await prisma.pushToken.update({
+    const updatedToken = await this.db.pushToken.update({
       where: { token },
       data: {
         isActive: false,
@@ -85,7 +95,7 @@ class NotificationService {
       },
     });
 
-    console.log(`✅ Push token unregistered: ${token}`);
+    logger.success(`Push token unregistered: ${token}`);
     return updatedToken;
   }
 
@@ -93,7 +103,7 @@ class NotificationService {
    * Get all push tokens for a holder
    */
   async getPushTokensByHolder(holderDid: string): Promise<PushToken[]> {
-    const tokens = await prisma.pushToken.findMany({
+    const tokens = await this.db.pushToken.findMany({
       where: {
         holder_did: holderDid,
         isActive: true,
@@ -118,7 +128,7 @@ class NotificationService {
     tickets: ExpoPushTicket[];
   }> {
     // Get all active push tokens for specified holders
-    const pushTokens = await prisma.pushToken.findMany({
+    const pushTokens = await this.db.pushToken.findMany({
       where: {
         holder_did: { in: data.holder_dids },
         isActive: true,
@@ -149,15 +159,15 @@ class NotificationService {
         const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
         tickets.push(...ticketChunk);
       } catch (error) {
-        console.error("❌ Error sending notification chunk:", error);
+        logger.error("Error sending notification chunk:", error);
       }
     }
 
     // Count errors
     const errors = tickets.filter((ticket) => ticket.status === "error");
 
-    console.log(
-      `✅ Notifications sent: ${tickets.length - errors.length}/${tickets.length} successful`
+    logger.success(
+      `Notifications sent: ${tickets.length - errors.length}/${tickets.length} successful`
     );
 
     return {
@@ -178,7 +188,7 @@ class NotificationService {
     vcData?: any
   ): Promise<void> {
     try {
-      const pushTokens = await prisma.pushToken.findMany({
+      const pushTokens = await this.db.pushToken.findMany({
         where: {
           holder_did: holderDid,
           isActive: true,
@@ -186,7 +196,7 @@ class NotificationService {
       });
 
       if (pushTokens.length === 0) {
-        console.log(`⚠️ No active push tokens for holder: ${holderDid}`);
+        logger.warn(`No active push tokens for holder: ${holderDid}`);
         return;
       }
 
@@ -204,15 +214,19 @@ class NotificationService {
         try {
           await this.expo.sendPushNotificationsAsync(chunk);
         } catch (error) {
-          console.error("❌ Error sending VC status notification:", error);
+          logger.error("Error sending VC status notification:", error);
         }
       }
 
-      console.log(`✅ VC status notification sent to: ${holderDid}`);
+      logger.success(`VC status notification sent to: ${holderDid}`);
     } catch (error) {
-      console.error("❌ Error in sendVCStatusNotification:", error);
+      logger.error("Error in sendVCStatusNotification:", error);
     }
   }
 }
 
+// Export singleton instance for backward compatibility
 export default new NotificationService();
+
+// Export class for testing and custom instantiation
+export { NotificationService };

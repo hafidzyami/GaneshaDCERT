@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
 import { validationResult } from "express-validator";
-import AuthService from "../services/auth.service";
-import { ValidationError } from "../utils/errors/AppError";
-import { asyncHandler } from "../middlewares/errorHandler.middleware";
+import { AuthService } from "../services";
+import { ValidationError } from "../utils";
+import { asyncHandler } from "../middlewares";
 import { ResponseHelper } from "../utils/helpers";
 import { HTTP_STATUS } from "../constants";
 

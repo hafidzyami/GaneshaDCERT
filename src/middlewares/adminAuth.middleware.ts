@@ -1,9 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { env } from '../config/env';
+import { env, logger } from '../config';
 import { HTTP_STATUS } from '../constants';
 import { DecodedAdmin } from '../types';
-import logger from '../config/logger';
 
 /**
  * Admin Authentication Middleware

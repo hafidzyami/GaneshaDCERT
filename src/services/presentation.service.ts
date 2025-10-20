@@ -1,12 +1,25 @@
-import { VPRequest, VPSharing } from "@prisma/client";
+import { VPRequest, VPSharing, PrismaClient } from "@prisma/client";
 import { prisma } from "../config/database";
 import { NotFoundError } from "../utils/errors/AppError";
+import logger from "../config/logger";
 
 /**
- * Presentation Service
+ * Presentation Service with Dependency Injection
  * Handles Verifiable Presentation (VP) request and sharing operations
  */
 class PresentationService {
+  private db: PrismaClient;
+
+  /**
+   * Constructor with dependency injection
+   * @param dependencies - Optional dependencies for testing
+   */
+  constructor(dependencies?: {
+    db?: PrismaClient;
+  }) {
+    this.db = dependencies?.db || prisma;
+  }
+
   /**
    * Verifier requests a VP from holder
    */
@@ -15,7 +28,7 @@ class PresentationService {
     verifier_did: string;
     list_schema_id: string[];
   }): Promise<{ vp_request_id: string; message: string }> {
-    const vpRequest = await prisma.vPRequest.create({
+    const vpRequest = await this.db.vPRequest.create({
       data: {
         holder_did: data.holder_did,
         verifier_did: data.verifier_did,
@@ -24,9 +37,9 @@ class PresentationService {
     });
 
     // TODO: Add Message Queue using RabbitMQ to notify holder
-    console.log(`✅ VP request created: ${vpRequest.id}`);
-    console.log(`   From: ${data.verifier_did}`);
-    console.log(`   To: ${data.holder_did}`);
+    logger.success(`VP request created: ${vpRequest.id}`);
+    logger.info(`From: ${data.verifier_did}`);
+    logger.info(`To: ${data.holder_did}`);
 
     return {
       vp_request_id: vpRequest.id,
@@ -41,7 +54,7 @@ class PresentationService {
     verifier_did: string;
     list_schema_id: string[];
   }> {
-    const vpRequest = await prisma.vPRequest.findUnique({
+    const vpRequest = await this.db.vPRequest.findUnique({
       where: { id: vpReqId },
     });
 
@@ -62,15 +75,15 @@ class PresentationService {
     holder_did: string;
     vp: any;
   }): Promise<{ vp_id: string; message: string }> {
-    const sharedVp = await prisma.vPSharing.create({
+    const sharedVp = await this.db.vPSharing.create({
       data: {
         holder_did: data.holder_did,
         VP: data.vp,
       },
     });
 
-    console.log(`✅ VP stored: ${sharedVp.id}`);
-    console.log(`   Holder: ${data.holder_did}`);
+    logger.success(`VP stored: ${sharedVp.id}`);
+    logger.info(`Holder: ${data.holder_did}`);
 
     return {
       vp_id: sharedVp.id,
@@ -83,7 +96,7 @@ class PresentationService {
    */
   async getVP(vpId: string): Promise<{ vp: any }> {
     // Find VP in VPSharing
-    const sharedVp = await prisma.vPSharing.findUnique({
+    const sharedVp = await this.db.vPSharing.findUnique({
       where: { id: vpId },
     });
 
@@ -94,11 +107,11 @@ class PresentationService {
     }
 
     // Delete VP after retrieval (one-time use)
-    await prisma.vPSharing.delete({
+    await this.db.vPSharing.delete({
       where: { id: vpId },
     });
 
-    console.log(`✅ VP retrieved and deleted: ${vpId}`);
+    logger.success(`VP retrieved and deleted: ${vpId}`);
 
     return {
       vp: sharedVp.VP,
@@ -106,4 +119,8 @@ class PresentationService {
   }
 }
 
+// Export singleton instance for backward compatibility
 export default new PresentationService();
+
+// Export class for testing and custom instantiation
+export { PresentationService };

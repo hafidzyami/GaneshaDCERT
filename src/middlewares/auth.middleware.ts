@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifySessionToken } from '../services/jwt.service';
+import { verifySessionToken } from '../services';
 import { HTTP_STATUS } from '../constants';
-import logger from '../config/logger';
+import { logger } from '../config';
 
 /**
  * Authentication Middleware

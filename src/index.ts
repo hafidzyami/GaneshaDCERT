@@ -2,13 +2,8 @@ import express, { Request, Response, Application } from "express";
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 import cors from "cors";
-import { env } from "./config/env";
-import DatabaseService from "./config/database";
-import BlockchainConfig from "./config/blockchain";
-import logger from "./config/logger";
-import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.middleware";
-import { requestLogger } from "./middlewares/requestLogger.middleware";
-import { apiRateLimit } from "./middlewares/rateLimit.middleware";
+import { env, DatabaseService, BlockchainConfig, logger } from "./config";
+import { errorHandler, notFoundHandler, requestLogger, apiRateLimit } from "./middlewares";
 import { HealthCheckResponse } from "./types";
 
 // Routes
