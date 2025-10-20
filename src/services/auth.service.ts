@@ -1,0 +1,248 @@
+import { PrismaClient, RequestStatus, InstitutionRegistration } from "@prisma/client";
+import { prisma } from "../config/database";
+import {
+  ConflictError,
+  NotFoundError,
+  BadRequestError,
+} from "../utils/errors/AppError";
+import {
+  generateMagicLinkToken,
+  verifyMagicLinkToken,
+  generateSessionToken,
+} from "../utils/jwtService";
+import { sendMagicLinkEmail } from "../utils/emailService";
+import { env } from "../config/env";
+
+/**
+ * Authentication Service
+ * Handles institution registration, approval, and magic link authentication
+ */
+class AuthService {
+  /**
+   * Register new institution
+   */
+  async registerInstitution(data: {
+    name: string;
+    email: string;
+    phone: string;
+    country: string;
+    website: string;
+    address: string;
+  }): Promise<InstitutionRegistration> {
+    // Check if email already exists
+    const existing = await prisma.institutionRegistration.findUnique({
+      where: { email: data.email },
+    });
+
+    if (existing) {
+      throw new ConflictError("Email sudah terdaftar");
+    }
+
+    // Create new registration
+    const institution = await prisma.institutionRegistration.create({
+      data: {
+        ...data,
+        status: RequestStatus.PENDING,
+      },
+    });
+
+    console.log(`✅ Institution registered: ${institution.name} (${institution.email})`);
+    return institution;
+  }
+
+  /**
+   * Get pending institutions
+   */
+  async getPendingInstitutions(): Promise<InstitutionRegistration[]> {
+    return await prisma.institutionRegistration.findMany({
+      where: { status: RequestStatus.PENDING },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  /**
+   * Get all institutions with optional status filter
+   */
+  async getAllInstitutions(status?: RequestStatus): Promise<InstitutionRegistration[]> {
+    const whereClause = status ? { status } : {};
+
+    return await prisma.institutionRegistration.findMany({
+      where: whereClause,
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  /**
+   * Approve institution and send magic link
+   */
+  async approveInstitution(
+    institutionId: string,
+    approvedBy: string
+  ): Promise<InstitutionRegistration> {
+    // Check if institution exists
+    const institution = await prisma.institutionRegistration.findUnique({
+      where: { id: institutionId },
+    });
+
+    if (!institution) {
+      throw new NotFoundError("Institusi tidak ditemukan");
+    }
+
+    if (institution.status !== RequestStatus.PENDING) {
+      throw new BadRequestError(
+        `Institusi sudah ${institution.status.toLowerCase()}`
+      );
+    }
+
+    // Update status to APPROVED
+    const updatedInstitution = await prisma.institutionRegistration.update({
+      where: { id: institutionId },
+      data: {
+        status: RequestStatus.APPROVED,
+        approvedBy,
+        approvedAt: new Date(),
+      },
+    });
+
+    // Generate magic link token
+    const token = generateMagicLinkToken(institutionId, institution.email);
+
+    // Calculate expiry (24 hours)
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24);
+
+    // Save magic link to database
+    await prisma.magicLink.create({
+      data: {
+        institutionId,
+        token,
+        expiresAt,
+      },
+    });
+
+    // Send magic link email
+    const magicLinkUrl = `${env.FRONTEND_URL}/auth/verify?token=${token}`;
+    await sendMagicLinkEmail({
+      to: institution.email,
+      name: institution.name,
+      magicLink: magicLinkUrl,
+    });
+
+    console.log(`✅ Institution approved: ${institution.name}`);
+    console.log(`   Magic link sent to: ${institution.email}`);
+
+    return updatedInstitution;
+  }
+
+  /**
+   * Reject institution
+   */
+  async rejectInstitution(institutionId: string): Promise<InstitutionRegistration> {
+    // Check if institution exists
+    const institution = await prisma.institutionRegistration.findUnique({
+      where: { id: institutionId },
+    });
+
+    if (!institution) {
+      throw new NotFoundError("Institusi tidak ditemukan");
+    }
+
+    if (institution.status !== RequestStatus.PENDING) {
+      throw new BadRequestError(
+        `Institusi sudah ${institution.status.toLowerCase()}`
+      );
+    }
+
+    // Update status to REJECTED
+    const updatedInstitution = await prisma.institutionRegistration.update({
+      where: { id: institutionId },
+      data: { status: RequestStatus.REJECTED },
+    });
+
+    console.log(`❌ Institution rejected: ${institution.name}`);
+    return updatedInstitution;
+  }
+
+  /**
+   * Verify magic link token and return session token
+   */
+  async verifyMagicLink(token: string): Promise<{
+    sessionToken: string;
+    institution: Partial<InstitutionRegistration>;
+  }> {
+    // Verify JWT token
+    const decoded = verifyMagicLinkToken(token);
+    if (!decoded) {
+      throw new BadRequestError("Token tidak valid atau sudah kadaluarsa");
+    }
+
+    // Check magic link in database
+    const magicLink = await prisma.magicLink.findUnique({
+      where: { token },
+      include: { institution: true },
+    });
+
+    if (!magicLink) {
+      throw new NotFoundError("Magic link tidak ditemukan");
+    }
+
+    if (magicLink.used) {
+      throw new BadRequestError("Magic link sudah pernah digunakan");
+    }
+
+    if (new Date() > magicLink.expiresAt) {
+      throw new BadRequestError("Magic link sudah kadaluarsa");
+    }
+
+    if (magicLink.institution.status !== RequestStatus.APPROVED) {
+      throw new BadRequestError("Institusi belum disetujui");
+    }
+
+    // Mark magic link as used
+    await prisma.magicLink.update({
+      where: { id: magicLink.id },
+      data: {
+        used: true,
+        usedAt: new Date(),
+      },
+    });
+
+    // Generate session token
+    const sessionToken = generateSessionToken(
+      magicLink.institution.id,
+      magicLink.institution.email
+    );
+
+    console.log(`✅ Magic link verified: ${magicLink.institution.email}`);
+
+    return {
+      sessionToken,
+      institution: {
+        id: magicLink.institution.id,
+        name: magicLink.institution.name,
+        email: magicLink.institution.email,
+        phone: magicLink.institution.phone,
+        country: magicLink.institution.country,
+        website: magicLink.institution.website,
+        address: magicLink.institution.address,
+      },
+    };
+  }
+
+  /**
+   * Get institution profile by ID
+   */
+  async getInstitutionProfile(institutionId: string): Promise<InstitutionRegistration> {
+    const institution = await prisma.institutionRegistration.findUnique({
+      where: { id: institutionId },
+    });
+
+    if (!institution) {
+      throw new NotFoundError("Institusi tidak ditemukan");
+    }
+
+    return institution;
+  }
+}
+
+export default new AuthService();
