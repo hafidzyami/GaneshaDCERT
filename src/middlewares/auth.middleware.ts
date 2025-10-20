@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifySessionToken } from '../utils/jwtService';
+import { verifySessionToken } from '../services/jwt.service';
 
 /**
  * Middleware untuk verifikasi session token

@@ -9,8 +9,8 @@ import {
   generateMagicLinkToken,
   verifyMagicLinkToken,
   generateSessionToken,
-} from "../utils/jwtService";
-import { sendMagicLinkEmail } from "../utils/emailService";
+} from "./jwt.service";
+import { sendMagicLinkEmail } from "./email.service";
 import { env } from "../config/env";
 
 /**
