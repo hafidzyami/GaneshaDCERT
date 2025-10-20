@@ -1,8 +1,11 @@
 import { RequestHandler } from "express";
 import { validationResult } from "express-validator";
-import { PrismaClient, RequestType} from "@prisma/client";
-import { hasNoValidationErrors, addStatusCodeTo, throwCustomError } from "../utils/error";
-
+import { PrismaClient, RequestType } from "@prisma/client";
+import {
+  hasNoValidationErrors,
+  addStatusCodeTo,
+  throwCustomError,
+} from "../utils/error";
 
 const prisma = new PrismaClient();
 
@@ -32,7 +35,11 @@ export const requestCredential: RequestHandler = async (req, res, next) => {
   }
 };
 
-export const getCredentialRequestsByType: RequestHandler = async (req, res, next) => {
+export const getCredentialRequestsByType: RequestHandler = async (
+  req,
+  res,
+  next
+) => {
   if (hasNoValidationErrors(validationResult(req))) {
     try {
       const { type, issuer_did } = req.query; // Get issuer_did from query
@@ -48,25 +55,25 @@ export const getCredentialRequestsByType: RequestHandler = async (req, res, next
         case RequestType.ISSUANCE:
           requests = await prisma.vCIssuanceRequest.findMany({
             where: whereClause, // Apply the where clause
-            orderBy: { createdAt: 'desc' }
+            orderBy: { createdAt: "desc" },
           });
           break;
         case RequestType.RENEWAL:
           requests = await prisma.vCRenewalRequest.findMany({
             where: whereClause, // Apply the where clause
-            orderBy: { createdAt: 'desc' }
+            orderBy: { createdAt: "desc" },
           });
           break;
         case RequestType.UPDATE:
           requests = await prisma.vCUpdateRequest.findMany({
             where: whereClause, // Apply the where clause
-            orderBy: { createdAt: 'desc' }
+            orderBy: { createdAt: "desc" },
           });
           break;
         case RequestType.REVOKE:
           requests = await prisma.vCRevokeRequest.findMany({
             where: whereClause, // Apply the where clause
-            orderBy: { createdAt: 'desc' }
+            orderBy: { createdAt: "desc" },
           });
           break;
         default:
@@ -79,22 +86,25 @@ export const getCredentialRequestsByType: RequestHandler = async (req, res, next
         count: requests.length,
         data: requests,
       });
-
     } catch (error) {
       next(addStatusCodeTo(error as Error));
     }
   }
 };
 
-export const processCredentialResponse: RequestHandler = async (req, res, next) => {
+export const processCredentialResponse: RequestHandler = async (
+  req,
+  res,
+  next
+) => {
   if (hasNoValidationErrors(validationResult(req))) {
     try {
-      const { 
-        request_id, 
-        issuer_did, 
-        holder_did, 
+      const {
+        request_id,
+        issuer_did,
+        holder_did,
         encrypted_body,
-        request_type // The new dynamic field
+        request_type, // The new dynamic field
       } = req.body;
 
       // Create a new VCResponse record with the provided type
@@ -160,136 +170,147 @@ export const getHolderVCs: RequestHandler = async (req, res, next) => {
   }
 };
 
-export const requestCredentialUpdate: RequestHandler = async (req, res, next) => {
-    if (hasNoValidationErrors(validationResult(req))) {
-        try {
-            const { issuer_did, holder_did, encrypted_body } = req.body;
+export const requestCredentialUpdate: RequestHandler = async (
+  req,
+  res,
+  next
+) => {
+  if (hasNoValidationErrors(validationResult(req))) {
+    try {
+      const { issuer_did, holder_did, encrypted_body } = req.body;
 
-            // Create a new VCUpdateRequest record
-            const newUpdateRequest = await prisma.vCUpdateRequest.create({
-                data: {
-                    issuer_did: issuer_did,
-                    holder_did: holder_did,
-                    encrypted_body: encrypted_body, // Renamed from encrypted_data for consistency
-                    status: "PENDING",
-                },
-            });
+      // Create a new VCUpdateRequest record
+      const newUpdateRequest = await prisma.vCUpdateRequest.create({
+        data: {
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          encrypted_body: encrypted_body, // Renamed from encrypted_data for consistency
+          status: "PENDING",
+        },
+      });
 
-            res.status(201).json({
-                message: "Verifiable Credential update request submitted successfully.",
-                request_id: newUpdateRequest.id,
-            });
-
-        } catch (error) {
-            next(addStatusCodeTo(error as Error));
-        }
+      res.status(201).json({
+        message: "Verifiable Credential update request submitted successfully.",
+        request_id: newUpdateRequest.id,
+      });
+    } catch (error) {
+      next(addStatusCodeTo(error as Error));
     }
+  }
 };
 
-export const requestCredentialRenewal: RequestHandler = async (req, res, next) => {
-    if (hasNoValidationErrors(validationResult(req))) {
-        try {
-            const { issuer_did, holder_did, encrypted_body } = req.body;
+export const requestCredentialRenewal: RequestHandler = async (
+  req,
+  res,
+  next
+) => {
+  if (hasNoValidationErrors(validationResult(req))) {
+    try {
+      const { issuer_did, holder_did, encrypted_body } = req.body;
 
-            // Create a new VCRenewalRequest record
-            const newRenewalRequest = await prisma.vCRenewalRequest.create({
-                data: {
-                    issuer_did: issuer_did,
-                    holder_did: holder_did,
-                    encrypted_body: encrypted_body,
-                    status: "PENDING",
-                },
-            });
+      // Create a new VCRenewalRequest record
+      const newRenewalRequest = await prisma.vCRenewalRequest.create({
+        data: {
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          encrypted_body: encrypted_body,
+          status: "PENDING",
+        },
+      });
 
-            res.status(201).json({
-                message: "Verifiable Credential renewal request submitted successfully.",
-                new_request_id: newRenewalRequest.id,
-            });
-
-        } catch (error) {
-            next(addStatusCodeTo(error as Error));
-        }
+      res.status(201).json({
+        message:
+          "Verifiable Credential renewal request submitted successfully.",
+        new_request_id: newRenewalRequest.id,
+      });
+    } catch (error) {
+      next(addStatusCodeTo(error as Error));
     }
+  }
 };
 
-export const requestCredentialRevocation: RequestHandler = async (req, res, next) => {
-    if (hasNoValidationErrors(validationResult(req))) {
-        try {
-            const { issuer_did, holder_did, encrypted_body } = req.body;
+export const requestCredentialRevocation: RequestHandler = async (
+  req,
+  res,
+  next
+) => {
+  if (hasNoValidationErrors(validationResult(req))) {
+    try {
+      const { issuer_did, holder_did, encrypted_body } = req.body;
 
-            // Create a new VCRevokeRequest record
-            const newRevokeRequest = await prisma.vCRevokeRequest.create({
-                data: {
-                    issuer_did: issuer_did,
-                    holder_did: holder_did,
-                    encrypted_body: encrypted_body,
-                    status: "PENDING",
-                },
-            });
+      // Create a new VCRevokeRequest record
+      const newRevokeRequest = await prisma.vCRevokeRequest.create({
+        data: {
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          encrypted_body: encrypted_body,
+          status: "PENDING",
+        },
+      });
 
-            res.status(201).json({
-                message: "Verifiable Credential revocation request submitted successfully.",
-                request_id: newRevokeRequest.id,
-            });
-
-        } catch (error) {
-            next(addStatusCodeTo(error as Error));
-        }
+      res.status(201).json({
+        message:
+          "Verifiable Credential revocation request submitted successfully.",
+        request_id: newRevokeRequest.id,
+      });
+    } catch (error) {
+      next(addStatusCodeTo(error as Error));
     }
+  }
 };
 
 export const addVCStatusBlock: RequestHandler = async (req, res, next) => {
-    if (hasNoValidationErrors(validationResult(req))) {
-        try {
-            const { vc_id, issuer_did, holder_did, status, hash } = req.body;
+  if (hasNoValidationErrors(validationResult(req))) {
+    try {
+      const { vc_id, issuer_did, holder_did, status, hash } = req.body;
 
-            // TODO: Implement blockchain transaction logic here.
-            // 1. Connect to your blockchain network and smart contract.
-            // 2. Prepare the transaction payload with the VC status data.
-            // 3. Send the transaction to the smart contract to create a new block.
-            // const transactionReceipt = await createVCStatusBlock({ vc_id, issuer_did, holder_did, status, hash });
+      // TODO: Implement blockchain transaction logic here.
+      // 1. Connect to your blockchain network and smart contract.
+      // 2. Prepare the transaction payload with the VC status data.
+      // 3. Send the transaction to the smart contract to create a new block.
+      // const transactionReceipt = await createVCStatusBlock({ vc_id, issuer_did, holder_did, status, hash });
 
-            console.log(`Submitting new status block for VC: ${vc_id} to the blockchain...`);
+      console.log(
+        `Submitting new status block for VC: ${vc_id} to the blockchain...`
+      );
 
-            // Placeholder response until blockchain is integrated
-            res.status(201).json({
-                message: "VC status block transaction has been submitted.",
-                // transactionHash: transactionReceipt.hash // Example response field
-            });
-
-        } catch (error) {
-            next(addStatusCodeTo(error as Error));
-        }
+      // Placeholder response until blockchain is integrated
+      res.status(201).json({
+        message: "VC status block transaction has been submitted.",
+        // transactionHash: transactionReceipt.hash // Example response field
+      });
+    } catch (error) {
+      next(addStatusCodeTo(error as Error));
     }
+  }
 };
 
 export const getVCStatus: RequestHandler = async (req, res, next) => {
-    if (hasNoValidationErrors(validationResult(req))) {
-        try {
-            const { vcId } = req.params;
-            const { issuerDid, holderDid } = req.query;
+  if (hasNoValidationErrors(validationResult(req))) {
+    try {
+      const { vcId } = req.params;
+      const { issuerDid, holderDid } = req.query;
 
-            // TODO: Implement blockchain query logic here.
-            // 1. Connect to the blockchain and use a DID resolver to verify the issuer and holder DIDs.
-            // const isIssuerValid = await resolveDid(issuerDid);
-            // const isHolderValid = await resolveDid(holderDid);
+      // TODO: Implement blockchain query logic here.
+      // 1. Connect to the blockchain and use a DID resolver to verify the issuer and holder DIDs.
+      // const isIssuerValid = await resolveDid(issuerDid);
+      // const isHolderValid = await resolveDid(holderDid);
 
-            // 2. Query the smart contract to get the status of the VC using its vcId.
-            // const vcStatusFromChain = await getVCStatusFromBlockchain(vcId);
+      // 2. Query the smart contract to get the status of the VC using its vcId.
+      // const vcStatusFromChain = await getVCStatusFromBlockchain(vcId);
 
-            console.log(`Checking status for VC: ${vcId} on the blockchain...`);
+      console.log(`Checking status for VC: ${vcId} on the blockchain...`);
 
-            // Placeholder response until blockchain is integrated
-            const placeholderStatus = {
-                status: "active", // e.g., "active", "expired", "revoked"
-                revoked: false,
-                // Add other relevant status fields from your smart contract
-            };
+      // Placeholder response until blockchain is integrated
+      const placeholderStatus = {
+        status: "active", // e.g., "active", "expired", "revoked"
+        revoked: false,
+        // Add other relevant status fields from your smart contract
+      };
 
-            res.status(200).json(placeholderStatus); // Replace with vcStatusFromChain when ready
-
-        } catch (error) {
-            next(addStatusCodeTo(error as Error));
-        }
+      res.status(200).json(placeholderStatus); // Replace with vcStatusFromChain when ready
+    } catch (error) {
+      next(addStatusCodeTo(error as Error));
     }
+  }
 };
