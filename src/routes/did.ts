@@ -7,7 +7,7 @@ const router: Router = express.Router();
 
 /**
  * @swagger
- * /:
+ * /dids:
  *  post:
  *    summary: Register a new DID
  *    description: Register a new DID for a person or institution. The DID is written to the blockchain.
@@ -217,15 +217,72 @@ router.get(
   did.getDIDDocument
 );
 
+/**
+ * @swagger
+ * /dids/check/{did}:
+ *  get:
+ *    summary: Check DID in Blockchain.
+ *    description: Checking DID is Already in Blockchain. This is a public endpoint.
+ *    tags:
+ *      - "DID & Account Management"
+ *    parameters:
+ *      - in: path
+ *        name: did
+ *        required: true
+ *        schema:
+ *          type: string
+ *          description: The DID to check the document for.
+ *          example: "did:example:123456789abcdefghi"
+ *    responses:
+ *      200:
+ *        description: DID document checking successfully.
+ *        content:
+ *          application/json:
+ *            schema:
+ *              type: object
+ *              properties:
+ *                message:
+ *                  type: string
+ *                  example: "DID exists"
+ *                did:
+ *                  type: string
+ *                  example: "did:example:123456789abcdefghi"
+ *      404:
+ *        description: DID Document not found.
+ *      500:
+ *        description: Failed to check DID document.
+ */
 router.get(
   "/check/:did",
   [param("did", "DID must not be empty!").trim().not().isEmpty()],
   did.checkDID
 );
 
-router.get(
-  "/blocks",
-  did.numberofBlocks
-);
+/**
+ * @swagger
+ * /dids/blocks:
+ *  get:
+ *    summary: Get Count of DID in Blockchain.
+ *    description: Get count of DID in Blockchain. This is a public endpoint.
+ *    tags:
+ *      - "DID & Account Management"
+ *    responses:
+ *      200:
+ *        description: Number of DID document retrieved successfully.
+ *        content:
+ *          application/json:
+ *            schema:
+ *              type: object
+ *              properties:
+ *                message:
+ *                  type: string
+ *                  example: "Number of blocks"
+ *                did:
+ *                  type: number
+ *                  example: 1
+ *      500:
+ *        description: Failed to retrieved Number of DID document.
+ */
+router.get("/blocks", did.numberofBlocks);
 
 export default router;

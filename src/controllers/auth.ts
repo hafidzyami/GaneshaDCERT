@@ -1,19 +1,26 @@
-import { Request, Response } from 'express';
-import { PrismaClient, RequestStatus } from '@prisma/client';
-import { validationResult } from 'express-validator';
-import { generateMagicLinkToken, verifyMagicLinkToken, generateSessionToken } from '../utils/jwtService';
-import { sendMagicLinkEmail } from '../utils/emailService';
+import { Request, Response } from "express";
+import { PrismaClient, RequestStatus } from "@prisma/client";
+import { validationResult } from "express-validator";
+import {
+  generateMagicLinkToken,
+  verifyMagicLinkToken,
+  generateSessionToken,
+} from "../utils/jwtService";
+import { sendMagicLinkEmail } from "../utils/emailService";
 
 const prisma = new PrismaClient();
 
-export const registerInstitution = async (req: Request, res: Response): Promise<void> => {
+export const registerInstitution = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     // Validasi input dari express-validator
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       res.status(400).json({
         success: false,
-        message: 'Validation error',
+        message: "Validation error",
         errors: errors.array(),
       });
       return;
@@ -22,14 +29,16 @@ export const registerInstitution = async (req: Request, res: Response): Promise<
     const { name, email, phone, country, website, address } = req.body;
 
     // Cek apakah email sudah terdaftar
-    const existingInstitution = await prisma.institutionRegistration.findUnique({
-      where: { email },
-    });
+    const existingInstitution = await prisma.institutionRegistration.findUnique(
+      {
+        where: { email },
+      }
+    );
 
     if (existingInstitution) {
       res.status(409).json({
         success: false,
-        message: 'Email sudah terdaftar',
+        message: "Email sudah terdaftar",
       });
       return;
     }
@@ -49,7 +58,7 @@ export const registerInstitution = async (req: Request, res: Response): Promise<
 
     res.status(201).json({
       success: true,
-      message: 'Registrasi berhasil. Menunggu persetujuan admin.',
+      message: "Registrasi berhasil. Menunggu persetujuan admin.",
       data: {
         id: newInstitution.id,
         name: newInstitution.name,
@@ -58,22 +67,25 @@ export const registerInstitution = async (req: Request, res: Response): Promise<
       },
     });
   } catch (error) {
-    console.error('Error in registerInstitution:', error);
+    console.error("Error in registerInstitution:", error);
     res.status(500).json({
       success: false,
-      message: 'Terjadi kesalahan server',
+      message: "Terjadi kesalahan server",
     });
   }
 };
 
-export const getPendingInstitutions = async (req: Request, res: Response): Promise<void> => {
+export const getPendingInstitutions = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     const pendingInstitutions = await prisma.institutionRegistration.findMany({
       where: {
         status: RequestStatus.PENDING,
       },
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
       select: {
         id: true,
@@ -93,15 +105,18 @@ export const getPendingInstitutions = async (req: Request, res: Response): Promi
       data: pendingInstitutions,
     });
   } catch (error) {
-    console.error('Error in getPendingInstitutions:', error);
+    console.error("Error in getPendingInstitutions:", error);
     res.status(500).json({
       success: false,
-      message: 'Terjadi kesalahan server',
+      message: "Terjadi kesalahan server",
     });
   }
 };
 
-export const getAllInstitutions = async (req: Request, res: Response): Promise<void> => {
+export const getAllInstitutions = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     const { status } = req.query;
 
@@ -113,7 +128,7 @@ export const getAllInstitutions = async (req: Request, res: Response): Promise<v
     const institutions = await prisma.institutionRegistration.findMany({
       where: whereClause,
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
       select: {
         id: true,
@@ -136,22 +151,25 @@ export const getAllInstitutions = async (req: Request, res: Response): Promise<v
       data: institutions,
     });
   } catch (error) {
-    console.error('Error in getAllInstitutions:', error);
+    console.error("Error in getAllInstitutions:", error);
     res.status(500).json({
       success: false,
-      message: 'Terjadi kesalahan server',
+      message: "Terjadi kesalahan server",
     });
   }
 };
 
-export const approveInstitution = async (req: Request, res: Response): Promise<void> => {
+export const approveInstitution = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     // Validasi input dari express-validator
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       res.status(400).json({
         success: false,
-        message: 'Validation error',
+        message: "Validation error",
         errors: errors.array(),
       });
       return;
@@ -168,7 +186,7 @@ export const approveInstitution = async (req: Request, res: Response): Promise<v
     if (!institution) {
       res.status(404).json({
         success: false,
-        message: 'Institusi tidak ditemukan',
+        message: "Institusi tidak ditemukan",
       });
       return;
     }
@@ -220,7 +238,8 @@ export const approveInstitution = async (req: Request, res: Response): Promise<v
 
     res.status(200).json({
       success: true,
-      message: 'Institusi berhasil disetujui dan magic link telah dikirim ke email',
+      message:
+        "Institusi berhasil disetujui dan magic link telah dikirim ke email",
       data: {
         id: updatedInstitution.id,
         name: updatedInstitution.name,
@@ -231,10 +250,10 @@ export const approveInstitution = async (req: Request, res: Response): Promise<v
       },
     });
   } catch (error) {
-    console.error('Error in approveInstitution:', error);
+    console.error("Error in approveInstitution:", error);
     res.status(500).json({
       success: false,
-      message: 'Terjadi kesalahan server',
+      message: "Terjadi kesalahan server",
     });
   }
 };
@@ -243,14 +262,17 @@ export const approveInstitution = async (req: Request, res: Response): Promise<v
  * 5. REJECT INSTITUSI (untuk admin)
  * POST /api/auth/reject/:institutionId
  */
-export const rejectInstitution = async (req: Request, res: Response): Promise<void> => {
+export const rejectInstitution = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     // Validasi input dari express-validator
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       res.status(400).json({
         success: false,
-        message: 'Validation error',
+        message: "Validation error",
         errors: errors.array(),
       });
       return;
@@ -266,7 +288,7 @@ export const rejectInstitution = async (req: Request, res: Response): Promise<vo
     if (!institution) {
       res.status(404).json({
         success: false,
-        message: 'Institusi tidak ditemukan',
+        message: "Institusi tidak ditemukan",
       });
       return;
     }
@@ -289,7 +311,7 @@ export const rejectInstitution = async (req: Request, res: Response): Promise<vo
 
     res.status(200).json({
       success: true,
-      message: 'Institusi berhasil ditolak',
+      message: "Institusi berhasil ditolak",
       data: {
         id: updatedInstitution.id,
         name: updatedInstitution.name,
@@ -298,10 +320,10 @@ export const rejectInstitution = async (req: Request, res: Response): Promise<vo
       },
     });
   } catch (error) {
-    console.error('Error in rejectInstitution:', error);
+    console.error("Error in rejectInstitution:", error);
     res.status(500).json({
       success: false,
-      message: 'Terjadi kesalahan server',
+      message: "Terjadi kesalahan server",
     });
   }
 };
@@ -310,14 +332,17 @@ export const rejectInstitution = async (req: Request, res: Response): Promise<vo
  * 6. VERIFIKASI MAGIC LINK TOKEN
  * POST /api/auth/verify-magic-link
  */
-export const verifyMagicLink = async (req: Request, res: Response): Promise<void> => {
+export const verifyMagicLink = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     // Validasi input dari express-validator
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       res.status(400).json({
         success: false,
-        message: 'Validation error',
+        message: "Validation error",
         errors: errors.array(),
       });
       return;
@@ -330,7 +355,7 @@ export const verifyMagicLink = async (req: Request, res: Response): Promise<void
     if (!decoded) {
       res.status(401).json({
         success: false,
-        message: 'Token tidak valid atau sudah kadaluarsa',
+        message: "Token tidak valid atau sudah kadaluarsa",
       });
       return;
     }
@@ -346,7 +371,7 @@ export const verifyMagicLink = async (req: Request, res: Response): Promise<void
     if (!magicLink) {
       res.status(404).json({
         success: false,
-        message: 'Magic link tidak ditemukan',
+        message: "Magic link tidak ditemukan",
       });
       return;
     }
@@ -355,7 +380,7 @@ export const verifyMagicLink = async (req: Request, res: Response): Promise<void
     if (magicLink.used) {
       res.status(400).json({
         success: false,
-        message: 'Magic link sudah pernah digunakan',
+        message: "Magic link sudah pernah digunakan",
       });
       return;
     }
@@ -364,7 +389,7 @@ export const verifyMagicLink = async (req: Request, res: Response): Promise<void
     if (new Date() > magicLink.expiresAt) {
       res.status(400).json({
         success: false,
-        message: 'Magic link sudah kadaluarsa',
+        message: "Magic link sudah kadaluarsa",
       });
       return;
     }
@@ -373,7 +398,7 @@ export const verifyMagicLink = async (req: Request, res: Response): Promise<void
     if (magicLink.institution.status !== RequestStatus.APPROVED) {
       res.status(400).json({
         success: false,
-        message: 'Institusi belum disetujui',
+        message: "Institusi belum disetujui",
       });
       return;
     }
@@ -395,7 +420,7 @@ export const verifyMagicLink = async (req: Request, res: Response): Promise<void
 
     res.status(200).json({
       success: true,
-      message: 'Login berhasil',
+      message: "Login berhasil",
       data: {
         sessionToken,
         institution: {
@@ -410,10 +435,10 @@ export const verifyMagicLink = async (req: Request, res: Response): Promise<void
       },
     });
   } catch (error) {
-    console.error('Error in verifyMagicLink:', error);
+    console.error("Error in verifyMagicLink:", error);
     res.status(500).json({
       success: false,
-      message: 'Terjadi kesalahan server',
+      message: "Terjadi kesalahan server",
     });
   }
 };
@@ -422,7 +447,10 @@ export const verifyMagicLink = async (req: Request, res: Response): Promise<void
  * 7. GET INSTITUTION PROFILE (dengan session token)
  * GET /api/auth/profile
  */
-export const getProfile = async (req: Request, res: Response): Promise<void> => {
+export const getProfile = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     // Ambil institutionId dari middleware auth (akan kita buat nanti)
     const institutionId = (req as any).institutionId;
@@ -448,7 +476,7 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
     if (!institution) {
       res.status(404).json({
         success: false,
-        message: 'Institusi tidak ditemukan',
+        message: "Institusi tidak ditemukan",
       });
       return;
     }
@@ -458,10 +486,10 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
       data: institution,
     });
   } catch (error) {
-    console.error('Error in getProfile:', error);
+    console.error("Error in getProfile:", error);
     res.status(500).json({
       success: false,
-      message: 'Terjadi kesalahan server',
+      message: "Terjadi kesalahan server",
     });
   }
 };
