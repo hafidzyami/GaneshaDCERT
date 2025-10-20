@@ -1,4 +1,4 @@
-import { PrismaClient, RequestStatus, InstitutionRegistration } from "@prisma/client";
+import { InstitutionRegistration } from "@prisma/client";
 import { prisma } from "../config/database";
 import {
   ConflictError,
@@ -12,6 +12,8 @@ import {
 } from "./jwt.service";
 import { sendMagicLinkEmail } from "./email.service";
 import { env } from "../config/env";
+import { REQUEST_STATUS, JWT_EXPIRY } from "../constants";
+import logger from "../config/logger";
 
 /**
  * Authentication Service
@@ -42,11 +44,11 @@ class AuthService {
     const institution = await prisma.institutionRegistration.create({
       data: {
         ...data,
-        status: RequestStatus.PENDING,
+        status: REQUEST_STATUS.PENDING as any,
       },
     });
 
-    console.log(`✅ Institution registered: ${institution.name} (${institution.email})`);
+    logger.info(`Institution registered: ${institution.name} (${institution.email})`);
     return institution;
   }
 
@@ -55,7 +57,7 @@ class AuthService {
    */
   async getPendingInstitutions(): Promise<InstitutionRegistration[]> {
     return await prisma.institutionRegistration.findMany({
-      where: { status: RequestStatus.PENDING },
+      where: { status: REQUEST_STATUS.PENDING as any },
       orderBy: { createdAt: "desc" },
     });
   }
@@ -63,8 +65,8 @@ class AuthService {
   /**
    * Get all institutions with optional status filter
    */
-  async getAllInstitutions(status?: RequestStatus): Promise<InstitutionRegistration[]> {
-    const whereClause = status ? { status } : {};
+  async getAllInstitutions(status?: string): Promise<InstitutionRegistration[]> {
+    const whereClause = status ? { status: status as any } : {};
 
     return await prisma.institutionRegistration.findMany({
       where: whereClause,
@@ -88,7 +90,7 @@ class AuthService {
       throw new NotFoundError("Institusi tidak ditemukan");
     }
 
-    if (institution.status !== RequestStatus.PENDING) {
+    if (institution.status !== REQUEST_STATUS.PENDING) {
       throw new BadRequestError(
         `Institusi sudah ${institution.status.toLowerCase()}`
       );
@@ -98,7 +100,7 @@ class AuthService {
     const updatedInstitution = await prisma.institutionRegistration.update({
       where: { id: institutionId },
       data: {
-        status: RequestStatus.APPROVED,
+        status: REQUEST_STATUS.APPROVED as any,
         approvedBy,
         approvedAt: new Date(),
       },
@@ -128,8 +130,8 @@ class AuthService {
       magicLink: magicLinkUrl,
     });
 
-    console.log(`✅ Institution approved: ${institution.name}`);
-    console.log(`   Magic link sent to: ${institution.email}`);
+    logger.success(`Institution approved: ${institution.name}`);
+    logger.info(`Magic link sent to: ${institution.email}`);
 
     return updatedInstitution;
   }
@@ -147,7 +149,7 @@ class AuthService {
       throw new NotFoundError("Institusi tidak ditemukan");
     }
 
-    if (institution.status !== RequestStatus.PENDING) {
+    if (institution.status !== REQUEST_STATUS.PENDING) {
       throw new BadRequestError(
         `Institusi sudah ${institution.status.toLowerCase()}`
       );
@@ -156,10 +158,10 @@ class AuthService {
     // Update status to REJECTED
     const updatedInstitution = await prisma.institutionRegistration.update({
       where: { id: institutionId },
-      data: { status: RequestStatus.REJECTED },
+      data: { status: REQUEST_STATUS.REJECTED as any },
     });
 
-    console.log(`❌ Institution rejected: ${institution.name}`);
+    logger.warn(`Institution rejected: ${institution.name}`);
     return updatedInstitution;
   }
 
@@ -194,7 +196,7 @@ class AuthService {
       throw new BadRequestError("Magic link sudah kadaluarsa");
     }
 
-    if (magicLink.institution.status !== RequestStatus.APPROVED) {
+    if (magicLink.institution.status !== REQUEST_STATUS.APPROVED) {
       throw new BadRequestError("Institusi belum disetujui");
     }
 
@@ -213,7 +215,7 @@ class AuthService {
       magicLink.institution.email
     );
 
-    console.log(`✅ Magic link verified: ${magicLink.institution.email}`);
+    logger.success(`Magic link verified: ${magicLink.institution.email}`);
 
     return {
       sessionToken,

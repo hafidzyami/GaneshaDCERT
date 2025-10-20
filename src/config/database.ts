@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client';
+import { env } from './env';
+import logger from './logger';
 
 /**
  * Singleton Prisma Client Instance
@@ -12,7 +14,7 @@ class DatabaseService {
   public static getInstance(): PrismaClient {
     if (!DatabaseService.instance) {
       DatabaseService.instance = new PrismaClient({
-        log: process.env.NODE_ENV === 'development' 
+        log: env.NODE_ENV === 'development' 
           ? ['query', 'info', 'warn', 'error'] 
           : ['error'],
       });
@@ -29,16 +31,26 @@ class DatabaseService {
   public static async connect(): Promise<void> {
     try {
       await DatabaseService.getInstance().$connect();
-      console.log('✅ Database connected successfully');
+      logger.success('Database connected successfully');
     } catch (error) {
-      console.error('❌ Database connection failed:', error);
+      logger.error('Database connection failed', error);
       process.exit(1);
     }
   }
 
   public static async disconnect(): Promise<void> {
     await DatabaseService.getInstance().$disconnect();
-    console.log('Database disconnected');
+    logger.info('Database disconnected');
+  }
+
+  public static async isConnected(): Promise<boolean> {
+    try {
+      await DatabaseService.getInstance().$queryRaw`SELECT 1`;
+      return true;
+    } catch (error) {
+      logger.error('Database health check failed', error);
+      return false;
+    }
   }
 }
 

@@ -1,20 +1,19 @@
 import nodemailer from 'nodemailer';
-import dotenv from 'dotenv';
+import { env } from '../config/env';
+import logger from '../config/logger';
 
-dotenv.config();
-
-// Konfigurasi transporter untuk Nodemailer
+// Configure transporter for Nodemailer
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: false, // true untuk port 465, false untuk port lainnya
+  host: env.SMTP_HOST,
+  port: env.SMTP_PORT,
+  secure: false, // true for port 465, false for others
   auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
+    user: env.SMTP_USER,
+    pass: env.SMTP_PASS,
   },
 });
 
-// Interface untuk parameter email
+// Interface for email parameters
 interface SendMagicLinkEmailParams {
   to: string;
   name: string;
@@ -22,7 +21,7 @@ interface SendMagicLinkEmailParams {
 }
 
 /**
- * Mengirim email berisi Magic Link ke pengguna
+ * Send email containing Magic Link to user
  */
 export const sendMagicLinkEmail = async ({
   to,
@@ -31,7 +30,7 @@ export const sendMagicLinkEmail = async ({
 }: SendMagicLinkEmailParams): Promise<void> => {
   try {
     const mailOptions = {
-      from: `"GaneshaDCERT" <${process.env.SMTP_USER}>`,
+      from: `"GaneshaDCERT" <${env.SMTP_USER}>`,
       to,
       subject: 'Your GaneshaDCERT Institution Account is Approved',
       html: `
@@ -100,23 +99,23 @@ export const sendMagicLinkEmail = async ({
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`Magic link email sent to ${to}`);
+    logger.success(`Magic link email sent to ${to}`);
   } catch (error) {
-    console.error('Error sending magic link email:', error);
+    logger.error('Failed to send magic link email', error);
     throw new Error('Failed to send magic link email');
   }
 };
 
 /**
- * Verifikasi konfigurasi email
+ * Verify email configuration
  */
 export const verifyEmailConfiguration = async (): Promise<boolean> => {
   try {
     await transporter.verify();
-    console.log('Email configuration is valid');
+    logger.success('Email configuration is valid');
     return true;
   } catch (error) {
-    console.error('Email configuration error:', error);
+    logger.error('Email configuration error', error);
     return false;
   }
 };

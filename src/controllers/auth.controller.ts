@@ -3,6 +3,8 @@ import { validationResult } from "express-validator";
 import AuthService from "../services/auth.service";
 import { ValidationError } from "../utils/errors/AppError";
 import { asyncHandler } from "../middlewares/errorHandler.middleware";
+import { ResponseHelper } from "../utils/helpers";
+import { HTTP_STATUS } from "../constants";
 
 /**
  * Register Institution Controller
@@ -25,16 +27,16 @@ export const registerInstitution = asyncHandler(async (req: Request, res: Respon
     address,
   });
 
-  res.status(201).json({
-    success: true,
-    message: "Registrasi berhasil. Menunggu persetujuan admin.",
-    data: {
+  return ResponseHelper.created(
+    res,
+    {
       id: institution.id,
       name: institution.name,
       email: institution.email,
       status: institution.status,
     },
-  });
+    "Registrasi berhasil. Menunggu persetujuan admin."
+  );
 });
 
 /**
@@ -43,10 +45,7 @@ export const registerInstitution = asyncHandler(async (req: Request, res: Respon
 export const getPendingInstitutions = asyncHandler(async (req: Request, res: Response) => {
   const institutions = await AuthService.getPendingInstitutions();
 
-  res.status(200).json({
-    success: true,
-    data: institutions,
-  });
+  return ResponseHelper.success(res, institutions);
 });
 
 /**
@@ -55,14 +54,9 @@ export const getPendingInstitutions = asyncHandler(async (req: Request, res: Res
 export const getAllInstitutions = asyncHandler(async (req: Request, res: Response) => {
   const { status } = req.query;
 
-  const institutions = await AuthService.getAllInstitutions(
-    status as any
-  );
+  const institutions = await AuthService.getAllInstitutions(status as any);
 
-  res.status(200).json({
-    success: true,
-    data: institutions,
-  });
+  return ResponseHelper.success(res, institutions);
 });
 
 /**
@@ -77,15 +71,11 @@ export const approveInstitution = asyncHandler(async (req: Request, res: Respons
   const { institutionId } = req.params;
   const { approvedBy } = req.body;
 
-  const institution = await AuthService.approveInstitution(
-    institutionId,
-    approvedBy
-  );
+  const institution = await AuthService.approveInstitution(institutionId, approvedBy);
 
-  res.status(200).json({
-    success: true,
-    message: "Institusi berhasil disetujui dan magic link telah dikirim ke email",
-    data: {
+  return ResponseHelper.success(
+    res,
+    {
       id: institution.id,
       name: institution.name,
       email: institution.email,
@@ -93,7 +83,8 @@ export const approveInstitution = asyncHandler(async (req: Request, res: Respons
       approvedBy: institution.approvedBy,
       approvedAt: institution.approvedAt,
     },
-  });
+    "Institusi berhasil disetujui dan magic link telah dikirim ke email"
+  );
 });
 
 /**
@@ -109,16 +100,16 @@ export const rejectInstitution = asyncHandler(async (req: Request, res: Response
 
   const institution = await AuthService.rejectInstitution(institutionId);
 
-  res.status(200).json({
-    success: true,
-    message: "Institusi berhasil ditolak",
-    data: {
+  return ResponseHelper.success(
+    res,
+    {
       id: institution.id,
       name: institution.name,
       email: institution.email,
       status: institution.status,
     },
-  });
+    "Institusi berhasil ditolak"
+  );
 });
 
 /**
@@ -134,36 +125,29 @@ export const verifyMagicLink = asyncHandler(async (req: Request, res: Response) 
 
   const result = await AuthService.verifyMagicLink(token);
 
-  res.status(200).json({
-    success: true,
-    message: "Login berhasil",
-    data: result,
-  });
+  return ResponseHelper.success(res, result, "Login berhasil");
 });
 
 /**
  * Get Profile Controller
  */
 export const getProfile = asyncHandler(async (req: Request, res: Response) => {
-  const institutionId = (req as any).institutionId;
+  const institutionId = req.institutionId!;
 
   const institution = await AuthService.getInstitutionProfile(institutionId);
 
-  res.status(200).json({
-    success: true,
-    data: {
-      id: institution.id,
-      name: institution.name,
-      email: institution.email,
-      phone: institution.phone,
-      country: institution.country,
-      website: institution.website,
-      address: institution.address,
-      status: institution.status,
-      approvedBy: institution.approvedBy,
-      approvedAt: institution.approvedAt,
-      createdAt: institution.createdAt,
-      updatedAt: institution.updatedAt,
-    },
+  return ResponseHelper.success(res, {
+    id: institution.id,
+    name: institution.name,
+    email: institution.email,
+    phone: institution.phone,
+    country: institution.country,
+    website: institution.website,
+    address: institution.address,
+    status: institution.status,
+    approvedBy: institution.approvedBy,
+    approvedAt: institution.approvedAt,
+    createdAt: institution.createdAt,
+    updatedAt: institution.updatedAt,
   });
 });
