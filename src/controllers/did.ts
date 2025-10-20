@@ -18,7 +18,17 @@ import {
  */
 export const registerDID: RequestHandler = async (req, res, next) => {
   if (hasNoValidationErrors(validationResult(req))) {
-    const { did_string, public_key, role } = req.body;
+    const {
+      did_string,
+      public_key,
+      role,
+      email,
+      name,
+      phone,
+      country,
+      website,
+      address,
+    } = req.body;
 
     try {
       // TODO: Implement logic to check if the DID already exists on the blockchain.
@@ -30,7 +40,40 @@ export const registerDID: RequestHandler = async (req, res, next) => {
       // TODO: Call the smart contract to write the new DID document to the blockchain.
       console.log(`Registering DID: ${did_string} with role: ${role}`);
       const numberRole = role.toLowerCase() == "individual" ? 1 : 2;
-      await blockchain.registerDIDOnChain(did_string, public_key, numberRole);
+      if (numberRole == 1) {
+        // Call Registration for Individual
+        await blockchain.registerIndividualDIDOnChain(
+          did_string,
+          public_key,
+          numberRole
+        );
+      } else {
+        // Call Registration for Institutional
+        // Check variable of Institutional
+        if (
+          email.isEmpty() ||
+          name.isEmpty() ||
+          phone.isEmpty() ||
+          country.isEmpty() ||
+          website.isEmpty() ||
+          address.isEmpty()
+        ) {
+          throwCustomError(
+            "A properties of institutional must be not empty!.",
+            400
+          );
+        }
+        await blockchain.registerInstitutionalDIDOnChain(
+          did_string,
+          public_key,
+          email,
+          name,
+          phone,
+          country,
+          website,
+          address
+        );
+      }
       // const transaction = await registerDIDOnBlockchain(did_string, public_key, role);
 
       // Placeholder for blockchain transaction response

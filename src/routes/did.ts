@@ -32,8 +32,8 @@ const router: Router = express.Router();
  *                example: "0x04e6a..."
  *              role:
  *                type: string
- *                enum: [holder, issuer]
- *                example: "holder"
+ *                enum: [individual, institution]
+ *                example: "institution"
  *    responses:
  *      201:
  *        description: DID registered successfully.
@@ -48,9 +48,6 @@ const router: Router = express.Router();
  *                did:
  *                  type: string
  *                  example: "did:example:123456789abcdefghi"
- *                transactionHash:
- *                  type: string
- *                  example: "0x..."
  *      400:
  *        description: Validation error.
  *      500:
@@ -64,6 +61,22 @@ router.post(
     body("role", "Role must be either individual or institution!")
       .trim()
       .isIn(["individual", "institution"]),
+    body("email", "Email of institution must not be empty!")
+      .trim()
+      .isEmail()
+      .optional(),
+    body("name", "Name of institution must not be empty!").trim().optional(),
+    body("phone", "Phone of institution must not be empty!").trim().optional(),
+    body("country", "Country of institution must not be empty!")
+      .trim()
+      .optional(),
+    body("website", "Website of institution must not be empty!")
+      .trim()
+      .isURL()
+      .optional(),
+    body("address", "Address of institution must not be empty!")
+      .trim()
+      .optional(),
   ],
   did.registerDID
 );

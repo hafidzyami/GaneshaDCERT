@@ -23,13 +23,37 @@ export const contract = new ethers.Contract(
   signer
 );
 
-export const registerDIDOnChain = async (
+export const registerIndividualDIDOnChain = async (
   did: string,
-  key: string,
-  role: number
+  key: string
 ) => {
   try {
-    await contract.register(did, role, "#key-1", key);
+    await contract.registerIndividual(did, "#key-1", key);
+  } catch (error) {}
+};
+
+export const registerInstitutionalDIDOnChain = async (
+  did: string,
+  key: string,
+  email: string,
+  name: string,
+  phone: string,
+  country: string,
+  website: string,
+  addressInfo: string
+) => {
+  try {
+    await contract.registerInstitution(
+      did,
+      "#key-1",
+      key,
+      email,
+      name,
+      phone,
+      country,
+      website,
+      addressInfo
+    );
   } catch (error) {}
 };
 
