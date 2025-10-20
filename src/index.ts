@@ -34,6 +34,10 @@ const swaggerOptions: swaggerJsdoc.Options = {
         description: "Development Server",
       },
       {
+        url: "https://dev-api-dcert.ganeshait.com/api/v1",
+        description: "Development Server",
+      },
+      {
         url: "https://api-dcert.ganeshait.com/api/v1",
         description: "Production Server",
       },
