@@ -4,8 +4,11 @@ import swaggerUi from "swagger-ui-express";
 import cors from "cors";
 import { env } from "./config/env";
 import DatabaseService from "./config/database";
-import BlockchainConfig from "./config/blockchain";
-import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.middleware";
+import BlockchainConfig from "./config/didblockchain";
+import {
+  errorHandler,
+  notFoundHandler,
+} from "./middlewares/errorHandler.middleware";
 
 // Routes
 import didRoutes from "./routes/did.routes";
@@ -160,7 +163,9 @@ const startServer = async () => {
     // Test Blockchain Connection
     const blockchainConnected = await BlockchainConfig.testConnection();
     if (!blockchainConnected) {
-      console.warn("⚠️  Blockchain connection failed, but server will continue");
+      console.warn(
+        "⚠️  Blockchain connection failed, but server will continue"
+      );
     }
 
     // Start Express Server

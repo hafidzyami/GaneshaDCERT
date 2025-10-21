@@ -5,7 +5,11 @@ export class AppError extends Error {
   public readonly statusCode: number;
   public readonly isOperational: boolean;
 
-  constructor(message: string, statusCode: number = 500, isOperational: boolean = true) {
+  constructor(
+    message: string,
+    statusCode: number = 500,
+    isOperational: boolean = true
+  ) {
     super(message);
     this.statusCode = statusCode;
     this.isOperational = isOperational;
@@ -19,7 +23,7 @@ export class AppError extends Error {
  * Bad Request Error (400)
  */
 export class BadRequestError extends AppError {
-  constructor(message: string = 'Bad Request') {
+  constructor(message: string = "Bad Request") {
     super(message, 400);
   }
 }
@@ -28,7 +32,7 @@ export class BadRequestError extends AppError {
  * Unauthorized Error (401)
  */
 export class UnauthorizedError extends AppError {
-  constructor(message: string = 'Unauthorized') {
+  constructor(message: string = "Unauthorized") {
     super(message, 401);
   }
 }
@@ -37,7 +41,7 @@ export class UnauthorizedError extends AppError {
  * Forbidden Error (403)
  */
 export class ForbiddenError extends AppError {
-  constructor(message: string = 'Forbidden') {
+  constructor(message: string = "Forbidden") {
     super(message, 403);
   }
 }
@@ -46,7 +50,7 @@ export class ForbiddenError extends AppError {
  * Not Found Error (404)
  */
 export class NotFoundError extends AppError {
-  constructor(message: string = 'Resource not found') {
+  constructor(message: string = "Resource not found") {
     super(message, 404);
   }
 }
@@ -55,7 +59,7 @@ export class NotFoundError extends AppError {
  * Conflict Error (409)
  */
 export class ConflictError extends AppError {
-  constructor(message: string = 'Resource conflict') {
+  constructor(message: string = "Resource conflict") {
     super(message, 409);
   }
 }
@@ -66,7 +70,7 @@ export class ConflictError extends AppError {
 export class ValidationError extends AppError {
   public readonly errors?: any[];
 
-  constructor(message: string = 'Validation failed', errors?: any[]) {
+  constructor(message: string = "Validation failed", errors?: any[]) {
     super(message, 422);
     this.errors = errors;
   }
@@ -76,7 +80,7 @@ export class ValidationError extends AppError {
  * Internal Server Error (500)
  */
 export class InternalServerError extends AppError {
-  constructor(message: string = 'Internal server error') {
+  constructor(message: string = "Internal server error") {
     super(message, 500);
   }
 }
@@ -87,7 +91,10 @@ export class InternalServerError extends AppError {
 export class BlockchainError extends AppError {
   public readonly transactionHash?: string;
 
-  constructor(message: string = 'Blockchain transaction failed', transactionHash?: string) {
+  constructor(
+    message: string = "Blockchain transaction failed",
+    transactionHash?: string
+  ) {
     super(message, 500);
     this.transactionHash = transactionHash;
   }
@@ -97,7 +104,7 @@ export class BlockchainError extends AppError {
  * Database Error
  */
 export class DatabaseError extends AppError {
-  constructor(message: string = 'Database operation failed') {
+  constructor(message: string = "Database operation failed") {
     super(message, 500);
   }
 }

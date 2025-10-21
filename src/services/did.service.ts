@@ -1,4 +1,4 @@
-import BlockchainService from "./blockchain.service";
+import BlockchainService from "./blockchain/didsBlockchain.service";
 import { BadRequestError, NotFoundError } from "../utils/errors/AppError";
 
 /**
@@ -20,7 +20,17 @@ class DIDService {
     website?: string;
     address?: string;
   }) {
-    const { did_string, public_key, role, email, name, phone, country, website, address } = data;
+    const {
+      did_string,
+      public_key,
+      role,
+      email,
+      name,
+      phone,
+      country,
+      website,
+      address,
+    } = data;
 
     // Check if DID already exists
     const didExists = await BlockchainService.isDIDRegistered(did_string);

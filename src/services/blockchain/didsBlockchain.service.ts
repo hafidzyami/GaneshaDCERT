@@ -1,16 +1,16 @@
 import { ethers, TransactionReceipt } from "ethers";
-import BlockchainConfig from "../config/blockchain";
-import { BlockchainError, NotFoundError } from "../utils/errors/AppError";
+import DIDBlockchainConfig from "../../config/didblockchain";
+import { BlockchainError, NotFoundError } from "../../utils/errors/AppError";
 
 /**
- * Blockchain Service
- * Handles all blockchain interactions with proper error handling
+ * DID Blockchain Service
+ * Handles all DID blockchain interactions with proper error handling
  */
-class BlockchainService {
+class DIDsBlockchainService {
   private contract: ethers.Contract;
 
   constructor() {
-    this.contract = BlockchainConfig.contract;
+    this.contract = DIDBlockchainConfig.contract;
   }
 
   /**
@@ -21,12 +21,16 @@ class BlockchainService {
     publicKey: string
   ): Promise<TransactionReceipt> {
     try {
-      const tx = await this.contract.registerIndividual(did, "#key-1", publicKey);
+      const tx = await this.contract.registerIndividual(
+        did,
+        "#key-1",
+        publicKey
+      );
       const receipt = await tx.wait();
 
       if (receipt.status !== 1) {
         throw new BlockchainError(
-          'Transaction failed on blockchain',
+          "Transaction failed on blockchain",
           receipt.hash
         );
       }
@@ -34,8 +38,8 @@ class BlockchainService {
       console.log(`✅ Individual DID registered: ${did} (TX: ${receipt.hash})`);
       return receipt;
     } catch (error: any) {
-      console.error('❌ Failed to register individual DID:', error);
-      
+      console.error("❌ Failed to register individual DID:", error);
+
       if (error instanceof BlockchainError) {
         throw error;
       }
@@ -76,16 +80,18 @@ class BlockchainService {
 
       if (receipt.status !== 1) {
         throw new BlockchainError(
-          'Transaction failed on blockchain',
+          "Transaction failed on blockchain",
           receipt.hash
         );
       }
 
-      console.log(`✅ Institutional DID registered: ${did} (TX: ${receipt.hash})`);
+      console.log(
+        `✅ Institutional DID registered: ${did} (TX: ${receipt.hash})`
+      );
       return receipt;
     } catch (error: any) {
-      console.error('❌ Failed to register institutional DID:', error);
-      
+      console.error("❌ Failed to register institutional DID:", error);
+
       if (error instanceof BlockchainError) {
         throw error;
       }
@@ -99,18 +105,25 @@ class BlockchainService {
   /**
    * Register New Key for DID Rotation
    */
-  async registerNewKey(did: string, newPublicKey: string): Promise<TransactionReceipt> {
+  async registerNewKey(
+    did: string,
+    newPublicKey: string
+  ): Promise<TransactionReceipt> {
     try {
       const currentKeyId = await this.contract.getActiveKeyId(did);
       const keyNumber = parseInt(currentKeyId.split("-").pop() || "1", 10);
       const newKeyId = `#key-${keyNumber + 1}`;
 
-      const tx = await this.contract.registerNewKey(did, newKeyId, newPublicKey);
+      const tx = await this.contract.registerNewKey(
+        did,
+        newKeyId,
+        newPublicKey
+      );
       const receipt = await tx.wait();
 
       if (receipt.status !== 1) {
         throw new BlockchainError(
-          'Key rotation transaction failed',
+          "Key rotation transaction failed",
           receipt.hash
         );
       }
@@ -118,15 +131,13 @@ class BlockchainService {
       console.log(`✅ Key rotated for DID: ${did} (New KeyID: ${newKeyId})`);
       return receipt;
     } catch (error: any) {
-      console.error('❌ Failed to rotate key:', error);
-      
+      console.error("❌ Failed to rotate key:", error);
+
       if (error instanceof BlockchainError) {
         throw error;
       }
 
-      throw new BlockchainError(
-        `Failed to rotate key: ${error.message}`
-      );
+      throw new BlockchainError(`Failed to rotate key: ${error.message}`);
     }
   }
 
@@ -137,7 +148,7 @@ class BlockchainService {
     try {
       return await this.contract.isRegistered(did);
     } catch (error: any) {
-      console.error('❌ Failed to check DID:', error);
+      console.error("❌ Failed to check DID:", error);
       throw new BlockchainError(`Failed to check DID: ${error.message}`);
     }
   }
@@ -147,13 +158,13 @@ class BlockchainService {
    */
   async getDIDKey(did: string, keyId?: string): Promise<string> {
     try {
-      const key = keyId 
+      const key = keyId
         ? await this.contract.getKey(did, keyId)
         : await this.contract.getKey(did);
-      
+
       return key;
     } catch (error: any) {
-      console.error('❌ Failed to get DID key:', error);
+      console.error("❌ Failed to get DID key:", error);
       throw new BlockchainError(`Failed to get DID key: ${error.message}`);
     }
   }
@@ -165,7 +176,7 @@ class BlockchainService {
     try {
       return await this.contract.getDIDCount();
     } catch (error: any) {
-      console.error('❌ Failed to get DID count:', error);
+      console.error("❌ Failed to get DID count:", error);
       throw new BlockchainError(`Failed to get DID count: ${error.message}`);
     }
   }
@@ -175,9 +186,9 @@ class BlockchainService {
    */
   async getBlockNumber(): Promise<number> {
     try {
-      return await BlockchainConfig.provider.getBlockNumber();
+      return await DIDBlockchainConfig.provider.getBlockNumber();
     } catch (error: any) {
-      console.error('❌ Failed to get block number:', error);
+      console.error("❌ Failed to get block number:", error);
       throw new BlockchainError(`Failed to get block number: ${error.message}`);
     }
   }
@@ -192,7 +203,7 @@ class BlockchainService {
 
       if (receipt.status !== 1) {
         throw new BlockchainError(
-          'DID deactivation transaction failed',
+          "DID deactivation transaction failed",
           receipt.hash
         );
       }
@@ -200,15 +211,13 @@ class BlockchainService {
       console.log(`✅ DID deactivated: ${did} (TX: ${receipt.hash})`);
       return receipt;
     } catch (error: any) {
-      console.error('❌ Failed to deactivate DID:', error);
-      
+      console.error("❌ Failed to deactivate DID:", error);
+
       if (error instanceof BlockchainError) {
         throw error;
       }
 
-      throw new BlockchainError(
-        `Failed to deactivate DID: ${error.message}`
-      );
+      throw new BlockchainError(`Failed to deactivate DID: ${error.message}`);
     }
   }
 
@@ -218,9 +227,9 @@ class BlockchainService {
   async getDIDDocument(did: string): Promise<any> {
     try {
       const isRegistered = await this.isDIDRegistered(did);
-      
+
       if (!isRegistered) {
-        throw new NotFoundError('DID not found on blockchain');
+        throw new NotFoundError("DID not found on blockchain");
       }
 
       const document = await this.contract.getDIDDocument(did);
@@ -232,17 +241,15 @@ class BlockchainService {
         [keyId]: publicKey,
       };
     } catch (error: any) {
-      console.error('❌ Failed to get DID document:', error);
-      
+      console.error("❌ Failed to get DID document:", error);
+
       if (error instanceof NotFoundError) {
         throw error;
       }
 
-      throw new BlockchainError(
-        `Failed to get DID document: ${error.message}`
-      );
+      throw new BlockchainError(`Failed to get DID document: ${error.message}`);
     }
   }
 }
 
-export default new BlockchainService();
+export default new DIDsBlockchainService();
