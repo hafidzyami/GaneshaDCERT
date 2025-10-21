@@ -1,46 +1,38 @@
 import { BadRequestError } from "../utils/errors/AppError";
+import logger from "../config/logger";
+import BlockchainService from "./blockchain/vcBlockchain.service";
 
 /**
- * Schema Service
+ * Schema Service with Dependency Injection
  * Handles VC Schema operations on blockchain
  * TODO: Implement actual blockchain integration
  */
 class SchemaService {
+  private blockchainService: typeof BlockchainService;
+  /**
+   * Constructor with dependency injection
+   * @param dependencies - Optional dependencies for testing
+   */
+  constructor(dependencies?: { blockchainService?: typeof BlockchainService }) {
+    this.blockchainService =
+      dependencies?.blockchainService || BlockchainService;
+  }
+
   /**
    * Get all VC Schemas with optional filter by issuer DID
    */
   async getAllVCSchemas(issuerDid?: string): Promise<any> {
     // TODO: Implement blockchain query to get all schemas
-    console.log("📋 Fetching VC Schemas from blockchain...");
-    
-    if (issuerDid) {
-      console.log(`   Filter by issuer: ${issuerDid}`);
-    }
-
-    // Placeholder response
-    const schemas = [
-      {
-        id: "sch:hid:00001",
-        name: "University Degree Schema",
-        version: 1,
-        issuer_did: "did:example:university123",
-        createdAt: new Date(),
-      },
-      {
-        id: "sch:hid:00002",
-        name: "Professional Certificate Schema",
-        version: 1,
-        issuer_did: "did:example:institution456",
-        createdAt: new Date(),
-      },
-    ];
+    logger.info("Fetching VC Schemas from blockchain...");
+    const VCSchema = await this.blockchainService.getAllSchemasFromBlockchain();
 
     // Filter by issuerDid if provided
     if (issuerDid) {
-      return schemas.filter((s) => s.issuer_did === issuerDid);
+      logger.info(`Filter by issuer: ${issuerDid}`);
+      return VCSchema.filter((s) => s.issuer_did === issuerDid);
     }
 
-    return schemas;
+    return VCSchema;
   }
 
   /**
@@ -54,11 +46,11 @@ class SchemaService {
     version: number;
   }): Promise<{ message: string; schema_id: string }> {
     // TODO: Implement blockchain transaction to store schema
-    console.log("✅ Creating VC Schema on blockchain...");
-    console.log(`   Schema ID: ${data.id}`);
-    console.log(`   Name: ${data.name}`);
-    console.log(`   Issuer: ${data.issuer_did}`);
-    console.log(`   Version: ${data.version}`);
+    logger.info("Creating VC Schema on blockchain...");
+    logger.info(`Schema ID: ${data.id}`);
+    logger.info(`Name: ${data.name}`);
+    logger.info(`Issuer: ${data.issuer_did}`);
+    logger.info(`Version: ${data.version}`);
 
     // Simulate blockchain storage
     // const tx = await blockchainService.storeSchema(data);
@@ -82,8 +74,8 @@ class SchemaService {
     }
   ): Promise<{ message: string; schema: any }> {
     // TODO: Implement blockchain query to check existing schema
-    console.log(`🔄 Updating VC Schema on blockchain: ${schemaId}`);
-    
+    logger.info(`Updating VC Schema on blockchain: ${schemaId}`);
+
     // Placeholder: check if schema exists
     const existingSchema = {
       id: schemaId,
@@ -98,8 +90,8 @@ class SchemaService {
     }
 
     // TODO: Implement blockchain transaction to update schema
-    console.log(`   New version: ${data.version}`);
-    
+    logger.info(`New version: ${data.version}`);
+
     // Simulate blockchain update
     // const tx = await blockchainService.updateSchema(schemaId, data);
 
@@ -114,4 +106,8 @@ class SchemaService {
   }
 }
 
+// Export singleton instance for backward compatibility
 export default new SchemaService();
+
+// Export class for testing and custom instantiation
+export { SchemaService };

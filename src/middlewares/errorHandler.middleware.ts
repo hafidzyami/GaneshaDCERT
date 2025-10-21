@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
-import { AppError, ValidationError } from '../utils/errors/AppError';
-import { env } from '../config/env';
+import { AppError, ValidationError } from '../utils';
+import { env, logger } from '../config';
+import { HTTP_STATUS } from '../constants';
+import { TransformHelper } from '../utils/helpers';
 
 /**
  * Global Error Handler Middleware
@@ -12,7 +14,7 @@ export const errorHandler = (
   next: NextFunction
 ): void => {
   // Default error values
-  let statusCode = 500;
+  let statusCode: number = HTTP_STATUS.INTERNAL_SERVER_ERROR;
   let message = 'Internal server error';
   let errors: any[] | undefined;
 
@@ -21,12 +23,12 @@ export const errorHandler = (
     statusCode = error.statusCode;
     message = error.message;
 
-    if (error instanceof ValidationError) {
-      errors = error.errors;
+    if (error instanceof ValidationError && error.errors) {
+      errors = TransformHelper.transformValidationErrors(error.errors);
     }
   } else {
     // Log unexpected errors
-    console.error('❌ Unexpected Error:', {
+    logger.error('Unexpected Error', {
       name: error.name,
       message: error.message,
       stack: error.stack,
@@ -35,6 +37,7 @@ export const errorHandler = (
       body: req.body,
       params: req.params,
       query: req.query,
+      requestId: req.requestId,
     });
 
     // Don't expose internal error details in production
@@ -50,6 +53,7 @@ export const errorHandler = (
     success: false,
     message,
     ...(errors && { errors }),
+    ...(req.requestId && { requestId: req.requestId }),
     ...(env.NODE_ENV === 'development' && {
       stack: error.stack,
       name: error.name,
@@ -61,9 +65,12 @@ export const errorHandler = (
  * Handle 404 Not Found
  */
 export const notFoundHandler = (req: Request, res: Response): void => {
-  res.status(404).json({
+  logger.warn(`Route not found: ${req.method} ${req.originalUrl}`);
+  
+  res.status(HTTP_STATUS.NOT_FOUND).json({
     success: false,
     message: `Route ${req.method} ${req.originalUrl} not found`,
+    ...(req.requestId && { requestId: req.requestId }),
   });
 };
 

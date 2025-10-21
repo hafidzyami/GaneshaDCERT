@@ -13,8 +13,12 @@ class VCBlockchainService {
     this.contract = VCBlockchainConfig.contract;
   }
 
+  // ============================================
+  // 🔹 VC SCHEMA MANAGEMENT
+  // ============================================
+
   /**
-   * Created VC Schema on Blockchain
+   * Create VC Schema on Blockchain
    */
   async createVCSchemaInBlockchain(
     id: string,
@@ -60,7 +64,6 @@ class VCBlockchainService {
   ): Promise<TransactionReceipt> {
     try {
       const tx = await this.contract.updateVCSchema(id, newSchema);
-
       const receipt = await tx.wait();
 
       if (receipt.status !== 1) {
@@ -86,7 +89,7 @@ class VCBlockchainService {
   /**
    * Deactivate Existing VC Schema in Blockchain
    */
-  async deActivateVCSchemaInBlockchain(
+  async deactivateVCSchemaInBlockchain(
     id: string
   ): Promise<TransactionReceipt> {
     try {
@@ -100,7 +103,7 @@ class VCBlockchainService {
         );
       }
 
-      console.log(`✅ Deactivated VC Schema for UUID: ${id}`);
+      console.log(`✅ Deactivated VC Schema: ${id} (TX: ${receipt.hash})`);
       return receipt;
     } catch (error: any) {
       console.error("❌ Failed to deactivate VC Schema:", error);
@@ -118,7 +121,9 @@ class VCBlockchainService {
   /**
    * Reactivate Existing VC Schema in Blockchain
    */
-  async reActivateVCSchemaInBlockchain(id: string): Promise<boolean> {
+  async reactivateVCSchemaInBlockchain(
+    id: string
+  ): Promise<TransactionReceipt> {
     try {
       const tx = await this.contract.reactivateVCSchema(id);
       const receipt = await tx.wait();
@@ -130,7 +135,7 @@ class VCBlockchainService {
         );
       }
 
-      console.log(`✅ Reactivated VC Schema for UUID: ${id}`);
+      console.log(`✅ Reactivated VC Schema: ${id} (TX: ${receipt.hash})`);
       return receipt;
     } catch (error: any) {
       console.error("❌ Failed to reactivate VC Schema:", error);
@@ -148,9 +153,9 @@ class VCBlockchainService {
   /**
    * Get All VC Schemas from Blockchain
    */
-  async getAllVCSchemasFromBlockchain(): Promise<any[]> {
+  async getAllSchemasFromBlockchain(): Promise<any[]> {
     try {
-      const schemas = await this.contract.getAllVCSchemas();
+      const schemas = await this.contract.getAllSchemas();
 
       console.log(`✅ Retrieved ${schemas.length} VC Schemas from blockchain`);
       return schemas;
@@ -159,6 +164,10 @@ class VCBlockchainService {
       throw new BlockchainError(`Failed to get VC Schemas: ${error.message}`);
     }
   }
+
+  // ============================================
+  // 🔹 VC ISSUANCE & LIFECYCLE
+  // ============================================
 
   /**
    * Issue VC on Blockchain
@@ -295,37 +304,42 @@ class VCBlockchainService {
     }
   }
 
-  /**
-   * Get VCs by Issuer DID from Blockchain
-   */
-  async getVCsByIssuerDID(issuerDID: string): Promise<any[]> {
-    try {
-      const vcs = await this.contract.getVCByIssuerDID(issuerDID);
+  // ============================================
+  // 🔹 QUERY FUNCTIONS
+  // ============================================
 
-      console.log(`✅ Retrieved ${vcs.length} VCs for issuer: ${issuerDID}`);
+  /**
+   * Get All VCs from Blockchain
+   */
+  async getAllVCsFromBlockchain(): Promise<any[]> {
+    try {
+      const vcs = await this.contract.getAllVCs();
+
+      console.log(`✅ Retrieved ${vcs.length} VCs from blockchain`);
       return vcs;
     } catch (error: any) {
-      console.error("❌ Failed to get VCs by issuer DID:", error);
-      throw new BlockchainError(
-        `Failed to get VCs by issuer DID: ${error.message}`
-      );
+      console.error("❌ Failed to get all VCs:", error);
+      throw new BlockchainError(`Failed to get all VCs: ${error.message}`);
     }
   }
 
   /**
-   * Get VCs by Holder DID from Blockchain
+   * Get VC Status by ID from Blockchain
    */
-  async getVCsByHolderDID(holderDID: string): Promise<any[]> {
+  async getVCStatusFromBlockchain(vcId: string): Promise<any> {
     try {
-      const vcs = await this.contract.getVCByHolderDID(holderDID);
+      const vcStatus = await this.contract.getVCStatus(vcId);
 
-      console.log(`✅ Retrieved ${vcs.length} VCs for holder: ${holderDID}`);
-      return vcs;
+      console.log(`✅ Retrieved VC status for: ${vcId}`);
+      return vcStatus;
     } catch (error: any) {
-      console.error("❌ Failed to get VCs by holder DID:", error);
-      throw new BlockchainError(
-        `Failed to get VCs by holder DID: ${error.message}`
-      );
+      console.error("❌ Failed to get VC status:", error);
+
+      if (error.message.includes("VC not found")) {
+        throw new NotFoundError(`VC with ID ${vcId} not found on blockchain`);
+      }
+
+      throw new BlockchainError(`Failed to get VC status: ${error.message}`);
     }
   }
 }

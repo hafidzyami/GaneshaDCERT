@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
 import { validationResult } from "express-validator";
-import AdminAuthService from "../services/adminAuth.service";
-import { ValidationError } from "../utils/errors/AppError";
-import { asyncHandler } from "../middlewares/errorHandler.middleware";
+import { AdminAuthService } from "../services";
+import { ValidationError } from "../utils";
+import { asyncHandler } from "../middlewares";
 
 /**
  * Admin Login Controller

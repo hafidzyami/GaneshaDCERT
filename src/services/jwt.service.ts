@@ -1,77 +1,115 @@
 import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this-in-production';
-const MAGIC_LINK_EXPIRY = '24h'; // Magic link berlaku 24 jam
-
-interface MagicLinkPayload {
-  userId: string;
-  email: string;
-  type: 'magic-link';
-}
-
-interface DecodedMagicLink extends MagicLinkPayload {
-  iat: number;
-  exp: number;
-}
+import { env } from '../config/env';
+import { JWT_EXPIRY, JWT_TYPE } from '../constants';
+import {
+  MagicLinkPayload,
+  SessionPayload,
+  AdminPayload,
+  DecodedMagicLink,
+  DecodedSession,
+  DecodedAdmin,
+} from '../types';
 
 /**
- * Generate JWT token untuk Magic Link
+ * JWT Service
+ * Handles JWT token generation and verification
+ */
+
+/**
+ * Generate JWT token for Magic Link
  */
 export const generateMagicLinkToken = (userId: string, email: string): string => {
   const payload: MagicLinkPayload = {
     userId,
     email,
-    type: 'magic-link',
+    type: JWT_TYPE.MAGIC_LINK,
   };
 
-  return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: MAGIC_LINK_EXPIRY,
+  return jwt.sign(payload, env.JWT_SECRET, {
+    expiresIn: JWT_EXPIRY.MAGIC_LINK,
   });
 };
 
 /**
- * Verifikasi JWT token dari Magic Link
+ * Verify JWT token from Magic Link
  */
 export const verifyMagicLinkToken = (token: string): DecodedMagicLink | null => {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as DecodedMagicLink;
-    
-    // Pastikan token adalah magic link token
-    if (decoded.type !== 'magic-link') {
+    const decoded = jwt.verify(token, env.JWT_SECRET) as DecodedMagicLink;
+
+    // Ensure token is magic link token
+    if (decoded.type !== JWT_TYPE.MAGIC_LINK) {
       return null;
     }
-    
+
     return decoded;
   } catch (error) {
-    console.error('Error verifying magic link token:', error);
     return null;
   }
 };
 
 /**
- * Generate session token setelah magic link diverifikasi
+ * Generate session token after magic link verification
  */
 export const generateSessionToken = (userId: string, email: string): string => {
-  const payload = {
+  const payload: SessionPayload = {
     userId,
     email,
-    type: 'session',
+    type: JWT_TYPE.SESSION,
   };
 
-  return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: '7d', // Session berlaku 7 hari
+  return jwt.sign(payload, env.JWT_SECRET, {
+    expiresIn: JWT_EXPIRY.SESSION,
   });
 };
 
 /**
- * Verifikasi session token
+ * Verify session token
  */
-export const verifySessionToken = (token: string): any => {
+export const verifySessionToken = (token: string): DecodedSession | null => {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, env.JWT_SECRET) as DecodedSession;
+
+    // Ensure token is session token
+    if (decoded.type !== JWT_TYPE.SESSION) {
+      return null;
+    }
+
+    return decoded;
+  } catch (error) {
+    return null;
+  }
+};
+
+/**
+ * Generate admin token
+ */
+export const generateAdminToken = (id: string, email: string, name: string): string => {
+  const payload: AdminPayload = {
+    id,
+    email,
+    name,
+    role: 'admin',
+  };
+
+  return jwt.sign(payload, env.JWT_SECRET, {
+    expiresIn: JWT_EXPIRY.ADMIN,
+  });
+};
+
+/**
+ * Verify admin token
+ */
+export const verifyAdminToken = (token: string): DecodedAdmin | null => {
+  try {
+    const decoded = jwt.verify(token, env.JWT_SECRET) as DecodedAdmin;
+
+    // Ensure token is admin token
+    if (decoded.role !== 'admin') {
+      return null;
+    }
+
+    return decoded;
   } catch (error) {
     return null;
   }

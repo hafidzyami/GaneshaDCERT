@@ -1,4 +1,4 @@
-import { PrismaClient, RequestStatus, InstitutionRegistration } from "@prisma/client";
+import { InstitutionRegistration, PrismaClient } from "@prisma/client";
 import { prisma } from "../config/database";
 import {
   ConflictError,
@@ -12,12 +12,44 @@ import {
 } from "./jwt.service";
 import { sendMagicLinkEmail } from "./email.service";
 import { env } from "../config/env";
+import { REQUEST_STATUS } from "../constants";
+import logger from "../config/logger";
 
 /**
- * Authentication Service
+ * Authentication Service with Dependency Injection
  * Handles institution registration, approval, and magic link authentication
  */
 class AuthService {
+  private db: PrismaClient;
+  private emailService: typeof sendMagicLinkEmail;
+  private jwtService: {
+    generateMagicLinkToken: typeof generateMagicLinkToken;
+    verifyMagicLinkToken: typeof verifyMagicLinkToken;
+    generateSessionToken: typeof generateSessionToken;
+  };
+
+  /**
+   * Constructor with dependency injection
+   * @param dependencies - Optional dependencies for testing
+   */
+  constructor(dependencies?: {
+    db?: PrismaClient;
+    emailService?: typeof sendMagicLinkEmail;
+    jwtService?: {
+      generateMagicLinkToken: typeof generateMagicLinkToken;
+      verifyMagicLinkToken: typeof verifyMagicLinkToken;
+      generateSessionToken: typeof generateSessionToken;
+    };
+  }) {
+    this.db = dependencies?.db || prisma;
+    this.emailService = dependencies?.emailService || sendMagicLinkEmail;
+    this.jwtService = dependencies?.jwtService || {
+      generateMagicLinkToken,
+      verifyMagicLinkToken,
+      generateSessionToken,
+    };
+  }
+
   /**
    * Register new institution
    */
@@ -30,7 +62,7 @@ class AuthService {
     address: string;
   }): Promise<InstitutionRegistration> {
     // Check if email already exists
-    const existing = await prisma.institutionRegistration.findUnique({
+    const existing = await this.db.institutionRegistration.findUnique({
       where: { email: data.email },
     });
 
@@ -39,14 +71,14 @@ class AuthService {
     }
 
     // Create new registration
-    const institution = await prisma.institutionRegistration.create({
+    const institution = await this.db.institutionRegistration.create({
       data: {
         ...data,
-        status: RequestStatus.PENDING,
+        status: REQUEST_STATUS.PENDING as any,
       },
     });
 
-    console.log(`✅ Institution registered: ${institution.name} (${institution.email})`);
+    logger.info(`Institution registered: ${institution.name} (${institution.email})`);
     return institution;
   }
 
@@ -54,8 +86,8 @@ class AuthService {
    * Get pending institutions
    */
   async getPendingInstitutions(): Promise<InstitutionRegistration[]> {
-    return await prisma.institutionRegistration.findMany({
-      where: { status: RequestStatus.PENDING },
+    return await this.db.institutionRegistration.findMany({
+      where: { status: REQUEST_STATUS.PENDING as any },
       orderBy: { createdAt: "desc" },
     });
   }
@@ -63,10 +95,10 @@ class AuthService {
   /**
    * Get all institutions with optional status filter
    */
-  async getAllInstitutions(status?: RequestStatus): Promise<InstitutionRegistration[]> {
-    const whereClause = status ? { status } : {};
+  async getAllInstitutions(status?: string): Promise<InstitutionRegistration[]> {
+    const whereClause = status ? { status: status as any } : {};
 
-    return await prisma.institutionRegistration.findMany({
+    return await this.db.institutionRegistration.findMany({
       where: whereClause,
       orderBy: { createdAt: "desc" },
     });
@@ -80,7 +112,7 @@ class AuthService {
     approvedBy: string
   ): Promise<InstitutionRegistration> {
     // Check if institution exists
-    const institution = await prisma.institutionRegistration.findUnique({
+    const institution = await this.db.institutionRegistration.findUnique({
       where: { id: institutionId },
     });
 
@@ -88,31 +120,31 @@ class AuthService {
       throw new NotFoundError("Institusi tidak ditemukan");
     }
 
-    if (institution.status !== RequestStatus.PENDING) {
+    if (institution.status !== REQUEST_STATUS.PENDING) {
       throw new BadRequestError(
         `Institusi sudah ${institution.status.toLowerCase()}`
       );
     }
 
     // Update status to APPROVED
-    const updatedInstitution = await prisma.institutionRegistration.update({
+    const updatedInstitution = await this.db.institutionRegistration.update({
       where: { id: institutionId },
       data: {
-        status: RequestStatus.APPROVED,
+        status: REQUEST_STATUS.APPROVED as any,
         approvedBy,
         approvedAt: new Date(),
       },
     });
 
     // Generate magic link token
-    const token = generateMagicLinkToken(institutionId, institution.email);
+    const token = this.jwtService.generateMagicLinkToken(institutionId, institution.email);
 
     // Calculate expiry (24 hours)
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 24);
 
     // Save magic link to database
-    await prisma.magicLink.create({
+    await this.db.magicLink.create({
       data: {
         institutionId,
         token,
@@ -122,14 +154,14 @@ class AuthService {
 
     // Send magic link email
     const magicLinkUrl = `${env.FRONTEND_URL}/auth/verify?token=${token}`;
-    await sendMagicLinkEmail({
+    await this.emailService({
       to: institution.email,
       name: institution.name,
       magicLink: magicLinkUrl,
     });
 
-    console.log(`✅ Institution approved: ${institution.name}`);
-    console.log(`   Magic link sent to: ${institution.email}`);
+    logger.success(`Institution approved: ${institution.name}`);
+    logger.info(`Magic link sent to: ${institution.email}`);
 
     return updatedInstitution;
   }
@@ -139,7 +171,7 @@ class AuthService {
    */
   async rejectInstitution(institutionId: string): Promise<InstitutionRegistration> {
     // Check if institution exists
-    const institution = await prisma.institutionRegistration.findUnique({
+    const institution = await this.db.institutionRegistration.findUnique({
       where: { id: institutionId },
     });
 
@@ -147,19 +179,19 @@ class AuthService {
       throw new NotFoundError("Institusi tidak ditemukan");
     }
 
-    if (institution.status !== RequestStatus.PENDING) {
+    if (institution.status !== REQUEST_STATUS.PENDING) {
       throw new BadRequestError(
         `Institusi sudah ${institution.status.toLowerCase()}`
       );
     }
 
     // Update status to REJECTED
-    const updatedInstitution = await prisma.institutionRegistration.update({
+    const updatedInstitution = await this.db.institutionRegistration.update({
       where: { id: institutionId },
-      data: { status: RequestStatus.REJECTED },
+      data: { status: REQUEST_STATUS.REJECTED as any },
     });
 
-    console.log(`❌ Institution rejected: ${institution.name}`);
+    logger.warn(`Institution rejected: ${institution.name}`);
     return updatedInstitution;
   }
 
@@ -171,13 +203,13 @@ class AuthService {
     institution: Partial<InstitutionRegistration>;
   }> {
     // Verify JWT token
-    const decoded = verifyMagicLinkToken(token);
+    const decoded = this.jwtService.verifyMagicLinkToken(token);
     if (!decoded) {
       throw new BadRequestError("Token tidak valid atau sudah kadaluarsa");
     }
 
     // Check magic link in database
-    const magicLink = await prisma.magicLink.findUnique({
+    const magicLink = await this.db.magicLink.findUnique({
       where: { token },
       include: { institution: true },
     });
@@ -194,12 +226,12 @@ class AuthService {
       throw new BadRequestError("Magic link sudah kadaluarsa");
     }
 
-    if (magicLink.institution.status !== RequestStatus.APPROVED) {
+    if (magicLink.institution.status !== REQUEST_STATUS.APPROVED) {
       throw new BadRequestError("Institusi belum disetujui");
     }
 
     // Mark magic link as used
-    await prisma.magicLink.update({
+    await this.db.magicLink.update({
       where: { id: magicLink.id },
       data: {
         used: true,
@@ -208,12 +240,12 @@ class AuthService {
     });
 
     // Generate session token
-    const sessionToken = generateSessionToken(
+    const sessionToken = this.jwtService.generateSessionToken(
       magicLink.institution.id,
       magicLink.institution.email
     );
 
-    console.log(`✅ Magic link verified: ${magicLink.institution.email}`);
+    logger.success(`Magic link verified: ${magicLink.institution.email}`);
 
     return {
       sessionToken,
@@ -233,7 +265,7 @@ class AuthService {
    * Get institution profile by ID
    */
   async getInstitutionProfile(institutionId: string): Promise<InstitutionRegistration> {
-    const institution = await prisma.institutionRegistration.findUnique({
+    const institution = await this.db.institutionRegistration.findUnique({
       where: { id: institutionId },
     });
 
@@ -245,4 +277,8 @@ class AuthService {
   }
 }
 
+// Export singleton instance for backward compatibility
 export default new AuthService();
+
+// Export class for testing and custom instantiation
+export { AuthService };

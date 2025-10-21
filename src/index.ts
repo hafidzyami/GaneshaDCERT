@@ -2,22 +2,25 @@ import express, { Request, Response, Application } from "express";
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 import cors from "cors";
-import { env } from "./config/env";
-import DatabaseService from "./config/database";
-import BlockchainConfig from "./config/didblockchain";
+import { env, DatabaseService, BlockchainConfig, logger } from "./config";
 import {
   errorHandler,
   notFoundHandler,
-} from "./middlewares/errorHandler.middleware";
+  requestLogger,
+  apiRateLimit,
+} from "./middlewares";
+import { HealthCheckResponse } from "./types";
 
 // Routes
-import didRoutes from "./routes/did.routes";
-import credentialRoutes from "./routes/credential.routes";
-import schemaRoutes from "./routes/schema.routes";
-import authRoutes from "./routes/auth.routes";
-import adminAuthRoutes from "./routes/adminAuth.routes";
-import presentationRoutes from "./routes/presentation.routes";
-import notificationRoutes from "./routes/notification.routes";
+import {
+  authRoutes,
+  adminAuthRoutes,
+  didRoutes,
+  credentialRoutes,
+  schemaRoutes,
+  presentationRoutes,
+  notificationRoutes,
+} from "./routes";
 
 const app: Application = express();
 const PORT: number = env.PORT;
@@ -26,14 +29,24 @@ const PORT: number = env.PORT;
 app.use(express.json());
 app.use(cors());
 
+// Request logger (before all routes)
+app.use(requestLogger);
+
+// Global rate limiter
+app.use(apiRateLimit);
+
 // Swagger Configuration
 const swaggerOptions: swaggerJsdoc.Options = {
   definition: {
     openapi: "3.0.0",
     info: {
       title: "GaneshaDCERT API Documentation",
-      version: "1.0.0",
+      version: "2.0.0",
       description: "Decentralized Certificate Management System API",
+      contact: {
+        name: "API Support",
+        email: "support@ganeshadcert.com",
+      },
     },
     servers: [
       {
@@ -55,6 +68,13 @@ const swaggerOptions: swaggerJsdoc.Options = {
           type: "http",
           scheme: "bearer",
           bearerFormat: "JWT",
+          description: "Enter JWT token for institution authentication",
+        },
+        AdminBearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+          description: "Enter JWT token for admin authentication",
         },
       },
     },
@@ -102,12 +122,32 @@ app.use(
  *     responses:
  *       200:
  *         description: API status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Welcome to GaneshaDCERT API
+ *                 version:
+ *                   type: string
+ *                   example: 2.0.0
+ *                 environment:
+ *                   type: string
+ *                   example: development
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
  */
 app.get("/", (req: Request, res: Response) => {
   res.json({
     success: true,
     message: "Welcome to GaneshaDCERT API",
-    version: "1.0.0",
+    version: "2.0.0",
     environment: env.NODE_ENV,
     timestamp: new Date().toISOString(),
   });
@@ -118,27 +158,63 @@ app.get("/", (req: Request, res: Response) => {
  * /health:
  *   get:
  *     summary: Health Check
- *     description: Check API health status
+ *     description: Check API and services health status
  *     tags:
  *       - System
  *     responses:
  *       200:
- *         description: API is healthy
+ *         description: API and services are healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                 uptime:
+ *                   type: number
+ *                   description: Server uptime in seconds
+ *                   example: 3600
+ *                 services:
+ *                   type: object
+ *                   properties:
+ *                     database:
+ *                       type: boolean
+ *                       example: true
+ *                     blockchain:
+ *                       type: boolean
+ *                       example: true
+ *       503:
+ *         description: One or more services are unhealthy
  */
-app.get("/health", (req: Request, res: Response) => {
-  res.json({
-    success: true,
-    message: "API is healthy",
+app.get("/health", async (req: Request, res: Response) => {
+  const dbHealth = await DatabaseService.isConnected();
+  const bcHealth = await BlockchainConfig.isConnected();
+
+  const response: HealthCheckResponse = {
+    success: dbHealth && bcHealth,
     timestamp: new Date().toISOString(),
-  });
+    uptime: process.uptime(),
+    services: {
+      database: dbHealth,
+      blockchain: bcHealth,
+    },
+  };
+
+  const statusCode = response.success ? 200 : 503;
+  res.status(statusCode).json(response);
 });
 
 // API Routes with /api/v1 prefix
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/admin/auth", adminAuthRoutes);
 app.use("/api/v1/dids", didRoutes);
 app.use("/api/v1/schemas", schemaRoutes);
 app.use("/api/v1/credentials", credentialRoutes);
-app.use("/api/v1/auth", authRoutes);
-app.use("/api/v1/admin/auth", adminAuthRoutes);
 app.use("/api/v1/presentations", presentationRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 
@@ -153,9 +229,9 @@ app.use(errorHandler);
  */
 const startServer = async () => {
   try {
-    console.log("🚀 Starting GaneshaDCERT API Server...");
-    console.log(`   Environment: ${env.NODE_ENV}`);
-    console.log(`   Port: ${PORT}`);
+    logger.info("🚀 Starting GaneshaDCERT API Server...");
+    logger.info(`   Environment: ${env.NODE_ENV}`);
+    logger.info(`   Port: ${PORT}`);
 
     // Connect to Database
     await DatabaseService.connect();
@@ -163,47 +239,44 @@ const startServer = async () => {
     // Test Blockchain Connection
     const blockchainConnected = await BlockchainConfig.testConnection();
     if (!blockchainConnected) {
-      console.warn(
-        "⚠️  Blockchain connection failed, but server will continue"
-      );
+      logger.warn("Blockchain connection failed, but server will continue");
     }
 
     // Start Express Server
     app.listen(PORT, () => {
-      console.log("\n✅ GaneshaDCERT API Server is running!");
-      console.log(`   🌐 API: http://localhost:${PORT}`);
-      console.log(`   📖 Swagger Docs: http://localhost:${PORT}/api-docs`);
-      console.log(`   🔍 Health Check: http://localhost:${PORT}/health`);
-      console.log("\n");
+      logger.success("GaneshaDCERT API Server is running!");
+      logger.info(`   🌐 API: http://localhost:${PORT}`);
+      logger.info(`   📖 Swagger Docs: http://localhost:${PORT}/api-docs`);
+      logger.info(`   🔍 Health Check: http://localhost:${PORT}/health`);
     });
   } catch (error) {
-    console.error("❌ Failed to start server:", error);
+    logger.error("Failed to start server", error);
     process.exit(1);
   }
 };
 
 // Graceful Shutdown
 process.on("SIGINT", async () => {
-  console.log("\n🛑 Shutting down gracefully...");
+  logger.info("Shutting down gracefully...");
   await DatabaseService.disconnect();
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
-  console.log("\n🛑 Shutting down gracefully...");
+  logger.info("Shutting down gracefully...");
   await DatabaseService.disconnect();
   process.exit(0);
 });
 
 // Handle uncaught exceptions
 process.on("uncaughtException", (error) => {
-  console.error("❌ Uncaught Exception:", error);
+  logger.error("Uncaught Exception", error);
   process.exit(1);
 });
 
 // Handle unhandled promise rejections
 process.on("unhandledRejection", (reason, promise) => {
-  console.error("❌ Unhandled Rejection at:", promise, "reason:", reason);
+  logger.error("Unhandled Rejection", { reason, promise });
   process.exit(1);
 });
 

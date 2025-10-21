@@ -1,12 +1,25 @@
 import { PrismaClient, RequestType } from "@prisma/client";
 import { prisma } from "../config/database";
 import { BadRequestError } from "../utils/errors/AppError";
+import logger from "../config/logger";
 
 /**
- * Credential Service
+ * Credential Service with Dependency Injection
  * Handles VC issuance, renewal, update, and revocation requests
  */
 class CredentialService {
+  private db: PrismaClient;
+
+  /**
+   * Constructor with dependency injection
+   * @param dependencies - Optional dependencies for testing
+   */
+  constructor(dependencies?: {
+    db?: PrismaClient;
+  }) {
+    this.db = dependencies?.db || prisma;
+  }
+
   /**
    * Request credential issuance
    */
@@ -15,7 +28,7 @@ class CredentialService {
     issuer_did: string;
     holder_did: string;
   }) {
-    const newRequest = await prisma.vCIssuanceRequest.create({
+    const newRequest = await this.db.vCIssuanceRequest.create({
       data: {
         encrypted_body: data.encrypted_body,
         issuer_did: data.issuer_did,
@@ -23,7 +36,7 @@ class CredentialService {
       },
     });
 
-    console.log(`✅ VC Issuance request created: ${newRequest.id}`);
+    logger.success(`VC Issuance request created: ${newRequest.id}`);
 
     return {
       message: "Verifiable Credential request has been successfully submitted.",
@@ -44,28 +57,28 @@ class CredentialService {
 
     switch (type) {
       case RequestType.ISSUANCE:
-        requests = await prisma.vCIssuanceRequest.findMany({
+        requests = await this.db.vCIssuanceRequest.findMany({
           where: whereClause,
           orderBy: { createdAt: "desc" },
         });
         break;
 
       case RequestType.RENEWAL:
-        requests = await prisma.vCRenewalRequest.findMany({
+        requests = await this.db.vCRenewalRequest.findMany({
           where: whereClause,
           orderBy: { createdAt: "desc" },
         });
         break;
 
       case RequestType.UPDATE:
-        requests = await prisma.vCUpdateRequest.findMany({
+        requests = await this.db.vCUpdateRequest.findMany({
           where: whereClause,
           orderBy: { createdAt: "desc" },
         });
         break;
 
       case RequestType.REVOKE:
-        requests = await prisma.vCRevokeRequest.findMany({
+        requests = await this.db.vCRevokeRequest.findMany({
           where: whereClause,
           orderBy: { createdAt: "desc" },
         });
@@ -92,7 +105,7 @@ class CredentialService {
     encrypted_body: string;
     request_type: RequestType;
   }) {
-    const newVCResponse = await prisma.vCResponse.create({
+    const newVCResponse = await this.db.vCResponse.create({
       data: {
         request_id: data.request_id,
         request_type: data.request_type,
@@ -102,7 +115,7 @@ class CredentialService {
       },
     });
 
-    console.log(`✅ VC Response created: ${newVCResponse.id}`);
+    logger.success(`VC Response created: ${newVCResponse.id}`);
 
     return {
       message: `VC ${data.request_type.toLowerCase()} processed successfully`,
@@ -115,7 +128,7 @@ class CredentialService {
    */
   async getHolderVCs(holderDid: string) {
     // TODO: Implement blockchain query to get all VCs for holder
-    console.log(`📋 Fetching VCs for holder DID: ${holderDid}`);
+    logger.info(`Fetching VCs for holder DID: ${holderDid}`);
 
     // Placeholder data
     const placeholderVCs = [
@@ -150,7 +163,7 @@ class CredentialService {
     holder_did: string;
     encrypted_body: string;
   }) {
-    const newUpdateRequest = await prisma.vCUpdateRequest.create({
+    const newUpdateRequest = await this.db.vCUpdateRequest.create({
       data: {
         issuer_did: data.issuer_did,
         holder_did: data.holder_did,
@@ -159,7 +172,7 @@ class CredentialService {
       },
     });
 
-    console.log(`✅ VC Update request created: ${newUpdateRequest.id}`);
+    logger.success(`VC Update request created: ${newUpdateRequest.id}`);
 
     return {
       message: "Verifiable Credential update request submitted successfully.",
@@ -175,7 +188,7 @@ class CredentialService {
     holder_did: string;
     encrypted_body: string;
   }) {
-    const newRenewalRequest = await prisma.vCRenewalRequest.create({
+    const newRenewalRequest = await this.db.vCRenewalRequest.create({
       data: {
         issuer_did: data.issuer_did,
         holder_did: data.holder_did,
@@ -184,7 +197,7 @@ class CredentialService {
       },
     });
 
-    console.log(`✅ VC Renewal request created: ${newRenewalRequest.id}`);
+    logger.success(`VC Renewal request created: ${newRenewalRequest.id}`);
 
     return {
       message: "Verifiable Credential renewal request submitted successfully.",
@@ -200,7 +213,7 @@ class CredentialService {
     holder_did: string;
     encrypted_body: string;
   }) {
-    const newRevokeRequest = await prisma.vCRevokeRequest.create({
+    const newRevokeRequest = await this.db.vCRevokeRequest.create({
       data: {
         issuer_did: data.issuer_did,
         holder_did: data.holder_did,
@@ -209,7 +222,7 @@ class CredentialService {
       },
     });
 
-    console.log(`✅ VC Revocation request created: ${newRevokeRequest.id}`);
+    logger.success(`VC Revocation request created: ${newRevokeRequest.id}`);
 
     return {
       message: "Verifiable Credential revocation request submitted successfully.",
@@ -228,7 +241,7 @@ class CredentialService {
     hash: string;
   }) {
     // TODO: Implement blockchain transaction to create status block
-    console.log(`📝 Submitting VC status block for: ${data.vc_id}`);
+    logger.info(`Submitting VC status block for: ${data.vc_id}`);
 
     return {
       message: "VC status block transaction has been submitted.",
@@ -241,7 +254,7 @@ class CredentialService {
    */
   async getVCStatus(vcId: string, issuerDid: string, holderDid: string) {
     // TODO: Implement blockchain query for VC status
-    console.log(`🔍 Checking VC status: ${vcId}`);
+    logger.info(`Checking VC status: ${vcId}`);
 
     // Placeholder response
     const placeholderStatus = {
@@ -256,4 +269,8 @@ class CredentialService {
   }
 }
 
+// Export singleton instance for backward compatibility
 export default new CredentialService();
+
+// Export class for testing and custom instantiation
+export { CredentialService };

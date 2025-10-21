@@ -1,16 +1,21 @@
 import { ethers, TransactionReceipt } from "ethers";
 import DIDBlockchainConfig from "../../config/didblockchain";
 import { BlockchainError, NotFoundError } from "../../utils/errors/AppError";
+import logger from "../../config/logger";
 
 /**
- * DID Blockchain Service
- * Handles all DID blockchain interactions with proper error handling
+ * Blockchain Service with Dependency Injection
+ * Handles all blockchain interactions with proper error handling
  */
-class DIDsBlockchainService {
+class DIDBlockchainService {
   private contract: ethers.Contract;
 
-  constructor() {
-    this.contract = DIDBlockchainConfig.contract;
+  /**
+   * Constructor with dependency injection
+   * @param dependencies - Optional dependencies for testing
+   */
+  constructor(dependencies?: { contract?: ethers.Contract }) {
+    this.contract = dependencies?.contract || DIDBlockchainConfig.contract;
   }
 
   /**
@@ -35,10 +40,10 @@ class DIDsBlockchainService {
         );
       }
 
-      console.log(`✅ Individual DID registered: ${did} (TX: ${receipt.hash})`);
+      logger.success(`Individual DID registered: ${did} (TX: ${receipt.hash})`);
       return receipt;
     } catch (error: any) {
-      console.error("❌ Failed to register individual DID:", error);
+      logger.error("Failed to register individual DID:", error);
 
       if (error instanceof BlockchainError) {
         throw error;
@@ -85,12 +90,12 @@ class DIDsBlockchainService {
         );
       }
 
-      console.log(
-        `✅ Institutional DID registered: ${did} (TX: ${receipt.hash})`
+      logger.success(
+        `Institutional DID registered: ${did} (TX: ${receipt.hash})`
       );
       return receipt;
     } catch (error: any) {
-      console.error("❌ Failed to register institutional DID:", error);
+      logger.error("Failed to register institutional DID:", error);
 
       if (error instanceof BlockchainError) {
         throw error;
@@ -128,10 +133,10 @@ class DIDsBlockchainService {
         );
       }
 
-      console.log(`✅ Key rotated for DID: ${did} (New KeyID: ${newKeyId})`);
+      logger.success(`Key rotated for DID: ${did} (New KeyID: ${newKeyId})`);
       return receipt;
     } catch (error: any) {
-      console.error("❌ Failed to rotate key:", error);
+      logger.error("Failed to rotate key:", error);
 
       if (error instanceof BlockchainError) {
         throw error;
@@ -148,7 +153,7 @@ class DIDsBlockchainService {
     try {
       return await this.contract.isRegistered(did);
     } catch (error: any) {
-      console.error("❌ Failed to check DID:", error);
+      logger.error("Failed to check DID:", error);
       throw new BlockchainError(`Failed to check DID: ${error.message}`);
     }
   }
@@ -164,7 +169,7 @@ class DIDsBlockchainService {
 
       return key;
     } catch (error: any) {
-      console.error("❌ Failed to get DID key:", error);
+      logger.error("Failed to get DID key:", error);
       throw new BlockchainError(`Failed to get DID key: ${error.message}`);
     }
   }
@@ -176,7 +181,7 @@ class DIDsBlockchainService {
     try {
       return await this.contract.getDIDCount();
     } catch (error: any) {
-      console.error("❌ Failed to get DID count:", error);
+      logger.error("Failed to get DID count:", error);
       throw new BlockchainError(`Failed to get DID count: ${error.message}`);
     }
   }
@@ -188,7 +193,7 @@ class DIDsBlockchainService {
     try {
       return await DIDBlockchainConfig.provider.getBlockNumber();
     } catch (error: any) {
-      console.error("❌ Failed to get block number:", error);
+      logger.error("Failed to get block number:", error);
       throw new BlockchainError(`Failed to get block number: ${error.message}`);
     }
   }
@@ -208,10 +213,10 @@ class DIDsBlockchainService {
         );
       }
 
-      console.log(`✅ DID deactivated: ${did} (TX: ${receipt.hash})`);
+      logger.success(`DID deactivated: ${did} (TX: ${receipt.hash})`);
       return receipt;
     } catch (error: any) {
-      console.error("❌ Failed to deactivate DID:", error);
+      logger.error("Failed to deactivate DID:", error);
 
       if (error instanceof BlockchainError) {
         throw error;
@@ -241,7 +246,7 @@ class DIDsBlockchainService {
         [keyId]: publicKey,
       };
     } catch (error: any) {
-      console.error("❌ Failed to get DID document:", error);
+      logger.error("Failed to get DID document:", error);
 
       if (error instanceof NotFoundError) {
         throw error;
@@ -252,4 +257,8 @@ class DIDsBlockchainService {
   }
 }
 
-export default new DIDsBlockchainService();
+// Export singleton instance for backward compatibility
+export default new DIDBlockchainService();
+
+// Export class for testing and custom instantiation
+export { DIDBlockchainService };

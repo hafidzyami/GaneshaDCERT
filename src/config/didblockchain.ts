@@ -1,6 +1,7 @@
-import { ethers, Interface, TransactionReceipt } from "ethers";
+import { ethers, Interface } from "ethers";
 import DIDManager from "../utils/DIDManager.json";
 import { env } from "./env";
+import logger from "./logger";
 
 export const contractABI = DIDManager.abi;
 export const iface = new Interface(contractABI);
@@ -54,15 +55,28 @@ class DIDsBlockchainConfig {
         DIDsBlockchainConfig.signer.address
       );
 
-      console.log("✅ DID Blockchain connected successfully");
-      console.log(`   Network: ${network.name} (Chain ID: ${network.chainId})`);
-      console.log(`   Signer: ${DIDsBlockchainConfig.signer.address}`);
-      console.log(`   Balance: ${ethers.formatEther(balance)} ETH`);
-      console.log(`   Contract: ${env.DID_CONTRACT_ADDRESS}`);
+      logger.success("Blockchain connected successfully");
+      logger.info("Blockchain Details", {
+        network: network.name,
+        chainId: network.chainId.toString(),
+        signer: DIDsBlockchainConfig.signer.address,
+        balance: `${ethers.formatEther(balance)} ETH`,
+        contract: env.DID_CONTRACT_ADDRESS,
+      });
 
       return true;
     } catch (error) {
-      console.error("❌ DID Blockchain connection failed:", error);
+      logger.error("Blockchain connection failed", error);
+      return false;
+    }
+  }
+
+  public static async isConnected(): Promise<boolean> {
+    try {
+      await DIDsBlockchainConfig.provider.getBlockNumber();
+      return true;
+    } catch (error) {
+      logger.error("Blockchain health check failed", error);
       return false;
     }
   }

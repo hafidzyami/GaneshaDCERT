@@ -1,17 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
-
-interface AdminJwtPayload {
-  id: string;
-  email: string;
-  name: string;
-  role: string;
-}
+import { env, logger } from '../config';
+import { HTTP_STATUS } from '../constants';
+import { DecodedAdmin } from '../types';
 
 /**
- * Middleware untuk verifikasi admin authentication
+ * Admin Authentication Middleware
+ * Verifies admin token and attaches admin info to request
  */
 export const adminAuthMiddleware = async (
   req: Request,
@@ -19,40 +14,45 @@ export const adminAuthMiddleware = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    // Ambil token dari header Authorization
+    // Get token from Authorization header
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.status(401).json({
+      res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: 'Token tidak ditemukan. Silakan login terlebih dahulu.',
       });
       return;
     }
 
-    const token = authHeader.substring(7); // Hilangkan "Bearer "
+    const token = authHeader.substring(7); // Remove "Bearer "
 
-    // Verifikasi token
-    const decoded = jwt.verify(token, JWT_SECRET) as AdminJwtPayload;
+    // Verify token
+    const decoded = jwt.verify(token, env.JWT_SECRET) as DecodedAdmin;
 
-    // Cek apakah role adalah admin
+    // Check if role is admin
     if (decoded.role !== 'admin') {
-      res.status(403).json({
+      res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
         message: 'Akses ditolak. Hanya admin yang diizinkan.',
       });
       return;
     }
 
-    // Simpan admin info ke request object
-    (req as any).adminId = decoded.id;
-    (req as any).adminEmail = decoded.email;
-    (req as any).adminName = decoded.name;
+    // Attach admin info to request
+    req.adminId = decoded.id;
+    req.adminEmail = decoded.email;
+    req.adminName = decoded.name;
+
+    logger.debug('Admin authentication successful', {
+      adminId: decoded.id,
+      adminEmail: decoded.email,
+    });
 
     next();
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
-      res.status(401).json({
+      res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: 'Token sudah kadaluarsa. Silakan login kembali.',
       });
@@ -60,15 +60,15 @@ export const adminAuthMiddleware = async (
     }
 
     if (error instanceof jwt.JsonWebTokenError) {
-      res.status(401).json({
+      res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: 'Token tidak valid.',
       });
       return;
     }
 
-    console.error('Error in adminAuthMiddleware:', error);
-    res.status(500).json({
+    logger.error('Error in adminAuthMiddleware', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: 'Terjadi kesalahan server',
     });

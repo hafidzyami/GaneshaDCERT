@@ -1,8 +1,9 @@
 import { Request, Response } from "express";
 import { validationResult } from "express-validator";
-import DIDService from "../services/did.service";
-import { ValidationError } from "../utils/errors/AppError";
-import { asyncHandler } from "../middlewares/errorHandler.middleware";
+import { DIDService } from "../services";
+import { ValidationError } from "../utils";
+import { asyncHandler } from "../middlewares";
+import { ResponseHelper } from "../utils/helpers";
 
 /**
  * Register DID Controller
@@ -37,7 +38,7 @@ export const registerDID = asyncHandler(async (req: Request, res: Response) => {
     address,
   });
 
-  res.status(201).json(result);
+  return ResponseHelper.created(res, result, "DID registered successfully");
 });
 
 /**
@@ -53,7 +54,7 @@ export const checkDID = asyncHandler(async (req: Request, res: Response) => {
 
   const result = await DIDService.checkDID(did);
 
-  res.status(200).json(result);
+  return ResponseHelper.success(res, result);
 });
 
 /**
@@ -62,7 +63,7 @@ export const checkDID = asyncHandler(async (req: Request, res: Response) => {
 export const numberofBlocks = asyncHandler(async (req: Request, res: Response) => {
   const result = await DIDService.getBlockCount();
 
-  res.status(200).json(result);
+  return ResponseHelper.success(res, result);
 });
 
 /**
@@ -79,7 +80,7 @@ export const keyRotation = asyncHandler(async (req: Request, res: Response) => {
 
   const result = await DIDService.rotateKey(did, new_public_key);
 
-  res.status(200).json(result);
+  return ResponseHelper.success(res, result, "Key rotation successful");
 });
 
 /**
@@ -95,7 +96,7 @@ export const deleteDID = asyncHandler(async (req: Request, res: Response) => {
 
   const result = await DIDService.deactivateDID(did);
 
-  res.status(200).json(result);
+  return ResponseHelper.success(res, result, "DID deactivated successfully");
 });
 
 /**
@@ -111,5 +112,5 @@ export const getDIDDocument = asyncHandler(async (req: Request, res: Response) =
 
   const result = await DIDService.getDIDDocument(did);
 
-  res.status(200).json(result);
+  return ResponseHelper.success(res, result);
 });

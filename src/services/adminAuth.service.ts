@@ -1,4 +1,4 @@
-import { Admin } from "@prisma/client";
+import { Admin, PrismaClient } from "@prisma/client";
 import { prisma } from "../config/database";
 import { env } from "../config/env";
 import bcrypt from "bcrypt";
@@ -8,19 +8,32 @@ import {
   NotFoundError,
   UnauthorizedError,
 } from "../utils/errors/AppError";
+import logger from "../config/logger";
 
 /**
- * Admin Authentication Service
+ * Admin Authentication Service with Dependency Injection
  * Handles admin login, profile, and password management
  */
 class AdminAuthService {
-  private readonly JWT_SECRET: string;
-  private readonly JWT_EXPIRES_IN: string | number;
-  private readonly SALT_ROUNDS: number = 10;
+  private db: PrismaClient;
+  private jwtSecret: string;
+  private jwtExpiresIn: string | number;
+  private saltRounds: number;
 
-  constructor() {
-    this.JWT_SECRET = env.JWT_SECRET;
-    this.JWT_EXPIRES_IN = "7d";
+  /**
+   * Constructor with dependency injection
+   * @param dependencies - Optional dependencies for testing
+   */
+  constructor(dependencies?: {
+    db?: PrismaClient;
+    jwtSecret?: string;
+    jwtExpiresIn?: string | number;
+    saltRounds?: number;
+  }) {
+    this.db = dependencies?.db || prisma;
+    this.jwtSecret = dependencies?.jwtSecret || env.JWT_SECRET;
+    this.jwtExpiresIn = dependencies?.jwtExpiresIn || "7d";
+    this.saltRounds = dependencies?.saltRounds || 10;
   }
 
   /**
@@ -28,7 +41,7 @@ class AdminAuthService {
    */
   async login(email: string, password: string): Promise<{ token: string; admin: Partial<Admin> }> {
     // Find admin by email
-    const admin = await prisma.admin.findUnique({
+    const admin = await this.db.admin.findUnique({
       where: { email },
     });
 
@@ -51,11 +64,11 @@ class AdminAuthService {
       role: "admin",
     };
 
-    const token = jwt.sign(tokenPayload, this.JWT_SECRET, {
-      expiresIn: this.JWT_EXPIRES_IN as string,
+    const token = jwt.sign(tokenPayload, this.jwtSecret, {
+      expiresIn: this.jwtExpiresIn as string,
     } as jwt.SignOptions);
 
-    console.log(`✅ Admin logged in: ${admin.email}`);
+    logger.success(`Admin logged in: ${admin.email}`);
 
     return {
       token,
@@ -71,7 +84,7 @@ class AdminAuthService {
    * Get admin profile
    */
   async getProfile(adminId: string): Promise<Partial<Admin>> {
-    const admin = await prisma.admin.findUnique({
+    const admin = await this.db.admin.findUnique({
       where: { id: adminId },
       select: {
         id: true,
@@ -98,7 +111,7 @@ class AdminAuthService {
     name: string;
   }): Promise<Partial<Admin>> {
     // Check if email already exists
-    const existingAdmin = await prisma.admin.findUnique({
+    const existingAdmin = await this.db.admin.findUnique({
       where: { email: data.email },
     });
 
@@ -107,10 +120,10 @@ class AdminAuthService {
     }
 
     // Hash password
-    const hashedPassword = await bcrypt.hash(data.password, this.SALT_ROUNDS);
+    const hashedPassword = await bcrypt.hash(data.password, this.saltRounds);
 
     // Create admin
-    const newAdmin = await prisma.admin.create({
+    const newAdmin = await this.db.admin.create({
       data: {
         email: data.email,
         password: hashedPassword,
@@ -124,7 +137,7 @@ class AdminAuthService {
       },
     });
 
-    console.log(`✅ Admin created: ${newAdmin.email}`);
+    logger.success(`Admin created: ${newAdmin.email}`);
 
     return newAdmin;
   }
@@ -138,7 +151,7 @@ class AdminAuthService {
     newPassword: string
   ): Promise<void> {
     // Find admin
-    const admin = await prisma.admin.findUnique({
+    const admin = await this.db.admin.findUnique({
       where: { id: adminId },
     });
 
@@ -157,18 +170,22 @@ class AdminAuthService {
     }
 
     // Hash new password
-    const hashedNewPassword = await bcrypt.hash(newPassword, this.SALT_ROUNDS);
+    const hashedNewPassword = await bcrypt.hash(newPassword, this.saltRounds);
 
     // Update password
-    await prisma.admin.update({
+    await this.db.admin.update({
       where: { id: adminId },
       data: {
         password: hashedNewPassword,
       },
     });
 
-    console.log(`✅ Password changed for admin: ${admin.email}`);
+    logger.success(`Password changed for admin: ${admin.email}`);
   }
 }
 
+// Export singleton instance for backward compatibility
 export default new AdminAuthService();
+
+// Export class for testing and custom instantiation
+export { AdminAuthService };
