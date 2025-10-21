@@ -1,6 +1,7 @@
 import { ethers, Interface, TransactionReceipt } from "ethers";
 import VCManager from "../utils/VCManager.json";
 import { env } from "./env";
+import logger from "./logger";
 
 export const contractABI = VCManager.abi;
 export const iface = new Interface(contractABI);
@@ -63,6 +64,16 @@ class VCBlockchainConfig {
       return true;
     } catch (error) {
       console.error("❌ VC Blockchain connection failed:", error);
+      return false;
+    }
+  }
+
+  public static async isConnected(): Promise<boolean> {
+    try {
+      await VCBlockchainConfig.provider.getBlockNumber();
+      return true;
+    } catch (error) {
+      logger.error("Blockchain health check failed", error);
       return false;
     }
   }

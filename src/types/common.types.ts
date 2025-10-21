@@ -2,7 +2,7 @@
  * Common Type Definitions
  */
 
-import { RequestStatus } from '@prisma/client';
+import { RequestStatus } from "@prisma/client";
 
 export interface PaginationParams {
   page: number;
@@ -30,7 +30,8 @@ export interface HealthCheckResponse {
   uptime: number;
   services: {
     database: boolean;
-    blockchain: boolean;
+    didblockchain: boolean;
+    vcblockchain: boolean;
   };
 }
 

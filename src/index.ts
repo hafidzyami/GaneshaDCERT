@@ -2,7 +2,13 @@ import express, { Request, Response, Application } from "express";
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 import cors from "cors";
-import { env, DatabaseService, BlockchainConfig, logger } from "./config";
+import {
+  env,
+  DatabaseService,
+  DIDBlockchainConfig,
+  VCBlockchainConfig,
+  logger,
+} from "./config";
 import {
   errorHandler,
   notFoundHandler,
@@ -191,17 +197,19 @@ app.get("/", (req: Request, res: Response) => {
  *       503:
  *         description: One or more services are unhealthy
  */
-app.get("/health", async (req: Request, res: Response) => {
+app.get("/api/v1/health", async (req: Request, res: Response) => {
   const dbHealth = await DatabaseService.isConnected();
-  const bcHealth = await BlockchainConfig.isConnected();
+  const didBCHealth = await DIDBlockchainConfig.isConnected();
+  const vcBCHealth = await VCBlockchainConfig.isConnected();
 
   const response: HealthCheckResponse = {
-    success: dbHealth && bcHealth,
+    success: dbHealth && didBCHealth,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     services: {
       database: dbHealth,
-      blockchain: bcHealth,
+      didblockchain: didBCHealth,
+      vcblockchain: vcBCHealth,
     },
   };
 
@@ -236,10 +244,16 @@ const startServer = async () => {
     // Connect to Database
     await DatabaseService.connect();
 
-    // Test Blockchain Connection
-    const blockchainConnected = await BlockchainConfig.testConnection();
-    if (!blockchainConnected) {
-      logger.warn("Blockchain connection failed, but server will continue");
+    // Test DID Blockchain Connection
+    const didBlockchainConnected = await DIDBlockchainConfig.testConnection();
+    if (!didBlockchainConnected) {
+      logger.warn("DID Blockchain connection failed, but server will continue");
+    }
+
+    // Test VC Blockchain Connection
+    const vcBlockchainConnected = await DIDBlockchainConfig.testConnection();
+    if (!vcBlockchainConnected) {
+      logger.warn("VC Blockchain connection failed, but server will continue");
     }
 
     // Start Express Server
@@ -247,7 +261,7 @@ const startServer = async () => {
       logger.success("GaneshaDCERT API Server is running!");
       logger.info(`   🌐 API: http://localhost:${PORT}`);
       logger.info(`   📖 Swagger Docs: http://localhost:${PORT}/api-docs`);
-      logger.info(`   🔍 Health Check: http://localhost:${PORT}/health`);
+      logger.info(`   🔍 Health Check: http://localhost:${PORT}/api/v1/health`);
     });
   } catch (error) {
     logger.error("Failed to start server", error);

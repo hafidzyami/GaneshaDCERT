@@ -5,12 +5,17 @@ import { BlockchainError, NotFoundError } from "../../utils/errors/AppError";
 /**
  * VC Blockchain Service
  * Handles all VC blockchain interactions with proper error handling
+ * Updated to support Schema Versioning
  */
 class VCBlockchainService {
   private contract: ethers.Contract;
 
-  constructor() {
-    this.contract = VCBlockchainConfig.contract;
+  /**
+   * Constructor with dependency injection
+   * @param dependencies - Optional dependencies for testing
+   */
+  constructor(dependencies?: { contract?: ethers.Contract }) {
+    this.contract = dependencies?.contract || VCBlockchainConfig.contract;
   }
 
   // ============================================
@@ -19,6 +24,7 @@ class VCBlockchainService {
 
   /**
    * Create VC Schema on Blockchain
+   * Creates version 1 of a new schema
    */
   async createVCSchemaInBlockchain(
     id: string,
@@ -42,7 +48,7 @@ class VCBlockchainService {
         );
       }
 
-      console.log(`✅ VC Schema created: ${id} (TX: ${receipt.hash})`);
+      console.log(`✅ VC Schema created: ${id} v1 (TX: ${receipt.hash})`);
       return receipt;
     } catch (error: any) {
       console.error("❌ Failed to create VC Schema:", error);
@@ -57,6 +63,7 @@ class VCBlockchainService {
 
   /**
    * Update VC Schema on Blockchain
+   * Creates a new version of existing schema
    */
   async updateVCSchemaInBlockchain(
     id: string,
@@ -73,7 +80,7 @@ class VCBlockchainService {
         );
       }
 
-      console.log(`✅ VC Schema updated: ${id} (TX: ${receipt.hash})`);
+      console.log(`✅ VC Schema updated: ${id} (new version) (TX: ${receipt.hash})`);
       return receipt;
     } catch (error: any) {
       console.error("❌ Failed to update VC Schema:", error);
@@ -87,13 +94,14 @@ class VCBlockchainService {
   }
 
   /**
-   * Deactivate Existing VC Schema in Blockchain
+   * Deactivate Existing VC Schema Version in Blockchain
    */
   async deactivateVCSchemaInBlockchain(
-    id: string
+    id: string,
+    version: number
   ): Promise<TransactionReceipt> {
     try {
-      const tx = await this.contract.deactivateVCSchema(id);
+      const tx = await this.contract.deactivateVCSchema(id, version);
       const receipt = await tx.wait();
 
       if (receipt.status !== 1) {
@@ -103,7 +111,7 @@ class VCBlockchainService {
         );
       }
 
-      console.log(`✅ Deactivated VC Schema: ${id} (TX: ${receipt.hash})`);
+      console.log(`✅ Deactivated VC Schema: ${id} v${version} (TX: ${receipt.hash})`);
       return receipt;
     } catch (error: any) {
       console.error("❌ Failed to deactivate VC Schema:", error);
@@ -119,13 +127,14 @@ class VCBlockchainService {
   }
 
   /**
-   * Reactivate Existing VC Schema in Blockchain
+   * Reactivate Existing VC Schema Version in Blockchain
    */
   async reactivateVCSchemaInBlockchain(
-    id: string
+    id: string,
+    version: number
   ): Promise<TransactionReceipt> {
     try {
-      const tx = await this.contract.reactivateVCSchema(id);
+      const tx = await this.contract.reactivateVCSchema(id, version);
       const receipt = await tx.wait();
 
       if (receipt.status !== 1) {
@@ -135,7 +144,7 @@ class VCBlockchainService {
         );
       }
 
-      console.log(`✅ Reactivated VC Schema: ${id} (TX: ${receipt.hash})`);
+      console.log(`✅ Reactivated VC Schema: ${id} v${version} (TX: ${receipt.hash})`);
       return receipt;
     } catch (error: any) {
       console.error("❌ Failed to reactivate VC Schema:", error);
@@ -151,13 +160,13 @@ class VCBlockchainService {
   }
 
   /**
-   * Get All VC Schemas from Blockchain
+   * Get All VC Schemas from Blockchain (all versions)
    */
   async getAllSchemasFromBlockchain(): Promise<any[]> {
     try {
       const schemas = await this.contract.getAllSchemas();
 
-      console.log(`✅ Retrieved ${schemas.length} VC Schemas from blockchain`);
+      console.log(`✅ Retrieved ${schemas.length} VC Schema versions from blockchain`);
       return schemas;
     } catch (error: any) {
       console.error("❌ Failed to get VC Schemas:", error);
@@ -178,6 +187,7 @@ class VCBlockchainService {
     holderDID: string,
     vcType: string,
     schemaID: string,
+    schemaVersion: number,
     hash: string
   ): Promise<TransactionReceipt> {
     try {
@@ -187,6 +197,7 @@ class VCBlockchainService {
         holderDID,
         vcType,
         schemaID,
+        schemaVersion,
         hash
       );
       const receipt = await tx.wait();
@@ -198,7 +209,7 @@ class VCBlockchainService {
         );
       }
 
-      console.log(`✅ VC issued: ${id} (TX: ${receipt.hash})`);
+      console.log(`✅ VC issued: ${id} using schema ${schemaID} v${schemaVersion} (TX: ${receipt.hash})`);
       return receipt;
     } catch (error: any) {
       console.error("❌ Failed to issue VC:", error);
@@ -213,6 +224,7 @@ class VCBlockchainService {
 
   /**
    * Renew VC on Blockchain
+   * Reactivates VC without changing hash
    */
   async renewVCInBlockchain(id: string): Promise<TransactionReceipt> {
     try {
@@ -238,6 +250,7 @@ class VCBlockchainService {
 
   /**
    * Update VC on Blockchain
+   * Updates hash and reactivates VC
    */
   async updateVCInBlockchain(
     id: string,
@@ -266,6 +279,7 @@ class VCBlockchainService {
 
   /**
    * Revoke VC on Blockchain
+   * Deactivates VC
    */
   async revokeVCInBlockchain(id: string): Promise<TransactionReceipt> {
     try {
@@ -291,6 +305,7 @@ class VCBlockchainService {
 
   /**
    * Verify VC on Blockchain
+   * Checks if VC is active and hash matches
    */
   async verifyVCInBlockchain(id: string, hash: string): Promise<boolean> {
     try {
@@ -345,3 +360,6 @@ class VCBlockchainService {
 }
 
 export default new VCBlockchainService();
+
+// Export class for testing and custom instantiation
+export { VCBlockchainService };
