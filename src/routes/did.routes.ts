@@ -13,18 +13,114 @@ const router: Router = express.Router();
 /**
  * @swagger
  * tags:
- *   name: DID & Account Management
- *   description: DID registration, key rotation, and account management
+ *   name: DID Management
+ *   description: Decentralized Identifier (DID) registration, verification, and lifecycle management on blockchain
  */
 
 /**
  * @swagger
- * /did:
+ * components:
+ *   schemas:
+ *     DIDDocument:
+ *       type: object
+ *       description: W3C DID Document structure
+ *       properties:
+ *         '@context':
+ *           type: array
+ *           items:
+ *             type: string
+ *           example: ["https://www.w3.org/ns/did/v1"]
+ *           description: JSON-LD context
+ *         id:
+ *           type: string
+ *           example: "did:ganesha:0x1234567890abcdef"
+ *           description: DID identifier
+ *         controller:
+ *           type: string
+ *           example: "did:ganesha:0x1234567890abcdef"
+ *           description: DID controller
+ *         verificationMethod:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               id:
+ *                 type: string
+ *                 example: "did:ganesha:0x123...#key-1"
+ *               type:
+ *                 type: string
+ *                 example: "EcdsaSecp256k1VerificationKey2019"
+ *               controller:
+ *                 type: string
+ *                 example: "did:ganesha:0x123..."
+ *               publicKeyHex:
+ *                 type: string
+ *                 example: "04a1b2c3d4e5f6..."
+ *         authentication:
+ *           type: array
+ *           items:
+ *             type: string
+ *           example: ["did:ganesha:0x123...#key-1"]
+ *         assertionMethod:
+ *           type: array
+ *           items:
+ *             type: string
+ *           example: ["did:ganesha:0x123...#key-1"]
+ *         created:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-10-21T10:30:00Z"
+ *         updated:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-10-21T10:30:00Z"
+ *
+ *     DIDMetadata:
+ *       type: object
+ *       properties:
+ *         name:
+ *           type: string
+ *           example: "John Doe"
+ *         email:
+ *           type: string
+ *           format: email
+ *           example: "john.doe@example.com"
+ *         phone:
+ *           type: string
+ *           example: "+62-812-3456-7890"
+ *         country:
+ *           type: string
+ *           example: "Indonesia"
+ *         website:
+ *           type: string
+ *           format: uri
+ *           example: "https://example.com"
+ *         address:
+ *           type: string
+ *           example: "Jl. Sudirman No. 1, Jakarta"
+ */
+
+/**
+ * @swagger
+ * /dids:
  *   post:
  *     summary: Register new DID
- *     description: Register a new Decentralized Identifier (DID) on the blockchain
+ *     description: |
+ *       Register a new Decentralized Identifier (DID) on the blockchain with optional metadata.
+ *
+ *       **Process:**
+ *       1. Validate public key format
+ *       2. Check if DID already exists
+ *       3. Register DID on blockchain
+ *       4. Store metadata in database
+ *
+ *       **DID Format:** `did:ganesha:<address>`
+ *
+ *       **Roles:**
+ *       - `individual`: For personal/individual users (students, employees, etc.)
+ *       - `institution`: For organizations (universities, companies, etc.)
  *     tags:
- *       - DID & Account Management
+ *       - DID Management
  *     requestBody:
  *       required: true
  *       content:
@@ -32,15 +128,72 @@ const router: Router = express.Router();
  *           schema:
  *             type: object
  *             required:
+ *               - did_string
  *               - public_key
+ *               - role
  *             properties:
+ *               did_string:
+ *                 type: string
+ *                 example: "did:ganesha:0x1234567890abcdef"
+ *                 description: DID string to register
  *               public_key:
  *                 type: string
- *                 example: "0x04a1b2c3d4e5f6..."
- *                 description: Public key untuk DID
- *               metadata:
- *                 type: object
- *                 description: Optional metadata for DID
+ *                 example: "0xc137d47e2181ace4e14e7d0870eccf3817e51b34129f98c351230b396e37b5f985c0c2b80ceecafba8ee4017a02dbd5ebfafb29db50b7d5bc4e0800d598460d3"
+ *                 description: Public key in hexadecimal format (compressed or uncompressed)
+ *               role:
+ *                 type: string
+ *                 enum: [individual, institution]
+ *                 example: "institution"
+ *                 description: Role/type of the DID owner
+ *               name:
+ *                 type: string
+ *                 example: "University of Indonesia"
+ *                 description: Name of the DID owner (individual or organization name)
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: "admin@university.ac.id"
+ *                 description: Contact email
+ *               phone:
+ *                 type: string
+ *                 example: "+62-21-7270011"
+ *                 description: Contact phone number
+ *               country:
+ *                 type: string
+ *                 example: "Indonesia"
+ *                 description: Country
+ *               website:
+ *                 type: string
+ *                 format: uri
+ *                 example: "https://ui.ac.id"
+ *                 description: Official website (mainly for institutions)
+ *               address:
+ *                 type: string
+ *                 example: "Depok, West Java, Indonesia"
+ *                 description: Physical address
+ *           examples:
+ *             institution:
+ *               summary: Institution DID (University)
+ *               value:
+ *                 did_string: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                 public_key: "0x04a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234"
+ *                 role: "institution"
+ *                 name: "University of Indonesia"
+ *                 email: "admin@ui.ac.id"
+ *                 phone: "+62-21-7270011"
+ *                 country: "Indonesia"
+ *                 website: "https://ui.ac.id"
+ *                 address: "Depok, West Java, Indonesia"
+ *             individual:
+ *               summary: Individual DID (Student)
+ *               value:
+ *                 did_string: "did:ganesha:0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199"
+ *                 public_key: "0x04b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef012345"
+ *                 role: "individual"
+ *                 name: "John Doe"
+ *                 email: "john.doe@student.ui.ac.id"
+ *                 phone: "+62-812-3456-7890"
+ *                 country: "Indonesia"
  *     responses:
  *       201:
  *         description: DID registered successfully
@@ -54,42 +207,88 @@ const router: Router = express.Router();
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: DID berhasil didaftarkan
+ *                   example: "DID registered successfully"
  *                 data:
  *                   type: object
  *                   properties:
  *                     did:
  *                       type: string
- *                       example: did:ganesha:0x1234567890abcdef
- *                     block_hash:
+ *                       example: "did:ganesha:0x1234567890abcdef"
+ *                     public_key:
  *                       type: string
- *                     block_index:
- *                       type: integer
+ *                       example: "0x04a1b2c3d4e5f6..."
+ *                     role:
+ *                       type: string
+ *                       enum: [individual, institution]
+ *                       example: "institution"
+ *                     status:
+ *                       type: string
+ *                       example: "ACTIVE"
+ *                     blockchain_tx_hash:
+ *                       type: string
+ *                       example: "0x9876543210fedcba..."
+ *                       description: Blockchain transaction hash
+ *                     created_at:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-10-21T10:30:00Z"
  *       400:
- *         description: Invalid public key or validation error
+ *         description: Invalid request data or validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Invalid public key format"
+ *                 errors:
+ *                   type: array
+ *                   items:
+ *                     type: object
  *       409:
  *         description: DID already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "DID already registered"
  *       500:
- *         description: Internal server error
+ *         description: Internal server error or blockchain failure
  */
 router.post("/", registerDIDValidator, did.registerDID);
 
 /**
  * @swagger
- * /did/check/{did}:
+ * /dids/check/{did}:
  *   get:
  *     summary: Check if DID exists
- *     description: Verify if a DID is registered on the blockchain
+ *     description: |
+ *       Verify if a DID is registered on the blockchain and retrieve its status.
+ *
+ *       **Use cases:**
+ *       - Verify DID before issuing credentials
+ *       - Check DID status (active/deactivated)
+ *       - Validate DID format and existence
  *     tags:
- *       - DID & Account Management
+ *       - DID Management
  *     parameters:
  *       - in: path
  *         name: did
  *         required: true
  *         schema:
  *           type: string
- *         example: did:ganesha:0x1234567890abcdef
- *         description: DID to check
+ *         example: "did:ganesha:0x742d35635634C0532925a3b844Bc9e7595f0bEb"
+ *         description: DID to check (format - did:ganesha:0x<address>)
  *     responses:
  *       200:
  *         description: DID check result
@@ -107,13 +306,59 @@ router.post("/", registerDIDValidator, did.registerDID);
  *                     exists:
  *                       type: boolean
  *                       example: true
+ *                       description: Whether DID is registered
  *                     did:
  *                       type: string
+ *                       example: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *                     status:
  *                       type: string
  *                       enum: [ACTIVE, DEACTIVATED]
+ *                       example: "ACTIVE"
+ *                       description: Current DID status
+ *                     public_key:
+ *                       type: string
+ *                       example: "0x04a1b2c3d4e5f6..."
+ *                       description: Associated public key
+ *                     role:
+ *                       type: string
+ *                       enum: [individual, institution]
+ *                       example: "institution"
+ *                     registered_at:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-10-21T10:30:00Z"
+ *             examples:
+ *               exists:
+ *                 summary: DID exists and active
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     exists: true
+ *                     did: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                     status: "ACTIVE"
+ *                     public_key: "0x04a1b2c3..."
+ *                     role: "institution"
+ *                     registered_at: "2025-10-21T10:30:00Z"
+ *               notExists:
+ *                 summary: DID does not exist
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     exists: false
+ *                     did: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *       400:
  *         description: Invalid DID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Invalid DID format. Expected: did:ganesha:0x<address>"
  *       500:
  *         description: Internal server error
  */
@@ -121,12 +366,18 @@ router.get("/check/:did", checkDIDValidator, did.checkDID);
 
 /**
  * @swagger
- * /did/blocks:
+ * /dids/blocks:
  *   get:
  *     summary: Get blockchain block count
- *     description: Retrieve the total number of blocks in the blockchain
+ *     description: |
+ *       Retrieve the total number of blocks in the DID blockchain.
+ *
+ *       **Use cases:**
+ *       - Monitor blockchain growth
+ *       - Verify blockchain synchronization
+ *       - Display blockchain statistics
  *     tags:
- *       - DID & Account Management
+ *       - DID Management
  *     responses:
  *       200:
  *         description: Block count retrieved successfully
@@ -144,26 +395,41 @@ router.get("/check/:did", checkDIDValidator, did.checkDID);
  *                     block_count:
  *                       type: integer
  *                       example: 12345
+ *                       description: Total number of blocks in the chain
+ *                     last_block_time:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-10-21T10:30:00Z"
+ *                       description: Timestamp of the last block
  *       500:
- *         description: Internal server error
+ *         description: Internal server error or blockchain connection failure
  */
 router.get("/blocks", did.numberofBlocks);
 
 /**
  * @swagger
- * /did/{did}/key-rotation:
+ * /dids/{did}/key-rotation:
  *   put:
  *     summary: Rotate DID key
- *     description: Update the public key associated with a DID (key rotation for security)
+ *     description: |
+ *       Update the public key associated with a DID for security purposes (key rotation).
+ *
+ *       **Security Process:**
+ *       1. Verify ownership using signature from old private key
+ *       2. Validate new public key format
+ *       3. Update key on blockchain
+ *       4. Update DID document
+ *
+ *       **Important:** Keep the old private key secure until rotation is complete.
  *     tags:
- *       - DID & Account Management
+ *       - DID Management
  *     parameters:
  *       - in: path
  *         name: did
  *         required: true
  *         schema:
  *           type: string
- *         example: did:ganesha:0x1234567890abcdef
+ *         example: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *         description: DID to rotate key for
  *     requestBody:
  *       required: true
@@ -173,15 +439,20 @@ router.get("/blocks", did.numberofBlocks);
  *             type: object
  *             required:
  *               - new_public_key
- *               - old_private_key_signature
+ *               - signature
  *             properties:
  *               new_public_key:
  *                 type: string
- *                 example: "0x04f6e5d4c3b2a1..."
- *                 description: New public key
- *               old_private_key_signature:
+ *                 example: "0x04f6e5d4c3b2a19876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba98765432"
+ *                 description: New public key in hexadecimal format
+ *               signature:
  *                 type: string
- *                 description: Signature using old private key for verification
+ *                 example: "0x1234567890abcdef..."
+ *                 description: Signature created with old private key (sign the new public key)
+ *               reason:
+ *                 type: string
+ *                 example: "Security upgrade - periodic key rotation"
+ *                 description: Optional reason for key rotation
  *     responses:
  *       200:
  *         description: Key rotated successfully
@@ -195,42 +466,75 @@ router.get("/blocks", did.numberofBlocks);
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: Key berhasil dirotasi
+ *                   example: "DID key rotated successfully"
  *                 data:
  *                   type: object
  *                   properties:
  *                     did:
  *                       type: string
+ *                       example: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                     old_public_key:
+ *                       type: string
+ *                       example: "0x04a1b2c3d4e5f6..."
  *                     new_public_key:
  *                       type: string
- *                     block_hash:
+ *                       example: "0x04f6e5d4c3b2a1..."
+ *                     blockchain_tx_hash:
  *                       type: string
+ *                       example: "0xabcdef1234567890..."
+ *                     rotated_at:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-10-21T10:30:00Z"
  *       400:
- *         description: Invalid key or signature
+ *         description: Invalid key format or validation error
  *       401:
  *         description: Unauthorized - Invalid signature
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Invalid signature. Cannot verify ownership"
  *       404:
  *         description: DID not found
  *       500:
- *         description: Internal server error
+ *         description: Internal server error or blockchain failure
  */
 router.put("/:did/key-rotation", keyRotationValidator, did.keyRotation);
 
 /**
  * @swagger
- * /did/{did}:
+ * /dids/{did}:
  *   delete:
  *     summary: Deactivate DID
- *     description: Deactivate a DID (soft delete - marks as inactive on blockchain)
+ *     description: |
+ *       Deactivate a DID on the blockchain (soft delete - marks as inactive).
+ *
+ *       **Important:**
+ *       - Deactivated DIDs cannot issue new credentials
+ *       - Existing credentials remain valid (unless revoked separately)
+ *       - Deactivation is permanent and cannot be reversed
+ *       - Requires signature proof of ownership
+ *
+ *       **Use cases:**
+ *       - Account closure
+ *       - Security breach
+ *       - Organizational changes
  *     tags:
- *       - DID & Account Management
+ *       - DID Management
  *     parameters:
  *       - in: path
  *         name: did
  *         required: true
  *         schema:
  *           type: string
- *         example: did:ganesha:0x1234567890abcdef
+ *         example: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *         description: DID to deactivate
  *     requestBody:
  *       required: true
@@ -239,14 +543,16 @@ router.put("/:did/key-rotation", keyRotationValidator, did.keyRotation);
  *           schema:
  *             type: object
  *             required:
- *               - private_key_signature
+ *               - signature
  *             properties:
- *               private_key_signature:
+ *               signature:
  *                 type: string
- *                 description: Signature using private key for verification
+ *                 example: "0x1234567890abcdef..."
+ *                 description: Signature using private key for verification (sign the DID string)
  *               reason:
  *                 type: string
- *                 description: Reason for deactivation
+ *                 example: "Organization discontinued operations"
+ *                 description: Reason for deactivation (for audit trail)
  *     responses:
  *       200:
  *         description: DID deactivated successfully
@@ -260,41 +566,64 @@ router.put("/:did/key-rotation", keyRotationValidator, did.keyRotation);
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: DID berhasil dinonaktifkan
+ *                   example: "DID deactivated successfully"
  *                 data:
  *                   type: object
  *                   properties:
  *                     did:
  *                       type: string
+ *                       example: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *                     status:
  *                       type: string
- *                       example: DEACTIVATED
+ *                       example: "DEACTIVATED"
+ *                     deactivated_at:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-10-21T10:30:00Z"
+ *                     blockchain_tx_hash:
+ *                       type: string
+ *                       example: "0xfedcba9876543210..."
  *       400:
- *         description: Invalid signature
+ *         description: Invalid signature or validation error
  *       401:
  *         description: Unauthorized - Invalid signature
  *       404:
  *         description: DID not found
+ *       409:
+ *         description: DID already deactivated
  *       500:
- *         description: Internal server error
+ *         description: Internal server error or blockchain failure
  */
 router.delete("/:did", deleteDIDValidator, did.deleteDID);
 
 /**
  * @swagger
- * /did/{did}/document:
+ * /dids/{did}/document:
  *   get:
  *     summary: Get DID Document
- *     description: Retrieve the complete DID Document containing all DID information and metadata
+ *     description: |
+ *       Retrieve the complete W3C DID Document containing all DID information, verification methods, and metadata.
+ *
+ *       **DID Document Contents:**
+ *       - DID identifier
+ *       - Verification methods (public keys)
+ *       - Authentication methods
+ *       - Assertion methods (for VCs)
+ *       - Service endpoints
+ *       - Created/Updated timestamps
+ *
+ *       **Standards:**
+ *       - Follows W3C DID Core specification
+ *       - JSON-LD format with proper context
  *     tags:
- *       - DID & Account Management
+ *       - DID Management
  *     parameters:
  *       - in: path
  *         name: did
  *         required: true
  *         schema:
  *           type: string
- *         example: did:ganesha:0x1234567890abcdef
+ *         example: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *         description: DID to get document for
  *     responses:
  *       200:
@@ -308,41 +637,44 @@ router.delete("/:did", deleteDIDValidator, did.deleteDID);
  *                   type: boolean
  *                   example: true
  *                 data:
- *                   type: object
- *                   properties:
+ *                   $ref: '#/components/schemas/DIDDocument'
+ *             examples:
+ *               university:
+ *                 summary: University DID Document
+ *                 value:
+ *                   success: true
+ *                   data:
  *                     '@context':
- *                       type: string
- *                       example: https://www.w3.org/ns/did/v1
- *                     id:
- *                       type: string
- *                       example: did:ganesha:0x1234567890abcdef
- *                     publicKey:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           id:
- *                             type: string
- *                           type:
- *                             type: string
- *                           controller:
- *                             type: string
- *                           publicKeyHex:
- *                             type: string
+ *                       - "https://www.w3.org/ns/did/v1"
+ *                       - "https://w3id.org/security/v1"
+ *                     id: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                     controller: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                     verificationMethod:
+ *                       - id: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb#key-1"
+ *                         type: "EcdsaSecp256k1VerificationKey2019"
+ *                         controller: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                         publicKeyHex: "04a1b2c3d4e5f6789abcdef..."
  *                     authentication:
- *                       type: array
- *                       items:
- *                         type: string
- *                     created:
- *                       type: string
- *                       format: date-time
- *                     updated:
- *                       type: string
- *                       format: date-time
+ *                       - "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb#key-1"
+ *                     assertionMethod:
+ *                       - "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb#key-1"
+ *                     created: "2025-10-21T10:30:00Z"
+ *                     updated: "2025-10-21T10:30:00Z"
  *       404:
  *         description: DID not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "DID not found"
  *       500:
- *         description: Internal server error
+ *         description: Internal server error or blockchain failure
  */
 router.get("/:did/document", getDIDDocumentValidator, did.getDIDDocument);
 

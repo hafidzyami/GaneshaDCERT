@@ -242,7 +242,7 @@ class DIDBlockchainService {
       const publicKey = await this.getDIDKey(did, keyId);
 
       return {
-        ...document,
+        document,
         [keyId]: publicKey,
       };
     } catch (error: any) {

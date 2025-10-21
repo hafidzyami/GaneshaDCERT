@@ -2,8 +2,15 @@ import express, { Router } from "express";
 import * as vcSchema from "../controllers/schema.controller";
 import {
   getAllVCSchemasValidator,
+  getLatestSchemaVersionValidator,
+  getAllSchemaVersionsValidator,
+  getSchemaByIdValidator,
   createVCSchemaValidator,
   updateVCSchemaValidator,
+  deactivateVCSchemaValidator,
+  reactivateVCSchemaValidator,
+  deleteVCSchemaValidator,
+  isSchemaActiveValidator,
 } from "../validators/schema.validator";
 
 const router: Router = express.Router();
@@ -65,6 +72,10 @@ const router: Router = express.Router();
  *           description: Last update timestamp
  */
 
+// ============================================
+// 🔹 GET ENDPOINTS (Database Only - Fast)
+// ============================================
+
 /**
  * @swagger
  * /schemas:
@@ -123,54 +134,6 @@ router.get("/", getAllVCSchemasValidator, vcSchema.getAllVCSchemas);
 
 /**
  * @swagger
- * /schemas/{id}:
- *   get:
- *     summary: Get schema by ID
- *     description: Retrieve a specific schema by its UUID (READ from Database only)
- *     tags:
- *       - VC Schema Management
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: Schema UUID
- *         example: "550e8400-e29b-41d4-a716-446655440000"
- *     responses:
- *       200:
- *         description: Schema retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   $ref: '#/components/schemas/VCSchema'
- *       404:
- *         description: Schema not found
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: "Schema with ID 550e8400-e29b-41d4-a716-446655440000 not found"
- *       500:
- *         description: Internal server error
- */
-router.get("/:id", vcSchema.getSchemaById);
-
-/**
- * @swagger
  * /schemas/latest:
  *   get:
  *     summary: Get latest schema version
@@ -223,7 +186,11 @@ router.get("/:id", vcSchema.getSchemaById);
  *       500:
  *         description: Internal server error
  */
-router.get("/latest", vcSchema.getLatestSchemaVersion);
+router.get(
+  "/latest",
+  getLatestSchemaVersionValidator,
+  vcSchema.getLatestSchemaVersion
+);
 
 /**
  * @swagger
@@ -274,7 +241,59 @@ router.get("/latest", vcSchema.getLatestSchemaVersion);
  *       500:
  *         description: Internal server error
  */
-router.get("/versions", vcSchema.getAllSchemaVersions);
+router.get(
+  "/versions",
+  getAllSchemaVersionsValidator,
+  vcSchema.getAllSchemaVersions
+);
+
+/**
+ * @swagger
+ * /schemas/{id}:
+ *   get:
+ *     summary: Get schema by ID
+ *     description: Retrieve a specific schema by its UUID (READ from Database only)
+ *     tags:
+ *       - VC Schema Management
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schema UUID
+ *         example: "550e8400-e29b-41d4-a716-446655440000"
+ *     responses:
+ *       200:
+ *         description: Schema retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/VCSchema'
+ *       404:
+ *         description: Schema not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Schema with ID 550e8400-e29b-41d4-a716-446655440000 not found"
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/:id", getSchemaByIdValidator, vcSchema.getSchemaById);
 
 /**
  * @swagger
@@ -319,7 +338,11 @@ router.get("/versions", vcSchema.getAllSchemaVersions);
  *       500:
  *         description: Internal server error
  */
-router.get("/:id/active", vcSchema.isSchemaActive);
+router.get("/:id/active", isSchemaActiveValidator, vcSchema.isSchemaActive);
+
+// ============================================
+// 🔹 POST/PUT/PATCH/DELETE ENDPOINTS (Database + Blockchain)
+// ============================================
 
 /**
  * @swagger
@@ -564,7 +587,11 @@ router.put("/:id", updateVCSchemaValidator, vcSchema.updateVCSchema);
  *       500:
  *         description: Internal server error
  */
-router.patch("/:id/deactivate", vcSchema.deactivateVCSchema);
+router.patch(
+  "/:id/deactivate",
+  deactivateVCSchemaValidator,
+  vcSchema.deactivateVCSchema
+);
 
 /**
  * @swagger
@@ -615,47 +642,10 @@ router.patch("/:id/deactivate", vcSchema.deactivateVCSchema);
  *       500:
  *         description: Internal server error
  */
-router.patch("/:id/reactivate", vcSchema.reactivateVCSchema);
-
-/**
- * @swagger
- * /schemas/{id}:
- *   delete:
- *     summary: Delete VC schema
- *     description: Soft delete (deactivate) a VC schema in both Database and Blockchain
- *     tags:
- *       - VC Schema Management
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: UUID of the schema to delete
- *         example: "550e8400-e29b-41d4-a716-446655440000"
- *     responses:
- *       200:
- *         description: Schema deleted (deactivated) successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: "VC Schema deleted (deactivated) successfully"
- *                 transaction_hash:
- *                   type: string
- *                   example: "0x1357924680fedcba1357924680fedcba1357924680fedcba1357924680fedcba"
- *       404:
- *         description: Schema not found
- *       500:
- *         description: Internal server error
- */
-router.delete("/:id", vcSchema.deleteVCSchema);
+router.patch(
+  "/:id/reactivate",
+  reactivateVCSchemaValidator,
+  vcSchema.reactivateVCSchema
+);
 
 export default router;

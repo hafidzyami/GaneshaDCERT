@@ -1,76 +1,147 @@
 import { body, query, param } from "express-validator";
+import { SCHEMA_CONSTANTS, SCHEMA_ERRORS } from "../constants/schema.constants";
 
 /**
- * Schema Validators
+ * VC Schema Validators
+ * 
+ * PRINCIPLES:
+ * - DRY: Reusable validation rules
+ * - Clear error messages
+ * - Type safety
+ * - Consistent with constants
  */
 
+// ============================================
+// 🔹 REUSABLE VALIDATION RULES
+// ============================================
+
+const schemaIdValidation = param("id")
+  .trim()
+  .notEmpty()
+  .withMessage(SCHEMA_ERRORS.VALIDATION.ID_REQUIRED)
+  .isUUID()
+  .withMessage(SCHEMA_ERRORS.VALIDATION.ID_INVALID_UUID);
+
+const schemaNameValidation = (location: "body" | "query") => {
+  const validator = location === "body" ? body("name") : query("name");
+  return validator
+    .trim()
+    .notEmpty()
+    .withMessage(SCHEMA_ERRORS.VALIDATION.NAME_REQUIRED)
+    .isLength({
+      min: SCHEMA_CONSTANTS.NAME_MIN_LENGTH,
+      max: SCHEMA_CONSTANTS.NAME_MAX_LENGTH,
+    })
+    .withMessage(SCHEMA_ERRORS.VALIDATION.NAME_LENGTH);
+};
+
+const schemaObjectValidation = body("schema")
+  .notEmpty()
+  .withMessage(SCHEMA_ERRORS.VALIDATION.SCHEMA_REQUIRED)
+  .isObject()
+  .withMessage(SCHEMA_ERRORS.VALIDATION.SCHEMA_MUST_BE_OBJECT)
+  .custom((value) => {
+    if (!value.type) {
+      throw new Error(SCHEMA_ERRORS.VALIDATION.SCHEMA_TYPE_REQUIRED);
+    }
+    if (value.type === "object" && !value.properties) {
+      throw new Error(SCHEMA_ERRORS.VALIDATION.SCHEMA_PROPERTIES_REQUIRED);
+    }
+    return true;
+  });
+
+const issuerDidValidation = (location: "body" | "query") => {
+  const validator = location === "body" ? body("issuer_did") : query("issuerDid");
+  return validator
+    .trim()
+    .notEmpty()
+    .withMessage(SCHEMA_ERRORS.VALIDATION.ISSUER_DID_REQUIRED)
+    .matches(SCHEMA_CONSTANTS.DID_REGEX)
+    .withMessage(SCHEMA_ERRORS.VALIDATION.ISSUER_DID_INVALID);
+};
+
+const issuerDidOptionalValidation = query("issuerDid")
+  .optional()
+  .trim()
+  .matches(SCHEMA_CONSTANTS.DID_REGEX)
+  .withMessage(SCHEMA_ERRORS.VALIDATION.ISSUER_DID_INVALID);
+
+const activeOnlyValidation = query("activeOnly")
+  .optional()
+  .isBoolean()
+  .withMessage(SCHEMA_ERRORS.QUERY.ACTIVE_ONLY_INVALID)
+  .toBoolean();
+
+// ============================================
+// 🔹 QUERY PARAMETER VALIDATORS
+// ============================================
+
+/**
+ * Validator for GET /schemas
+ */
 export const getAllVCSchemasValidator = [
-  query("issuerDid")
-    .optional()
-    .trim()
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid issuer DID format"),
+  issuerDidOptionalValidation,
+  activeOnlyValidation,
 ];
 
+/**
+ * Validator for GET /schemas/latest
+ */
+export const getLatestSchemaVersionValidator = [
+  schemaNameValidation("query"),
+  issuerDidValidation("query"),
+];
+
+/**
+ * Validator for GET /schemas/versions
+ */
+export const getAllSchemaVersionsValidator = [
+  schemaNameValidation("query"),
+  issuerDidValidation("query"),
+];
+
+/**
+ * Validator for GET /schemas/:id
+ */
+export const getSchemaByIdValidator = [schemaIdValidation];
+
+/**
+ * Validator for GET /schemas/:id/active
+ */
+export const isSchemaActiveValidator = [schemaIdValidation];
+
+// ============================================
+// 🔹 REQUEST BODY VALIDATORS
+// ============================================
+
+/**
+ * Validator for POST /schemas
+ */
 export const createVCSchemaValidator = [
-  body("id")
-    .trim()
-    .notEmpty()
-    .withMessage("Schema ID is required"),
-
-  body("name")
-    .trim()
-    .notEmpty()
-    .withMessage("Schema name is required")
-    .isLength({ min: 3, max: 255 })
-    .withMessage("Schema name must be between 3 and 255 characters"),
-
-  body("schema")
-    .notEmpty()
-    .withMessage("Schema object is required")
-    .isObject()
-    .withMessage("Schema must be a valid object"),
-
-  body("issuer_did")
-    .trim()
-    .notEmpty()
-    .withMessage("Issuer DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid issuer DID format"),
-
-  body("version")
-    .notEmpty()
-    .withMessage("Version is required")
-    .isInt({ min: 1 })
-    .withMessage("Version must be a positive integer"),
+  schemaNameValidation("body"),
+  schemaObjectValidation,
+  issuerDidValidation("body"),
 ];
 
+/**
+ * Validator for PUT /schemas/:id
+ */
 export const updateVCSchemaValidator = [
-  param("schemaId")
-    .trim()
-    .notEmpty()
-    .withMessage("Schema ID is required"),
-
-  body("name")
-    .optional()
-    .trim()
-    .isLength({ min: 3, max: 255 })
-    .withMessage("Schema name must be between 3 and 255 characters"),
-
-  body("schema")
-    .optional()
-    .isObject()
-    .withMessage("Schema must be a valid object"),
-
-  body("issuer_did")
-    .optional()
-    .trim()
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid issuer DID format"),
-
-  body("version")
-    .notEmpty()
-    .withMessage("Version is required")
-    .isInt({ min: 1 })
-    .withMessage("Version must be a positive integer"),
+  schemaIdValidation,
+  schemaObjectValidation,
 ];
+
+/**
+ * Validator for PATCH /schemas/:id/deactivate
+ */
+export const deactivateVCSchemaValidator = [schemaIdValidation];
+
+/**
+ * Validator for PATCH /schemas/:id/reactivate
+ */
+export const reactivateVCSchemaValidator = [schemaIdValidation];
+
+/**
+ * Validator for DELETE /schemas/:id
+ */
+export const deleteVCSchemaValidator = [schemaIdValidation];
