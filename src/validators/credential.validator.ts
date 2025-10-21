@@ -1,17 +1,15 @@
 import { body, query, param } from "express-validator";
-import { RequestType, RequestStatus } from "@prisma/client";
+import { RequestType } from "@prisma/client";
 
 /**
  * Credential Validators
  */
 
-export const processIssuanceVCValidator = [
-  body("request_id")
+export const requestCredentialValidator = [
+  body("encrypted_body")
     .trim()
     .notEmpty()
-    .withMessage("Request ID is required")
-    .isUUID()
-    .withMessage("Invalid request ID format (must be UUID)"),
+    .withMessage("Encrypted body is required"),
 
   body("issuer_did")
     .trim()
@@ -21,84 +19,6 @@ export const processIssuanceVCValidator = [
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did")
-    .trim()
-    .notEmpty()
-    .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid holder DID format"),
-
-  body("action")
-    .trim()
-    .notEmpty()
-    .withMessage("Action is required")
-    .isIn([RequestStatus.APPROVED, RequestStatus.REJECTED])
-    .withMessage(`Action must be ${RequestStatus.APPROVED} or ${RequestStatus.REJECTED}`),
-
-  body("request_type")
-    .notEmpty()
-    .withMessage("Request type is required")
-    .isIn([RequestType.ISSUANCE])
-    .withMessage(`Invalid request type for this endpoint. Must be ${RequestType.ISSUANCE}`),
-
-  // Conditional validation for fields required on APPROVAL
-  body("vc_id")
-    .if(body("action").equals(RequestStatus.APPROVED))
-    .trim()
-    .notEmpty()
-    .withMessage("vc_id is required when action is APPROVED"),
-  // .isUUID() // Assuming VC ID is also UUID, adjust if needed
-  // .withMessage("Invalid vc_id format (must be UUID)"),
-
-  body("vc_type")
-    .if(body("action").equals(RequestStatus.APPROVED))
-    .trim()
-    .notEmpty()
-    .withMessage("vc_type is required when action is APPROVED"),
-
-  body("schema_id")
-    .if(body("action").equals(RequestStatus.APPROVED))
-    .trim()
-    .notEmpty()
-    .withMessage("schema_id is required when action is APPROVED")
-    .isUUID() // Assuming schema_id is UUID
-    .withMessage("Invalid schema_id format (must be UUID)"),
-
-  body("schema_version")
-    .if(body("action").equals(RequestStatus.APPROVED))
-    .notEmpty()
-    .withMessage("schema_version is required when action is APPROVED")
-    .isInt({ min: 1 })
-    .withMessage("schema_version must be a positive integer"),
-
-  body("vc_hash")
-    .if(body("action").equals(RequestStatus.APPROVED))
-    .trim()
-    .notEmpty()
-    .withMessage("vc_hash is required when action is APPROVED")
-    .matches(/^0x[a-fA-F0-9]{64}$/) // Example validation for Keccak256 hash
-    .withMessage("Invalid vc_hash format (must be a 64-character hex string starting with 0x)"),
-
-  body("encrypted_body")
-    .if(body("action").equals(RequestStatus.APPROVED))
-    .trim()
-    .notEmpty()
-    .withMessage("Encrypted body is required when action is APPROVED"),
-];
-
-export const requestCredentialValidator = [
-  body("encrypted_body") // Checks for encrypted_body
-    .trim()
-    .notEmpty()
-    .withMessage("Encrypted body is required"),
-
-  body("issuer_did") // Checks for issuer_did
-    .trim()
-    .notEmpty()
-    .withMessage("Issuer DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid issuer DID format"),
-
-  body("holder_did") // Checks for holder_did
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")

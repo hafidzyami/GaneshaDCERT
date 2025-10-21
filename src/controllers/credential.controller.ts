@@ -1,34 +1,13 @@
 import { Request, Response } from "express";
 import { validationResult } from "express-validator";
-// Make sure RequestType and RequestStatus are imported if used directly (though DTOs are preferred)
-import { RequestType, RequestStatus } from "@prisma/client";
+import { RequestType } from "@prisma/client";
 import { CredentialService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler } from "../middlewares";
-import { ResponseHelper } from "../utils/helpers";
-// Import the new DTO
-import { ProcessIssuanceVCDTO } from "../dtos";
+
 /**
  * Request Credential Issuance Controller
  */
-
-export const processIssuanceVC = asyncHandler(async (req: Request, res: Response) => {
-  // Validate request using the defined validator
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
-  }
-
-  // Cast req.body to the DTO for type safety
-  const requestData: ProcessIssuanceVCDTO = req.body;
-
-  // Call the service method with the validated data
-  const result = await CredentialService.processIssuanceVC(requestData);
-
-  // Send a standardized success response
-  return ResponseHelper.success(res, result, result.message);
-});
-
 export const requestCredential = asyncHandler(async (req: Request, res: Response) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {

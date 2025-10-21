@@ -10,7 +10,6 @@ import {
   credentialRevocationRequestValidator,
   addVCStatusBlockValidator,
   getVCStatusValidator,
-  processIssuanceVCValidator,
 } from "../validators/credential.validator";
 
 const router: Router = express.Router();
@@ -39,7 +38,7 @@ const router: Router = express.Router();
  *             required:
  *               - holder_did
  *               - issuer_did
- *               - encrypted_body
+ *               - vc_schema_id
  *             properties:
  *               holder_did:
  *                 type: string
@@ -49,11 +48,13 @@ const router: Router = express.Router();
  *                 type: string
  *                 example: did:ganesha:0xabcdef1234567890
  *                 description: DID of the credential issuer
- *               encrypted_body:
+ *               vc_schema_id:
  *                 type: string
  *                 format: uuid
  *                 description: ID of the VC schema to use
- *               
+ *               credential_data:
+ *                 type: object
+ *                 description: Additional credential data based on schema
  *     responses:
  *       201:
  *         description: Credential request created successfully
@@ -107,7 +108,17 @@ router.post("/requests", requestCredentialValidator, credentialController.reques
  *         schema:
  *           type: string
  *         description: Filter by issuer DID
- *       
+ *       - in: query
+ *         name: holder_did
+ *         schema:
+ *           type: string
+ *         description: Filter by holder DID
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, APPROVED, REJECTED]
+ *         description: Filter by request status
  *     responses:
  *       200:
  *         description: List of credential requests
@@ -223,7 +234,12 @@ router.post("/response", processCredentialResponseValidator, credentialControlle
  *         schema:
  *           type: string
  *         description: DID of the credential holder
-
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [ACTIVE, EXPIRED, REVOKED, SUSPENDED]
+ *         description: Filter by credential status
  *     responses:
  *       200:
  *         description: List of holder's credentials
@@ -534,115 +550,5 @@ router.post("/add-status-block", addVCStatusBlockValidator, credentialController
  *         description: Internal server error
  */
 router.get("/:vcId/status", getVCStatusValidator, credentialController.getVCStatus);
-
-/**
- * @swagger
- * /credentials/issue-vc:
- *   post:
- *     summary: Process credential issuance (Approve/Reject)
- *     description: Issuer approves or rejects a specific credential issuance request, issuing it on the blockchain if approved.
- *     tags:
- *       - Verifiable Credential (VC) Lifecycle
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - request_id
- *               - issuer_did
- *               - holder_did
- *               - action
- *               - request_type
- *             properties:
- *               request_id:
- *                 type: string
- *                 format: uuid
- *                 description: ID of the VCIssuanceRequest to process
- *               issuer_did:
- *                 type: string
- *                 example: did:ganesha:0xabcdef1234567890
- *                 description: DID of the issuer (must match original request)
- *               holder_did:
- *                 type: string
- *                 example: did:ganesha:0x1234567890abcdef
- *                 description: DID of the holder (must match original request)
- *               action:
- *                 type: string
- *                 enum: [APPROVED, REJECTED]
- *                 description: Action to take (APPROVED or REJECTED)
- *               request_type:
- *                 type: string
- *                 enum: [ISSUANCE]
- *                 description: Must be ISSUANCE for this endpoint
- *               vc_id:
- *                 type: string
- *                 description: Unique ID for the new VC (Required if action is APPROVED)
- *               vc_type:
- *                 type: string
- *                 example: UniversityDegreeCredential
- *                 description: Type/Name of the VC (Required if action is APPROVED)
- *               schema_id:
- *                 type: string
- *                 format: uuid
- *                 description: ID of the schema used (Required if action is APPROVED)
- *               schema_version:
- *                 type: integer
- *                 example: 1
- *                 description: Version of the schema used (Required if action is APPROVED)
- *               vc_hash:
- *                 type: string
- *                 example: "0x..."
- *                 description: Hash of the VC data (Required if action is APPROVED)
- *               encrypted_body:
- *                 type: string
- *                 description: Encrypted VC data (Required if action is APPROVED)
- *     responses:
- *       200:
- *         description: Request processed successfully (Approved or Rejected)
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: "Verifiable Credential issued successfully on blockchain and database."
- *                 data:
- *                   type: object
- *                   properties:
- *                     request_id:
- *                       type: string
- *                       format: uuid
- *                     status:
- *                       type: string
- *                       enum: [APPROVED, REJECTED]
- *                     vc_response_id:
- *                       type: string
- *                       format: uuid
- *                       description: Present only if action was APPROVED
- *                     transaction_hash:
- *                       type: string
- *                       description: Blockchain transaction hash (Present only if action was APPROVED)
- *                     block_number:
- *                       type: integer
- *                       description: Blockchain block number (Present only if action was APPROVED)
- *       400:
- *         description: Validation error, mismatched DIDs, request already processed, missing required fields for approval, or blockchain error.
- *       404:
- *         description: Issuance request not found.
- *       500:
- *         description: Internal server error.
- */
-router.post(
-  "/issue-vc", // The new endpoint path
-  processIssuanceVCValidator, // Apply the specific validator
-  credentialController.processIssuanceVC // Use the specific controller function
-);
-
 
 export default router;
