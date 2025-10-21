@@ -1,4 +1,4 @@
-import { RequestType } from "@prisma/client";
+import { RequestType, RequestStatus } from "@prisma/client";
 
 /**
  * Credential DTOs
