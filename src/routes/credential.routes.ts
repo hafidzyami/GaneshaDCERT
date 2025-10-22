@@ -11,6 +11,7 @@ import {
   addVCStatusBlockValidator,
   getVCStatusValidator,
   processIssuanceVCValidator,
+  getHolderCredentialsValidator
 } from "../validators/credential.validator";
 
 const router: Router = express.Router();
@@ -642,6 +643,65 @@ router.post(
   "/issue-vc", // The new endpoint path
   processIssuanceVCValidator, // Apply the specific validator
   credentialController.processIssuanceVC // Use the specific controller function
+);
+
+/**
+ * @swagger
+ * /credentials/get-credentials-from-db:
+ *   get:
+ *     summary: Get holder's issued VCs from DB
+ *     description: Retrieve all Verifiable Credentials issued to a specific holder from the database
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     parameters:
+ *       - in: query
+ *         name: holder_did
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: did:ganesha:0x1234567890abcdef
+ *         description: DID of the credential holder whose VCs are requested
+ *     responses:
+ *       200:
+ *         description: List of holder's credential metadata retrieved successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Successfully retrieved 2 credentials for holder did:ganesha:..."
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       vc_response_id:
+ *                         type: string
+ *                         format: uuid
+ *                       request_id:
+ *                         type: string
+ *                         format: uuid
+ *                       request_type:
+ *                         type: string
+ *                         enum: [ISSUANCE, RENEWAL, UPDATE, REVOKE]
+ *                       issuer_did:
+ *                         type: string
+ *                       holder_did:
+ *                         type: string
+ *       400:
+ *         description: Missing or invalid holder_did query parameter.
+ *       500:
+ *         description: Internal server error.
+ */
+router.get(
+  "/get-credentials-from-db", 
+  getHolderCredentialsValidator, 
+  credentialController.getHolderCredentialsFromDB 
 );
 
 

@@ -4,7 +4,14 @@ import { RequestType, RequestStatus } from "@prisma/client";
 /**
  * Credential Validators
  */
-
+export const getHolderCredentialsValidator = [
+  query("holder_did") // Check the query parameter named 'holder_did'
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did query parameter is required")
+    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .withMessage("Invalid holder_did format in query parameter"),
+];
 export const processIssuanceVCValidator = [
   body("request_id")
     .trim()

@@ -12,6 +12,27 @@ import { ProcessIssuanceVCDTO } from "../dtos";
  * Request Credential Issuance Controller
  */
 
+export const getHolderCredentialsFromDB = asyncHandler(async (req: Request, res: Response) => {
+  // Validate query parameters
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Extract holder_did from query parameters
+  const holderDid = req.query.holder_did as string;
+
+  // Call the service function
+  const credentials = await CredentialService.getHolderCredentialsFromDB(holderDid);
+
+  // Send success response
+  return ResponseHelper.success(
+    res,
+    credentials,
+    `Successfully retrieved ${credentials.length} credentials for holder ${holderDid}.`
+  );
+});
+
 export const processIssuanceVC = asyncHandler(async (req: Request, res: Response) => {
   // Validate request using the defined validator
   const errors = validationResult(req);

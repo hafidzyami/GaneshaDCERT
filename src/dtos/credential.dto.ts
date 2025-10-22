@@ -77,3 +77,11 @@ export interface ProcessIssuanceVCResponseDTO {
   transaction_hash?: string; // Blockchain transaction hash, only if approved
   block_number?: number; // Blockchain block number, only if approved
 }
+
+export interface HolderCredentialDTO {
+  vc_response_id: string;
+  request_id: string; // The original request this VC fulfilled
+  request_type: RequestType;
+  issuer_did: string;
+  holder_did: string;
+}
