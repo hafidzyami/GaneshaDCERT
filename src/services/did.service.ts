@@ -178,7 +178,7 @@ class DIDService {
 
     return {
       message: "DID document retrieved successfully",
-      did_document: document,
+      ...document,
     };
   }
 }
