@@ -2,7 +2,7 @@ import { PrismaClient, RequestType, RequestStatus } from "@prisma/client"; // Re
 import { prisma } from "../config/database";
 import { BadRequestError, NotFoundError } from "../utils/errors/AppError";
 import logger from "../config/logger";
-import { ProcessIssuanceVCDTO, ProcessIssuanceVCResponseDTO } from "../dtos";
+import { ProcessIssuanceVCDTO, ProcessIssuanceVCResponseDTO, HolderCredentialDTO } from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 
 
@@ -400,6 +400,49 @@ class CredentialService {
     } else {
         throw new BadRequestError(`Invalid action: ${action}. Must be APPROVED or REJECTED.`);
     }
+  }
+
+  async getHolderCredentialsFromDB(holderDid: string): Promise<HolderCredentialDTO[]> {
+    logger.info(`Fetching credentials from DB for holder DID: ${holderDid}`);
+
+    // Query the VCResponse table
+    const vcResponses = await this.db.vCResponse.findMany({
+      where: {
+        holder_did: holderDid,
+        // Optional: you might want to filter by request_type if VCResponse stores other things
+        // request_type: RequestType.ISSUANCE, // Uncomment if needed
+      },
+      select: { // Select only the fields needed for the DTO
+        id: true,         // Map to vc_response_id
+        request_id: true,
+        request_type: true,
+        issuer_did: true,
+        holder_did: true,
+        // Not selecting encrypted_body
+      },
+      orderBy: {
+        // You might want to add a createdAt field later for sorting
+        request_id: 'desc', // Example sort
+      }
+    });
+
+    if (vcResponses.length === 0) {
+      logger.info(`No credentials found in DB for holder DID: ${holderDid}`);
+      // It's okay to return an empty array if none are found, not necessarily an error.
+    } else {
+       logger.info(`Found ${vcResponses.length} credential responses in DB for holder DID: ${holderDid}`);
+    }
+
+    // Map the Prisma results to the DTO structure
+    const credentials: HolderCredentialDTO[] = vcResponses.map(vc => ({
+        vc_response_id: vc.id,
+        request_id: vc.request_id,
+        request_type: vc.request_type,
+        issuer_did: vc.issuer_did,
+        holder_did: vc.holder_did,
+    }));
+
+    return credentials;
   }
 
 }
