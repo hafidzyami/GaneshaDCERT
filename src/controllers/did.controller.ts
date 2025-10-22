@@ -123,6 +123,12 @@ export const getDIDDocument = asyncHandler(
 
     const result = await DIDService.getDIDDocument(did);
 
-    return ResponseHelper.success(res, result);
+    const sanitizedDocument = JSON.parse(
+      JSON.stringify(result, (key, value) =>
+        typeof value === "bigint" ? value.toString() : value
+      )
+    );
+
+    return ResponseHelper.success(res, sanitizedDocument);
   }
 );
