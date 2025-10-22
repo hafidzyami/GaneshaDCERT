@@ -2,48 +2,58 @@ import { body, param } from "express-validator";
 
 /**
  * DID Validators
+ * Validates DID-related requests
  */
 
+/**
+ * Validator for registering new DID
+ */
 export const registerDIDValidator = [
   body("did_string")
     .trim()
     .notEmpty()
     .withMessage("DID string is required")
     .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid DID format. Must follow did:method:identifier pattern"),
+    .withMessage(
+      "Invalid DID format. Must follow pattern: did:method:identifier (e.g., did:ganesha:0x123...)"
+    ),
 
   body("public_key")
     .trim()
     .notEmpty()
     .withMessage("Public key is required")
-    .isLength({ min: 64 })
-    .withMessage("Invalid public key length"),
+    .matches(/^0x[a-fA-F0-9]{128,130}$/)
+    .withMessage(
+      "Invalid public key format. Must be hex string starting with 0x (64-65 bytes)"
+    ),
 
   body("role")
     .trim()
     .notEmpty()
     .withMessage("Role is required")
-    .isIn(["individual", "institutional", "Individual", "Institutional"])
-    .withMessage("Role must be 'individual' or 'institutional'"),
+    .isIn(["individual", "institution"])
+    .withMessage("Role must be either 'individual' or 'institution'"),
 
-  // Institutional fields (conditional validation handled in controller)
+  // Optional metadata fields
+  body("name")
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 255 })
+    .withMessage("Name must be between 2 and 255 characters"),
+
   body("email")
     .optional()
     .trim()
     .isEmail()
-    .withMessage("Must be a valid email"),
-
-  body("name")
-    .optional()
-    .trim()
-    .isLength({ min: 3, max: 255 })
-    .withMessage("Name must be between 3 and 255 characters"),
+    .withMessage("Must be a valid email address"),
 
   body("phone")
     .optional()
     .trim()
     .matches(/^\+?[1-9]\d{1,14}$/)
-    .withMessage("Must be a valid phone number"),
+    .withMessage(
+      "Must be a valid phone number in E.164 format (e.g., +62-21-xxx)"
+    ),
 
   body("country")
     .optional()
@@ -55,65 +65,94 @@ export const registerDIDValidator = [
     .optional()
     .trim()
     .isURL()
-    .withMessage("Must be a valid URL"),
+    .withMessage("Must be a valid URL (e.g., https://example.com)"),
 
   body("address")
     .optional()
     .trim()
-    .isLength({ min: 10, max: 500 })
-    .withMessage("Address must be between 10 and 500 characters"),
+    .isLength({ min: 5, max: 500 })
+    .withMessage("Address must be between 5 and 500 characters"),
 ];
 
+/**
+ * Validator for checking DID existence
+ */
 export const checkDIDValidator = [
   param("did")
     .trim()
     .notEmpty()
-    .withMessage("DID is required")
+    .withMessage("DID string is required")
     .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid DID format"),
+    .withMessage(
+      "Invalid DID format. Must follow pattern: did:method:identifier (e.g., did:ganesha:0x123...)"
+    ),
 ];
 
+/**
+ * Validator for key rotation
+ */
 export const keyRotationValidator = [
   param("did")
     .trim()
     .notEmpty()
-    .withMessage("DID is required")
+    .withMessage("DID parameter is required")
     .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
     .withMessage("Invalid DID format"),
-
-  body("old_public_key")
-    .optional()
-    .trim()
-    .isLength({ min: 64 })
-    .withMessage("Invalid old public key length"),
 
   body("new_public_key")
     .trim()
     .notEmpty()
     .withMessage("New public key is required")
-    .isLength({ min: 64 })
-    .withMessage("Invalid new public key length"),
+    .matches(/^0x[a-fA-F0-9]{128,130}$/)
+    .withMessage("Invalid new public key format"),
 
-  body("iteration_number")
+  body("signature")
+    .trim()
+    .notEmpty()
+    .withMessage("Signature is required for verification")
+    .matches(/^0x[a-fA-F0-9]+$/)
+    .withMessage("Invalid signature format"),
+
+  body("reason")
     .optional()
-    .isInt({ min: 1 })
-    .withMessage("Iteration number must be a positive integer"),
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Reason must not exceed 500 characters"),
 ];
 
+/**
+ * Validator for DID deletion/deactivation
+ */
 export const deleteDIDValidator = [
   param("did")
     .trim()
     .notEmpty()
-    .withMessage("DID is required")
+    .withMessage("DID parameter is required")
     .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
     .withMessage("Invalid DID format"),
+
+  body("signature")
+    .trim()
+    .notEmpty()
+    .withMessage("Signature is required for verification")
+    .matches(/^0x[a-fA-F0-9]+$/)
+    .withMessage("Invalid signature format"),
+
+  body("reason")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Reason must not exceed 500 characters"),
 ];
 
+/**
+ * Validator for getting DID document
+ */
 export const getDIDDocumentValidator = [
   param("did")
     .trim()
     .notEmpty()
-    .withMessage("DID is required")
+    .withMessage("DID parameter is required")
     .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
     .withMessage("Invalid DID format"),
 ];

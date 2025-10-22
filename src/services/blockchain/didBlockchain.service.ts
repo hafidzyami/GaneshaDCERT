@@ -241,9 +241,26 @@ class DIDBlockchainService {
       const keyId = await this.contract.getActiveKeyId(did);
       const publicKey = await this.getDIDKey(did, keyId);
 
+      let institutionalDetails: any[] = [];
+      const jsonDetails: any = {};
+      if (document[1] == 2) {
+        institutionalDetails = await this.contract.getInstitutionDetails(did);
+        if (institutionalDetails && institutionalDetails.length > 1) {
+          jsonDetails["email"] = institutionalDetails[1];
+          jsonDetails["name"] = institutionalDetails[2];
+          jsonDetails["phone"] = institutionalDetails[3];
+          jsonDetails["country"] = institutionalDetails[4];
+          jsonDetails["website"] = institutionalDetails[5];
+          jsonDetails["address"] = institutionalDetails[6];
+        }
+      }
+
       return {
-        ...document,
+        id: did,
+        status: document[0] == 1 ? "InActive" : "Active",
+        role: document[1] == 1 ? "Individual" : "Institutional",
         [keyId]: publicKey,
+        details: jsonDetails,
       };
     } catch (error: any) {
       logger.error("Failed to get DID document:", error);
