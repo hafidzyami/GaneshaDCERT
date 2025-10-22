@@ -34,44 +34,19 @@ export const registerDIDValidator = [
     .isIn(["individual", "institution"])
     .withMessage("Role must be either 'individual' or 'institution'"),
 
-  // Optional metadata fields
-  body("name")
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 255 })
-    .withMessage("Name must be between 2 and 255 characters"),
-
+  // Email field - required for institution role to query InstitutionRegistration
   body("email")
     .optional()
     .trim()
     .isEmail()
-    .withMessage("Must be a valid email address"),
-
-  body("phone")
-    .optional()
-    .trim()
-    .isMobilePhone("any")
-    .withMessage(
-      "Must be a valid mobile phone number with a country code (e.g., +1... or +62...)"
-    ),
-
-  body("country")
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 100 })
-    .withMessage("Country must be between 2 and 100 characters"),
-
-  body("website")
-    .optional()
-    .trim()
-    .isURL()
-    .withMessage("Must be a valid URL (e.g., https://example.com)"),
-
-  body("address")
-    .optional()
-    .trim()
-    .isLength({ min: 5, max: 500 })
-    .withMessage("Address must be between 5 and 500 characters"),
+    .withMessage("Must be a valid email address")
+    .custom((value, { req }) => {
+      // If role is institution, email is required
+      if (req.body.role === "institution" && !value) {
+        throw new Error("Email is required for institution role");
+      }
+      return true;
+    }),
 ];
 
 /**

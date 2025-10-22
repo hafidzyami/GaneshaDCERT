@@ -26,11 +26,6 @@ export const registerDID = asyncHandler(async (req: Request, res: Response) => {
     public_key,
     role,
     email,
-    name,
-    phone,
-    country,
-    website,
-    address,
   } = req.body;
 
   const result = await DIDService.registerDID({
@@ -38,11 +33,6 @@ export const registerDID = asyncHandler(async (req: Request, res: Response) => {
     public_key,
     role,
     email,
-    name,
-    phone,
-    country,
-    website,
-    address,
   });
 
   return ResponseHelper.created(res, result, "DID registered successfully");
