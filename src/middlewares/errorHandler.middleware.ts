@@ -23,8 +23,20 @@ export const errorHandler = (
     statusCode = error.statusCode;
     message = error.message;
 
-    if (error instanceof ValidationError && error.errors) {
-      errors = TransformHelper.transformValidationErrors(error.errors);
+    // Handle ValidationError specifically
+    if (error instanceof ValidationError) {
+      if (error.errors && Array.isArray(error.errors) && error.errors.length > 0) {
+        errors = TransformHelper.transformValidationErrors(error.errors);
+        
+        // Log validation errors for debugging
+        logger.warn('Validation Error:', {
+          message: error.message,
+          errors: errors,
+          url: req.originalUrl,
+          method: req.method,
+          body: req.body,
+        });
+      }
     }
   } else {
     // Log unexpected errors
@@ -48,17 +60,30 @@ export const errorHandler = (
     }
   }
 
-  // Send error response
-  res.status(statusCode).json({
+  // Build response object
+  const responseObj: any = {
     success: false,
     message,
-    ...(errors && { errors }),
-    ...(req.requestId && { requestId: req.requestId }),
-    ...(env.NODE_ENV === 'development' && {
-      stack: error.stack,
-      name: error.name,
-    }),
-  });
+  };
+
+  // Add errors array if exists
+  if (errors && errors.length > 0) {
+    responseObj.errors = errors;
+  }
+
+  // Add requestId if exists
+  if (req.requestId) {
+    responseObj.requestId = req.requestId;
+  }
+
+  // Add stack trace in development
+  if (env.NODE_ENV === 'development') {
+    responseObj.stack = error.stack;
+    responseObj.name = error.name;
+  }
+
+  // Send error response
+  res.status(statusCode).json(responseObj);
 };
 
 /**

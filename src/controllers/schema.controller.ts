@@ -3,22 +3,47 @@ import { validationResult } from "express-validator";
 import { SchemaService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler } from "../middlewares";
+import { ResponseHelper } from "../utils/helpers";
+import {
+  CreateVCSchemaDTO,
+  UpdateVCSchemaDTO,
+  SchemaFilterDTO,
+  SchemaByNameDTO,
+} from "../dtos/schema.dto";
 
 /**
- * Get All VC Schemas Controller
- * Query from database only (fast)
+ * VC Schema Controller
+ * 
+ * RESPONSIBILITIES:
+ * - Request validation
+ * - DTO transformation
+ * - Response formatting
+ * - Error handling delegation
+ */
+
+// ============================================
+// 🔹 GET ENDPOINTS (Database Only)
+// ============================================
+
+/**
+ * Get all VC schemas with optional filters
+ * @route GET /api/schemas
  */
 export const getAllVCSchemas = asyncHandler(
   async (req: Request, res: Response) => {
-    const { issuerDid, activeOnly } = req.query;
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
 
-    const schemas = await SchemaService.getAllVCSchemas(
-      issuerDid as string | undefined,
-      activeOnly === "true"
-    );
+    const filter: SchemaFilterDTO = {
+      issuerDid: req.query.issuerDid as string | undefined,
+      activeOnly: req.query.activeOnly === "true",
+    };
 
-    res.status(200).json({
-      success: true,
+    const schemas = await SchemaService.getAllSchemas(filter);
+
+    return ResponseHelper.success(res, {
       count: schemas.length,
       data: schemas,
     });
@@ -26,65 +51,64 @@ export const getAllVCSchemas = asyncHandler(
 );
 
 /**
- * Get Schema by ID Controller
- * Query from database only
+ * Get schema by ID
+ * @route GET /api/schemas/:id
  */
 export const getSchemaById = asyncHandler(
   async (req: Request, res: Response) => {
-    const { id } = req.params;
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
 
+    const { id } = req.params;
     const schema = await SchemaService.getSchemaById(id);
 
-    res.status(200).json({
-      success: true,
-      data: schema,
-    });
+    return ResponseHelper.success(res, schema);
   }
 );
 
 /**
- * Get Latest Schema Version Controller
- * Get latest version by schema name and issuer
+ * Get latest schema version by name and issuer
+ * @route GET /api/schemas/latest
  */
 export const getLatestSchemaVersion = asyncHandler(
   async (req: Request, res: Response) => {
-    const { name, issuerDid } = req.query;
-
-    if (!name || !issuerDid) {
-      throw new ValidationError("Name and issuerDid are required", []);
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
     }
 
-    const schema = await SchemaService.getLatestSchemaVersion(
-      name as string,
-      issuerDid as string
-    );
+    const params: SchemaByNameDTO = {
+      name: req.query.name as string,
+      issuerDid: req.query.issuerDid as string,
+    };
 
-    res.status(200).json({
-      success: true,
-      data: schema,
-    });
+    const schema = await SchemaService.getLatestVersion(params);
+
+    return ResponseHelper.success(res, schema);
   }
 );
 
 /**
- * Get All Schema Versions Controller
- * Get all versions of a schema by name and issuer
+ * Get all versions of a schema
+ * @route GET /api/schemas/versions
  */
 export const getAllSchemaVersions = asyncHandler(
   async (req: Request, res: Response) => {
-    const { name, issuerDid } = req.query;
-
-    if (!name || !issuerDid) {
-      throw new ValidationError("Name and issuerDid are required", []);
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
     }
 
-    const schemas = await SchemaService.getAllSchemaVersions(
-      name as string,
-      issuerDid as string
-    );
+    const params: SchemaByNameDTO = {
+      name: req.query.name as string,
+      issuerDid: req.query.issuerDid as string,
+    };
 
-    res.status(200).json({
-      success: true,
+    const schemas = await SchemaService.getAllVersions(params);
+
+    return ResponseHelper.success(res, {
       count: schemas.length,
       data: schemas,
     });
@@ -92,27 +116,30 @@ export const getAllSchemaVersions = asyncHandler(
 );
 
 /**
- * Check if Schema is Active Controller
+ * Check if schema is active
+ * @route GET /api/schemas/:id/active
  */
 export const isSchemaActive = asyncHandler(
   async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
     const { id } = req.params;
+    const status = await SchemaService.isActive(id);
 
-    const isActive = await SchemaService.isSchemaActive(id);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        id,
-        isActive,
-      },
-    });
+    return ResponseHelper.success(res, status);
   }
 );
 
+// ============================================
+// 🔹 POST/PUT/PATCH/DELETE ENDPOINTS (Database + Blockchain)
+// ============================================
+
 /**
- * Create VC Schema Controller
- * Creates in both database and blockchain
+ * Create new VC schema
+ * @route POST /api/schemas
  */
 export const createVCSchema = asyncHandler(
   async (req: Request, res: Response) => {
@@ -121,26 +148,28 @@ export const createVCSchema = asyncHandler(
       throw new ValidationError("Validation error", errors.array());
     }
 
-    const { name, schema, issuer_did } = req.body;
+    const dto: CreateVCSchemaDTO = {
+      name: req.body.name,
+      schema: req.body.schema,
+      issuer_did: req.body.issuer_did,
+    };
 
-    const result = await SchemaService.createVCSchema({
-      name,
-      schema,
-      issuer_did,
-    });
+    const result = await SchemaService.create(dto);
 
-    res.status(201).json({
-      success: true,
-      message: result.message,
-      data: result.schema,
-      transaction_hash: result.transaction_hash,
-    });
+    return ResponseHelper.created(
+      res,
+      {
+        schema: result.schema,
+        transaction_hash: result.transaction_hash,
+      },
+      result.message
+    );
   }
 );
 
 /**
- * Update VC Schema Controller
- * Creates new version in both database and blockchain
+ * Update VC schema (creates new version)
+ * @route PUT /api/schemas/:id
  */
 export const updateVCSchema = asyncHandler(
   async (req: Request, res: Response) => {
@@ -150,71 +179,93 @@ export const updateVCSchema = asyncHandler(
     }
 
     const { id } = req.params;
-    const { schema } = req.body;
+    const dto: UpdateVCSchemaDTO = {
+      schema: req.body.schema,
+    };
 
-    const result = await SchemaService.updateVCSchema(id, { schema });
+    const result = await SchemaService.update(id, dto);
 
-    res.status(200).json({
-      success: true,
-      message: result.message,
-      data: result.schema,
-      transaction_hash: result.transaction_hash,
-    });
+    return ResponseHelper.success(
+      res,
+      {
+        schema: result.schema,
+        transaction_hash: result.transaction_hash,
+      },
+      result.message
+    );
   }
 );
 
 /**
- * Deactivate VC Schema Controller
- * Deactivates in both database and blockchain
+ * Deactivate VC schema
+ * @route PATCH /api/schemas/:id/deactivate
  */
 export const deactivateVCSchema = asyncHandler(
   async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
     const { id } = req.params;
+    const result = await SchemaService.deactivate(id);
 
-    const result = await SchemaService.deactivateVCSchema(id);
-
-    res.status(200).json({
-      success: true,
-      message: result.message,
-      data: result.schema,
-      transaction_hash: result.transaction_hash,
-    });
+    return ResponseHelper.success(
+      res,
+      {
+        schema: result.schema,
+        transaction_hash: result.transaction_hash,
+      },
+      result.message
+    );
   }
 );
 
 /**
- * Reactivate VC Schema Controller
- * Reactivates in both database and blockchain
+ * Reactivate VC schema
+ * @route PATCH /api/schemas/:id/reactivate
  */
 export const reactivateVCSchema = asyncHandler(
   async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
     const { id } = req.params;
+    const result = await SchemaService.reactivate(id);
 
-    const result = await SchemaService.reactivateVCSchema(id);
-
-    res.status(200).json({
-      success: true,
-      message: result.message,
-      data: result.schema,
-      transaction_hash: result.transaction_hash,
-    });
+    return ResponseHelper.success(
+      res,
+      {
+        schema: result.schema,
+        transaction_hash: result.transaction_hash,
+      },
+      result.message
+    );
   }
 );
 
 /**
- * Delete VC Schema Controller
- * Soft delete (deactivate) in both database and blockchain
+ * Delete VC schema (soft delete)
+ * @route DELETE /api/schemas/:id
  */
 export const deleteVCSchema = asyncHandler(
   async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
     const { id } = req.params;
+    const result = await SchemaService.delete(id);
 
-    const result = await SchemaService.deleteVCSchema(id);
-
-    res.status(200).json({
-      success: true,
-      message: result.message,
-      transaction_hash: result.transaction_hash,
-    });
+    return ResponseHelper.success(
+      res,
+      {
+        transaction_hash: result.transaction_hash,
+      },
+      result.message
+    );
   }
 );
