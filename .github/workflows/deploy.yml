@@ -39,8 +39,8 @@ jobs:
             # 3. Hapus build cache Docker untuk memastikan build benar-benar fresh
             docker builder prune -af
 
-            # 4. Ambil source code terbaru dari branch main
-            git pull origin main
+            # 4. Ambil source code terbaru dari branch dev
+            git pull origin dev
             
             # 5. Buat file .env dari secrets GitHub
             echo "${{ secrets.ENTIRE_ENV_FILE_STAGING }}" > .env
