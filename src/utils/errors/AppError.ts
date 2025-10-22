@@ -25,6 +25,8 @@ export class AppError extends Error {
 export class BadRequestError extends AppError {
   constructor(message: string = "Bad Request") {
     super(message, 400);
+    this.name = 'BadRequestError';
+    Object.setPrototypeOf(this, BadRequestError.prototype);
   }
 }
 
@@ -34,6 +36,8 @@ export class BadRequestError extends AppError {
 export class UnauthorizedError extends AppError {
   constructor(message: string = "Unauthorized") {
     super(message, 401);
+    this.name = 'UnauthorizedError';
+    Object.setPrototypeOf(this, UnauthorizedError.prototype);
   }
 }
 
@@ -43,6 +47,8 @@ export class UnauthorizedError extends AppError {
 export class ForbiddenError extends AppError {
   constructor(message: string = "Forbidden") {
     super(message, 403);
+    this.name = 'ForbiddenError';
+    Object.setPrototypeOf(this, ForbiddenError.prototype);
   }
 }
 
@@ -52,6 +58,8 @@ export class ForbiddenError extends AppError {
 export class NotFoundError extends AppError {
   constructor(message: string = "Resource not found") {
     super(message, 404);
+    this.name = 'NotFoundError';
+    Object.setPrototypeOf(this, NotFoundError.prototype);
   }
 }
 
@@ -61,6 +69,8 @@ export class NotFoundError extends AppError {
 export class ConflictError extends AppError {
   constructor(message: string = "Resource conflict") {
     super(message, 409);
+    this.name = 'ConflictError';
+    Object.setPrototypeOf(this, ConflictError.prototype);
   }
 }
 
@@ -73,6 +83,8 @@ export class ValidationError extends AppError {
   constructor(message: string = "Validation failed", errors?: any[]) {
     super(message, 422);
     this.errors = errors;
+    this.name = 'ValidationError';
+    Object.setPrototypeOf(this, ValidationError.prototype);
   }
 }
 
@@ -82,6 +94,8 @@ export class ValidationError extends AppError {
 export class InternalServerError extends AppError {
   constructor(message: string = "Internal server error") {
     super(message, 500);
+    this.name = 'InternalServerError';
+    Object.setPrototypeOf(this, InternalServerError.prototype);
   }
 }
 
@@ -97,6 +111,8 @@ export class BlockchainError extends AppError {
   ) {
     super(message, 500);
     this.transactionHash = transactionHash;
+    this.name = 'BlockchainError';
+    Object.setPrototypeOf(this, BlockchainError.prototype);
   }
 }
 
@@ -106,5 +122,7 @@ export class BlockchainError extends AppError {
 export class DatabaseError extends AppError {
   constructor(message: string = "Database operation failed") {
     super(message, 500);
+    this.name = 'DatabaseError';
+    Object.setPrototypeOf(this, DatabaseError.prototype);
   }
 }

@@ -22,9 +22,9 @@ export const registerDIDValidator = [
     .trim()
     .notEmpty()
     .withMessage("Public key is required")
-    .matches(/^0x[a-fA-F0-9]{128,130}$/)
+    .matches(/^0x[a-fA-F0-9]$/)
     .withMessage(
-      "Invalid public key format. Must be hex string starting with 0x (64-65 bytes)"
+      "Invalid public key format. Must be hex string starting with 0x"
     ),
 
   body("role")
@@ -50,9 +50,9 @@ export const registerDIDValidator = [
   body("phone")
     .optional()
     .trim()
-    .matches(/^\+?[1-9]\d{1,14}$/)
+    .isMobilePhone("any")
     .withMessage(
-      "Must be a valid phone number in E.164 format (e.g., +62-21-xxx)"
+      "Must be a valid mobile phone number with a country code (e.g., +1... or +62...)"
     ),
 
   body("country")
