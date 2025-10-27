@@ -38,8 +38,8 @@ export interface RateLimitOptions {
  */
 export const rateLimit = (options: RateLimitOptions = {}) => {
   const {
-    windowMs = 15 * 60 * 1000, // 15 minutes default
-    max = 100, // 100 requests default
+    windowMs =  60 * 1000, // 15 minutes default
+    max = 1000000000, // 100 requests default
     message = 'Too many requests, please try again later.',
     skipSuccessfulRequests = false,
     skipFailedRequests = false,

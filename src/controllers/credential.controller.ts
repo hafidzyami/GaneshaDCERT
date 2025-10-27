@@ -6,7 +6,7 @@ import { CredentialService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler } from "../middlewares";
 import { ResponseHelper } from "../utils/helpers";
-import { ProcessIssuanceVCDTO, RevokeVCDTO } from "../dtos";
+import { ProcessIssuanceVCDTO, RevokeVCDTO, CredentialRevocationRequestDTO } from "../dtos";
 
 /**
  * Request Credential Issuance Controller
@@ -173,15 +173,14 @@ export const requestCredentialRevocation = asyncHandler(async (req: Request, res
     throw new ValidationError("Validation error", errors.array());
   }
 
-  const { issuer_did, holder_did, encrypted_body } = req.body;
+  // Cast body to the appropriate DTO for creating a request
+  const requestData: CredentialRevocationRequestDTO = req.body;
 
-  const result = await CredentialService.requestCredentialRevocation({
-    issuer_did,
-    holder_did,
-    encrypted_body,
-  });
+  // Call the REVERTED service function to create the request
+  const result = await CredentialService.requestCredentialRevocation(requestData);
 
-  res.status(201).json(result);
+  // Send success response (use CREATED status code 201)
+  return ResponseHelper.created(res, { request_id: result.request_id }, result.message);
 });
 
 /**
@@ -210,21 +209,20 @@ export const addVCStatusBlock = asyncHandler(async (req: Request, res: Response)
  * Get VC Status Controller
  */
 export const getVCStatus = asyncHandler(async (req: Request, res: Response) => {
+  // Validator now only checks param('vcId')
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     throw new ValidationError("Validation error", errors.array());
   }
 
+  // Extract vcId from URL parameters
   const { vcId } = req.params;
-  const { issuerDid, holderDid } = req.query;
+  // REMOVED extraction of issuerDid and holderDid from query
 
-  const result = await CredentialService.getVCStatus(
-    vcId,
-    issuerDid as string,
-    holderDid as string
-  );
+  // Call the updated service method (only requires vcId)
+  const result = await CredentialService.getVCStatus(vcId);
 
-  res.status(200).json(result);
+  return ResponseHelper.success(res, result, `Successfully retrieved status for VC ${vcId}.`);
 });
 
 export const revokeVC = asyncHandler(async (req: Request, res: Response) => {

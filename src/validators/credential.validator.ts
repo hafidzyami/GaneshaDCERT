@@ -253,25 +253,26 @@ export const credentialRenewalRequestValidator = [
     .withMessage("Encrypted body is required"),
 ];
 
-export const credentialRevocationRequestValidator = [
-  body("issuer_did")
+export const credentialRevocationRequestValidator = [ // Name matches route usage
+  body("issuer_did") // Validate issuer_did
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
     .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid issuer DID format"),
 
-  body("holder_did")
+  body("holder_did") // Validate holder_did
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
     .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder DID format"),
 
-  body("encrypted_body")
+  body("encrypted_body") 
     .trim()
     .notEmpty()
     .withMessage("Encrypted body is required"),
+
 ];
 
 export const addVCStatusBlockValidator = [
@@ -318,7 +319,6 @@ export const getVCStatusValidator = [
     .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder DID format"),
 ];
-
 export const revokeVCValidator = [
   body("request_id")
     .trim()
