@@ -2,7 +2,7 @@ import { PrismaClient, RequestType, RequestStatus } from "@prisma/client"; // Re
 import { prisma } from "../config/database";
 import { BadRequestError, NotFoundError, BlockchainError } from "../utils/errors/AppError";
 import logger from "../config/logger";
-import { ProcessIssuanceVCDTO, ProcessIssuanceVCResponseDTO, HolderCredentialDTO, RevokeVCDTO, RevokeVCResponseDTO } from "../dtos";
+import { CredentialRevocationRequestDTO, CredentialRevocationResponseDTO, ProcessIssuanceVCDTO, ProcessIssuanceVCResponseDTO, HolderCredentialDTO, RevokeVCDTO, RevokeVCResponseDTO } from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 
 
@@ -51,9 +51,7 @@ class CredentialService {
    * Get credential requests by type
    */
   async getCredentialRequestsByType(type: RequestType, issuerDid?: string, holderDid?: string) { // Added holderDid parameter
-    if (!issuerDid && !holderDid) {
-        throw new BadRequestError('At least one of issuer_did or holder_did must be provided.');
-    }
+    
     interface WhereClause {
         issuer_did?: string;
         holder_did?: string;
@@ -226,25 +224,24 @@ class CredentialService {
   /**
    * Request credential revocation
    */
-  async requestCredentialRevocation(data: {
-    issuer_did: string;
-    holder_did: string;
-    encrypted_body: string;
-  }) {
+  async requestCredentialRevocation(data: CredentialRevocationRequestDTO): Promise<CredentialRevocationResponseDTO> {
+    // Logic to create a new VCRevokeRequest record
     const newRevokeRequest = await this.db.vCRevokeRequest.create({
       data: {
         issuer_did: data.issuer_did,
         holder_did: data.holder_did,
         encrypted_body: data.encrypted_body,
-        status: "PENDING",
+        status: RequestStatus.PENDING, // Default status
       },
     });
 
     logger.success(`VC Revocation request created: ${newRevokeRequest.id}`);
 
+    // TODO: Optionally, notify the issuer via RabbitMQ or another mechanism
+
     return {
       message: "Verifiable Credential revocation request submitted successfully.",
-      request_id: newRevokeRequest.id,
+      request_id: newRevokeRequest.id, // Return the ID of the new request record
     };
   }
 

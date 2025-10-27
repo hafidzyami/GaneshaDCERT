@@ -388,10 +388,12 @@ router.post("/renew-requests", credentialRenewalRequestValidator, credentialCont
  * @swagger
  * /credentials/revoke-request:
  *   post:
- *     summary: Request credential revocation
- *     description: Holder or issuer requests to revoke a Verifiable Credential
+ *     summary: Request credential revocation (Creates DB record) - REVERTED
+ *     description: Submits a request to revoke a Verifiable Credential. This creates a record in the database with PENDING status. The actual revocation processing happens separately (e.g., via an admin/issuer action).
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -399,19 +401,24 @@ router.post("/renew-requests", credentialRenewalRequestValidator, credentialCont
  *           schema:
  *             type: object
  *             required:
- *               - vc_id
- *               - reason
+ *               - encrypted_body
+ *               - issuer_did
+ *               - holder_did
  *             properties:
- *               vc_id:
+ *               encrypted_body:
  *                 type: string
- *                 format: uuid
- *                 description: ID of the credential to revoke
- *               reason:
+ *                 description: Encrypted payload containing the VC ID to revoke and the reason.
+ *               issuer_did:
  *                 type: string
- *                 description: Reason for revocation
+ *                 example: did:ganesha:0xabcdef1234567890
+ *                 description: DID of the entity requesting revocation (usually issuer or holder).
+ *               holder_did:
+ *                 type: string
+ *                 example: did:ganesha:0x1234567890abcdef
+ *                 description: DID of the credential holder.
  *     responses:
  *       201:
- *         description: Revocation request created successfully
+ *         description: Revocation request created successfully in the database.
  *         content:
  *           application/json:
  *             schema:
@@ -422,19 +429,18 @@ router.post("/renew-requests", credentialRenewalRequestValidator, credentialCont
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: Permintaan revokasi kredensial berhasil dibuat
+ *                   example: "Verifiable Credential revocation request submitted successfully."
  *                 data:
  *                   type: object
  *                   properties:
  *                     request_id:
  *                       type: string
  *                       format: uuid
+ *                       description: The ID of the newly created VCRevokeRequest record.
  *       400:
- *         description: Invalid request data
- *       404:
- *         description: Credential not found
+ *         description: Validation error (e.g., missing fields, invalid DIDs).
  *       500:
- *         description: Internal server error
+ *         description: Internal server error.
  */
 router.post("/revoke-request", credentialRevocationRequestValidator, credentialController.requestCredentialRevocation);
 

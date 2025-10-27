@@ -30,10 +30,16 @@ export interface CredentialRenewalRequestDTO {
   encrypted_body: string;
 }
 
-export interface CredentialRevocationRequestDTO {
+export interface CredentialRevocationRequestDTO { // Renamed back
+  encrypted_body: string; // Contains VC ID and reason (encrypted)
   issuer_did: string;
   holder_did: string;
-  encrypted_body: string;
+}
+
+// REVERTED: Response body DTO for POST /credentials/revoke-request (now CREATING a request)
+export interface CredentialRevocationResponseDTO { // Renamed back
+  message: string;
+  request_id: string; // The ID of the newly created VCRevokeRequest record
 }
 
 export interface VCStatusBlockDTO {
