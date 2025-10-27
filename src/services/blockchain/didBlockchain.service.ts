@@ -228,13 +228,20 @@ class DIDBlockchainService {
 
   /**
    * Get DID Document
+   * Returns object with found status instead of throwing NotFoundError
    */
   async getDIDDocument(did: string): Promise<any> {
     try {
       const isRegistered = await this.isDIDRegistered(did);
 
       if (!isRegistered) {
-        throw new NotFoundError("DID not found on blockchain");
+        logger.warn(`DID not found on blockchain: ${did}`);
+        return {
+          found: false,
+          error: "Not Found",
+          message: "DID not found on blockchain",
+          did: did,
+        };
       }
 
       const document = await this.contract.getDIDDocument(did);
@@ -256,6 +263,7 @@ class DIDBlockchainService {
       }
 
       return {
+        found: true,
         id: did,
         status: document[0] == 1 ? "InActive" : "Active",
         role: document[1] == 1 ? "Individual" : "Institutional",
@@ -264,11 +272,6 @@ class DIDBlockchainService {
       };
     } catch (error: any) {
       logger.error("Failed to get DID document:", error);
-
-      if (error instanceof NotFoundError) {
-        throw error;
-      }
-
       throw new BlockchainError(`Failed to get DID document: ${error.message}`);
     }
   }
