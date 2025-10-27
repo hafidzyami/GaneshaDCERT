@@ -22,9 +22,9 @@ export const registerDIDValidator = [
     .trim()
     .notEmpty()
     .withMessage("Public key is required")
-    .matches(/^0x[a-fA-F0-9]$/)
+    .matches(/^0x[a-fA-F0-9]{128,130}$/)
     .withMessage(
-      "Invalid public key format. Must be hex string starting with 0x"
+      "Invalid public key format. Must be hex string starting with 0x (64-65 bytes)"
     ),
 
   body("role")
@@ -34,19 +34,44 @@ export const registerDIDValidator = [
     .isIn(["individual", "institution"])
     .withMessage("Role must be either 'individual' or 'institution'"),
 
-  // Email field - required for institution role to query InstitutionRegistration
+  // Optional metadata fields
+  body("name")
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 255 })
+    .withMessage("Name must be between 2 and 255 characters"),
+
   body("email")
     .optional()
     .trim()
     .isEmail()
-    .withMessage("Must be a valid email address")
-    .custom((value, { req }) => {
-      // If role is institution, email is required
-      if (req.body.role === "institution" && !value) {
-        throw new Error("Email is required for institution role");
-      }
-      return true;
-    }),
+    .withMessage("Must be a valid email address"),
+
+  body("phone")
+    .optional()
+    .trim()
+    .matches(/^\+?[1-9]\d{1,14}$/)
+    .withMessage(
+      "Must be a valid phone number in E.164 format (e.g., +62-21-xxx)"
+    ),
+
+  body("country")
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Country must be between 2 and 100 characters"),
+
+  body("website")
+    .optional()
+    .trim()
+    .isURL()
+    .withMessage("Must be a valid URL (e.g., https://example.com)"),
+
+  body("address")
+    .optional()
+    .trim()
+    .isLength({ min: 5, max: 500 })
+    .withMessage("Address must be between 5 and 500 characters"),
 ];
 
 /**

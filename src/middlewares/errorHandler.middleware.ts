@@ -35,17 +35,8 @@ export const errorHandler = (
 
     // Handle ValidationError specifically
     if (error instanceof ValidationError) {
-      // Check if errors exist in the error object
-      const validationError = error as ValidationError;
-      
-      logger.debug('ValidationError detected:', {
-        hasErrors: !!validationError.errors,
-        errorsIsArray: Array.isArray(validationError.errors),
-        errorsLength: validationError.errors?.length
-      });
-
-      if (validationError.errors && Array.isArray(validationError.errors) && validationError.errors.length > 0) {
-        errors = TransformHelper.transformValidationErrors(validationError.errors);
+      if (error.errors && Array.isArray(error.errors) && error.errors.length > 0) {
+        errors = TransformHelper.transformValidationErrors(error.errors);
         
         // Log validation errors for debugging
         logger.warn('Validation Error:', {
@@ -54,13 +45,6 @@ export const errorHandler = (
           url: req.originalUrl,
           method: req.method,
           body: req.body,
-        });
-      } else {
-        // If no errors array, log this case
-        logger.warn('ValidationError without errors array:', {
-          message: error.message,
-          url: req.originalUrl,
-          method: req.method,
         });
       }
     }

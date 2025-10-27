@@ -6,8 +6,8 @@ import { CredentialService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler } from "../middlewares";
 import { ResponseHelper } from "../utils/helpers";
-// Import the new DTO
-import { ProcessIssuanceVCDTO } from "../dtos";
+import { ProcessIssuanceVCDTO, RevokeVCDTO } from "../dtos";
+
 /**
  * Request Credential Issuance Controller
  */
@@ -225,4 +225,21 @@ export const getVCStatus = asyncHandler(async (req: Request, res: Response) => {
   );
 
   res.status(200).json(result);
+});
+
+export const revokeVC = asyncHandler(async (req: Request, res: Response) => {
+  // Validate request body using the modified validator
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Cast body to the updated DTO
+  const requestData: RevokeVCDTO = req.body;
+
+  // Call the MODIFIED service function (which now processes the request)
+  const result = await CredentialService.revokeVC(requestData); // The service method name might be kept or changed
+
+  // Send success response
+  return ResponseHelper.success(res, result, result.message);
 });
