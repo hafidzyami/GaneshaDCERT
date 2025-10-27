@@ -1,8 +1,8 @@
 import { PrismaClient, RequestType, RequestStatus } from "@prisma/client"; // Removed Prisma import
 import { prisma } from "../config/database";
-import { BadRequestError, NotFoundError } from "../utils/errors/AppError";
+import { BadRequestError, NotFoundError, BlockchainError } from "../utils/errors/AppError";
 import logger from "../config/logger";
-import { ProcessIssuanceVCDTO, ProcessIssuanceVCResponseDTO, HolderCredentialDTO } from "../dtos";
+import { ProcessIssuanceVCDTO, ProcessIssuanceVCResponseDTO, HolderCredentialDTO, RevokeVCDTO, RevokeVCResponseDTO } from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 
 
@@ -50,39 +50,52 @@ class CredentialService {
   /**
    * Get credential requests by type
    */
-  async getCredentialRequestsByType(type: RequestType, issuerDid?: string) {
-    const whereClause: { issuer_did?: string } = {};
+  async getCredentialRequestsByType(type: RequestType, issuerDid?: string, holderDid?: string) { // Added holderDid parameter
+    if (!issuerDid && !holderDid) {
+        throw new BadRequestError('At least one of issuer_did or holder_did must be provided.');
+    }
+    interface WhereClause {
+        issuer_did?: string;
+        holder_did?: string;
+    }
+
+    const whereClause: WhereClause = {};
     if (issuerDid) {
       whereClause.issuer_did = issuerDid;
     }
+    if (holderDid) { // Add holderDid to the where clause if present
+      whereClause.holder_did = holderDid;
+    }
+
+    logger.info(`Fetching ${type} requests with filters:`, whereClause);
 
     let requests;
 
     switch (type) {
       case RequestType.ISSUANCE:
         requests = await this.db.vCIssuanceRequest.findMany({
-          where: whereClause,
+          where: whereClause, 
           orderBy: { createdAt: "desc" },
         });
         break;
 
       case RequestType.RENEWAL:
         requests = await this.db.vCRenewalRequest.findMany({
-          where: whereClause,
+          where: whereClause, 
           orderBy: { createdAt: "desc" },
         });
         break;
 
       case RequestType.UPDATE:
         requests = await this.db.vCUpdateRequest.findMany({
-          where: whereClause,
+          where: whereClause, 
           orderBy: { createdAt: "desc" },
         });
         break;
 
       case RequestType.REVOKE:
         requests = await this.db.vCRevokeRequest.findMany({
-          where: whereClause,
+          where: whereClause, 
           orderBy: { createdAt: "desc" },
         });
         break;
@@ -90,6 +103,8 @@ class CredentialService {
       default:
         throw new BadRequestError("Invalid request type specified.");
     }
+
+     logger.info(`Found ${requests.length} ${type} requests matching criteria.`);
 
     return {
       message: `Successfully retrieved ${type} requests.`,
@@ -375,9 +390,6 @@ class CredentialService {
 
       } catch (dbError: any) {
           logger.error(`Database update failed for approved request ${request_id} after successful blockchain TX ${blockchainReceipt?.hash}:`, dbError);
-          // How to handle this? Log it? Return a specific error?
-          // For now, we'll return success but note the DB issue might need manual fixing.
-          // Consider implementing a retry mechanism or a background job for failed DB updates.
           return {
               message: "Blockchain issuance succeeded, but database update failed. Please check logs.",
               request_id: request_id, // Return original request ID
@@ -405,46 +417,128 @@ class CredentialService {
   async getHolderCredentialsFromDB(holderDid: string): Promise<HolderCredentialDTO[]> {
     logger.info(`Fetching credentials from DB for holder DID: ${holderDid}`);
 
-    // Query the VCResponse table
+    // Query the VCResponse table, selecting all fields
     const vcResponses = await this.db.vCResponse.findMany({
       where: {
         holder_did: holderDid,
-        // Optional: you might want to filter by request_type if VCResponse stores other things
-        // request_type: RequestType.ISSUANCE, // Uncomment if needed
       },
-      select: { // Select only the fields needed for the DTO
-        id: true,         // Map to vc_response_id
-        request_id: true,
-        request_type: true,
-        issuer_did: true,
-        holder_did: true,
-        // Not selecting encrypted_body
-      },
+      // No 'select' means all fields are returned by default
       orderBy: {
-        // You might want to add a createdAt field later for sorting
-        request_id: 'desc', // Example sort
+        request_id: 'desc', // Example sort, consider adding createdAt
       }
     });
 
     if (vcResponses.length === 0) {
       logger.info(`No credentials found in DB for holder DID: ${holderDid}`);
-      // It's okay to return an empty array if none are found, not necessarily an error.
     } else {
        logger.info(`Found ${vcResponses.length} credential responses in DB for holder DID: ${holderDid}`);
     }
 
-    // Map the Prisma results to the DTO structure
-    const credentials: HolderCredentialDTO[] = vcResponses.map(vc => ({
-        vc_response_id: vc.id,
-        request_id: vc.request_id,
-        request_type: vc.request_type,
-        issuer_did: vc.issuer_did,
-        holder_did: vc.holder_did,
-    }));
+    // Map the Prisma results directly (DTO now matches the model)
+    // No explicit mapping needed if DTO field names match model field names
+    const credentials: HolderCredentialDTO[] = vcResponses; // Direct assignment works if DTO matches
 
     return credentials;
   }
 
+  async revokeVC(data: RevokeVCDTO): Promise<RevokeVCResponseDTO> {
+    const { request_id, issuer_did, holder_did, action, vc_id } = data;
+
+    // 1. Find the original revocation request in the database
+    const revokeRequest = await this.db.vCRevokeRequest.findUnique({
+      where: { id: request_id },
+    });
+
+    if (!revokeRequest) {
+      throw new NotFoundError(`Revocation request with ID ${request_id} not found.`);
+    }
+
+    // 2. Check if already processed
+    if (revokeRequest.status !== RequestStatus.PENDING) {
+      throw new BadRequestError(`Revocation request ${request_id} has already been processed (Status: ${revokeRequest.status}).`);
+    }
+
+    // 3. Validate DIDs match the request
+    if (revokeRequest.issuer_did !== issuer_did || revokeRequest.holder_did !== holder_did) {
+      throw new BadRequestError(`Issuer DID or Holder DID does not match the original revocation request.`);
+    }
+
+    // 4. Process based on action
+    if (action === RequestStatus.REJECTED) {
+      // Update DB status to REJECTED
+      const updatedRequest = await this.db.vCRevokeRequest.update({
+        where: { id: request_id },
+        data: { status: RequestStatus.REJECTED },
+      });
+
+      logger.warn(`VC Revocation request rejected: ${request_id}`);
+
+      return {
+        message: "Verifiable Credential revocation request rejected.",
+        request_id: updatedRequest.id,
+        status: updatedRequest.status,
+      };
+
+    } else if (action === RequestStatus.APPROVED) {
+      // Ensure vc_id is provided for approval
+      if (!vc_id) {
+        throw new BadRequestError("vc_id is required when action is APPROVED.");
+      }
+
+      logger.info(`Processing approval for revocation request ${request_id} targeting VC ${vc_id}`);
+
+      // --- Pre-Revocation Blockchain Check ---
+      try {
+        const currentVcStatus = await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
+        if (currentVcStatus && currentVcStatus.status === false) {
+            logger.warn(`Attempted to approve revocation for an already revoked VC: ${vc_id}`);
+             await this.db.vCRevokeRequest.update({ // Still update request status
+                where: { id: request_id },
+                data: { status: RequestStatus.APPROVED },
+             });
+            throw new BadRequestError(`VC with ID ${vc_id} is already revoked on the blockchain.`);
+        }
+        logger.info(`VC ${vc_id} found and is currently active. Proceeding with blockchain revocation.`);
+      } catch (error: any) {
+          logger.error(`Pre-revocation check failed for VC ${vc_id}:`, error);
+          if (error instanceof NotFoundError) {
+               throw new NotFoundError(`VC with ID ${vc_id} not found on the blockchain. Cannot approve revocation request ${request_id}.`);
+          }
+          if (error instanceof BadRequestError) { throw error; }
+          throw new BadRequestError(`Failed to verify VC status before revocation: ${error.message}`);
+      }
+      // ------------------------------------
+
+      // --- Blockchain Revocation Call ---
+      let blockchainReceipt: any;
+      try {
+        blockchainReceipt = await VCBlockchainService.revokeVCInBlockchain(vc_id);
+        logger.success(`VC ${vc_id} revoked successfully on blockchain. TX: ${blockchainReceipt?.hash}`);
+      } catch (blockchainError: any) {
+        logger.error(`Blockchain revocation failed during approval for request ${request_id} (VC ${vc_id}):`, blockchainError);
+        throw new BadRequestError(`Blockchain revocation failed: ${blockchainError.message}`);
+      }
+      // ---------------------------------
+
+      // --- Update DB Status ---
+      const updatedRequest = await this.db.vCRevokeRequest.update({
+        where: { id: request_id },
+        data: { status: RequestStatus.APPROVED },
+      });
+      logger.info(`Revocation request ${request_id} status updated to APPROVED in DB.`);
+      // ------------------------
+
+      return {
+        message: "Verifiable Credential revocation request approved and VC revoked on blockchain.",
+        request_id: updatedRequest.id,
+        status: updatedRequest.status,
+        transaction_hash: blockchainReceipt?.hash,
+        block_number: blockchainReceipt?.blockNumber,
+      };
+    } else {
+      throw new BadRequestError(`Invalid action specified: ${action}.`);
+    }
+  }
 }
 
 // Export singleton instance for backward compatibility

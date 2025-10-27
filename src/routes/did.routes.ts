@@ -74,6 +74,30 @@ const router: Router = express.Router();
  *           type: string
  *           format: date-time
  *           example: "2025-10-21T10:30:00Z"
+ *
+ *     DIDMetadata:
+ *       type: object
+ *       properties:
+ *         name:
+ *           type: string
+ *           example: "John Doe"
+ *         email:
+ *           type: string
+ *           format: email
+ *           example: "john.doe@example.com"
+ *         phone:
+ *           type: string
+ *           example: "+62-812-3456-7890"
+ *         country:
+ *           type: string
+ *           example: "Indonesia"
+ *         website:
+ *           type: string
+ *           format: uri
+ *           example: "https://example.com"
+ *         address:
+ *           type: string
+ *           example: "Jl. Sudirman No. 1, Jakarta"
  */
 
 /**
@@ -82,25 +106,19 @@ const router: Router = express.Router();
  *   post:
  *     summary: Register new DID
  *     description: |
- *       Register a new Decentralized Identifier (DID) on the blockchain.
+ *       Register a new Decentralized Identifier (DID) on the blockchain with optional metadata.
  *
  *       **Process:**
- *       1. Validate public key format and DID string
- *       2. Check if DID already exists on blockchain
- *       3. For institution role: Query institution data from InstitutionRegistration table using email
- *       4. Verify institution is APPROVED before registration
- *       5. Register DID on blockchain with all required data
+ *       1. Validate public key format
+ *       2. Check if DID already exists
+ *       3. Register DID on blockchain
+ *       4. Store metadata in database
  *
  *       **DID Format:** `did:dcert:<address>`
  *
  *       **Roles:**
- *       - `individual`: For personal/individual users (students, employees, etc.) - no email required
- *       - `institution`: For organizations (universities, companies, etc.) - email required to query institution data
- *
- *       **Institution Registration Flow:**
- *       For institution role, the system automatically retrieves name, phone, country, website, and address
- *       from the InstitutionRegistration table based on the provided email. The institution must have
- *       APPROVED status to proceed with DID registration.
+ *       - `individual`: For personal/individual users (students, employees, etc.)
+ *       - `institution`: For organizations (universities, companies, etc.)
  *     tags:
  *       - DID Management
  *     requestBody:
@@ -127,11 +145,32 @@ const router: Router = express.Router();
  *                 enum: [individual, institution]
  *                 example: "institution"
  *                 description: Role/type of the DID owner
+ *               name:
+ *                 type: string
+ *                 example: "University of Indonesia"
+ *                 description: Name of the DID owner (individual or organization name)
  *               email:
  *                 type: string
  *                 format: email
  *                 example: "admin@university.ac.id"
- *                 description: Email address (REQUIRED for institution role, used to query InstitutionRegistration data)
+ *                 description: Contact email
+ *               phone:
+ *                 type: string
+ *                 example: "+62-21-7270011"
+ *                 description: Contact phone number
+ *               country:
+ *                 type: string
+ *                 example: "Indonesia"
+ *                 description: Country
+ *               website:
+ *                 type: string
+ *                 format: uri
+ *                 example: "https://ui.ac.id"
+ *                 description: Official website (mainly for institutions)
+ *               address:
+ *                 type: string
+ *                 example: "Depok, West Java, Indonesia"
+ *                 description: Physical address
  *           examples:
  *             institution:
  *               summary: Institution DID (University)
@@ -139,13 +178,22 @@ const router: Router = express.Router();
  *                 did_string: "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *                 public_key: "04a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234"
  *                 role: "institution"
+ *                 name: "University of Indonesia"
  *                 email: "admin@ui.ac.id"
+ *                 phone: "+62-21-7270011"
+ *                 country: "Indonesia"
+ *                 website: "https://ui.ac.id"
+ *                 address: "Depok, West Java, Indonesia"
  *             individual:
  *               summary: Individual DID (Student)
  *               value:
  *                 did_string: "did:dcert:8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199"
  *                 public_key: "04b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef012345"
  *                 role: "individual"
+ *                 name: "John Doe"
+ *                 email: "john.doe@student.ui.ac.id"
+ *                 phone: "+62-812-3456-7890"
+ *                 country: "Indonesia"
  *     responses:
  *       201:
  *         description: DID registered successfully
@@ -169,36 +217,24 @@ const router: Router = express.Router();
  *                     did:
  *                       type: string
  *                       example: "did:dcert:1234567890abcdef"
- *                     institution:
- *                       type: object
- *                       description: Institution data retrieved from InstitutionRegistration (only for institution role)
- *                       properties:
- *                         email:
- *                           type: string
- *                           example: "admin@ui.ac.id"
- *                         name:
- *                           type: string
- *                           example: "University of Indonesia"
- *                         phone:
- *                           type: string
- *                           example: "+62-21-7270011"
- *                         country:
- *                           type: string
- *                           example: "Indonesia"
- *                         website:
- *                           type: string
- *                           example: "https://ui.ac.id"
- *                         address:
- *                           type: string
- *                           example: "Depok, West Java, Indonesia"
- *                     transactionHash:
+ *                     public_key:
+ *                       type: string
+ *                       example: "0x04a1b2c3d4e5f6..."
+ *                     role:
+ *                       type: string
+ *                       enum: [individual, institution]
+ *                       example: "institution"
+ *                     status:
+ *                       type: string
+ *                       example: "ACTIVE"
+ *                     blockchain_tx_hash:
  *                       type: string
  *                       example: "9876543210fedcba..."
  *                       description: Blockchain transaction hash
- *                     blockNumber:
- *                       type: number
- *                       example: 12345
- *                       description: Block number where transaction was included
+ *                     created_at:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-10-21T10:30:00Z"
  *       400:
  *         description: Invalid request data or validation error
  *         content:
@@ -211,24 +247,11 @@ const router: Router = express.Router();
  *                   example: false
  *                 message:
  *                   type: string
- *                   example: "Email is required for institution role"
+ *                   example: "Invalid public key format"
  *                 errors:
  *                   type: array
  *                   items:
  *                     type: object
- *       404:
- *         description: Institution not found in registration database
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: "Institution with email admin@example.com not found in registration database"
  *       409:
  *         description: DID already exists
  *         content:
@@ -241,7 +264,7 @@ const router: Router = express.Router();
  *                   example: false
  *                 message:
  *                   type: string
- *                   example: "A DID Document already exists with this DID."
+ *                   example: "DID already registered"
  *       500:
  *         description: Internal server error or blockchain failure
  */
