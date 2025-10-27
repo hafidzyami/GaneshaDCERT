@@ -1,13 +1,55 @@
 import { Request, Response } from "express";
 import { validationResult } from "express-validator";
-import { RequestType } from "@prisma/client";
+// Make sure RequestType and RequestStatus are imported if used directly (though DTOs are preferred)
+import { RequestType, RequestStatus } from "@prisma/client";
 import { CredentialService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler } from "../middlewares";
+import { ResponseHelper } from "../utils/helpers";
+import { ProcessIssuanceVCDTO, RevokeVCDTO } from "../dtos";
 
 /**
  * Request Credential Issuance Controller
  */
+
+export const getHolderCredentialsFromDB = asyncHandler(async (req: Request, res: Response) => {
+  // Validate query parameters
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Extract holder_did from query parameters
+  const holderDid = req.query.holder_did as string;
+
+  // Call the service function
+  const credentials = await CredentialService.getHolderCredentialsFromDB(holderDid);
+
+  // Send success response
+  return ResponseHelper.success(
+    res,
+    credentials,
+    `Successfully retrieved ${credentials.length} credentials for holder ${holderDid}.`
+  );
+});
+
+export const processIssuanceVC = asyncHandler(async (req: Request, res: Response) => {
+  // Validate request using the defined validator
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Cast req.body to the DTO for type safety
+  const requestData: ProcessIssuanceVCDTO = req.body;
+
+  // Call the service method with the validated data
+  const result = await CredentialService.processIssuanceVC(requestData);
+
+  // Send a standardized success response
+  return ResponseHelper.success(res, result, result.message);
+});
+
 export const requestCredential = asyncHandler(async (req: Request, res: Response) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -183,4 +225,21 @@ export const getVCStatus = asyncHandler(async (req: Request, res: Response) => {
   );
 
   res.status(200).json(result);
+});
+
+export const revokeVC = asyncHandler(async (req: Request, res: Response) => {
+  // Validate request body using the modified validator
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Cast body to the updated DTO
+  const requestData: RevokeVCDTO = req.body;
+
+  // Call the MODIFIED service function (which now processes the request)
+  const result = await CredentialService.revokeVC(requestData); // The service method name might be kept or changed
+
+  // Send success response
+  return ResponseHelper.success(res, result, result.message);
 });
