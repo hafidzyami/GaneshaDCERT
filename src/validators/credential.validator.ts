@@ -1,4 +1,4 @@
-import { body, query, param } from "express-validator";
+import { body, query, param, ValidationChain, CustomValidator } from "express-validator";
 import { RequestType, RequestStatus } from "@prisma/client";
 
 /**
@@ -113,20 +113,36 @@ export const requestCredentialValidator = [
     .withMessage("Invalid holder DID format"),
 ];
 
-export const getCredentialRequestsByTypeValidator = [
+const requireAtLeastOneDid: CustomValidator = (value, { req }) => {
+  if (!req.query?.issuer_did && !req.query?.holder_did) {
+    throw new Error('At least one of issuer_did or holder_did must be provided as a query parameter.');
+  }
+  return true;
+};
+
+// MODIFIED Validator for GET /credentials/get-requests
+export const getCredentialRequestsByTypeValidator: ValidationChain[] = [ // Explicitly type as array
   query("type")
     .notEmpty()
-    .withMessage("Request type is required")
+    .withMessage("Request type query parameter is required")
     .isIn([RequestType.ISSUANCE, RequestType.RENEWAL, RequestType.UPDATE, RequestType.REVOKE])
-    .withMessage("Invalid request type. Must be ISSUANCE, RENEWAL, UPDATE, or REVOKE"),
+    .withMessage("Invalid request type query parameter. Must be ISSUANCE, RENEWAL, UPDATE, or REVOKE"),
 
   query("issuer_did")
-    .optional()
+    .optional() // Keep optional
     .trim()
     .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid issuer DID format"),
-];
+    .withMessage("Invalid issuer_did format in query parameter"),
 
+  query("holder_did") // Add validation for holder_did
+    .optional() // Make it optional individually
+    .trim()
+    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .withMessage("Invalid holder_did format in query parameter"),
+
+  // Add custom validation to ensure at least one DID is present
+  query().custom(requireAtLeastOneDid),
+];
 export const processCredentialResponseValidator = [
   body("request_id")
     .trim()
@@ -284,4 +300,43 @@ export const getVCStatusValidator = [
     .withMessage("Holder DID is required")
     .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
     .withMessage("Invalid holder DID format"),
+];
+
+export const revokeVCValidator = [
+  body("request_id")
+    .trim()
+    .notEmpty()
+    .withMessage("Request ID is required")
+    .isUUID()
+    .withMessage("Invalid request ID format (must be UUID)"),
+
+  body("issuer_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Issuer DID is required")
+    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .withMessage("Invalid issuer DID format"),
+
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Holder DID is required")
+    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .withMessage("Invalid holder DID format"),
+
+  body("action")
+    .trim()
+    .notEmpty()
+    .withMessage("Action is required")
+    .isIn([RequestStatus.APPROVED, RequestStatus.REJECTED])
+    .withMessage(`Action must be ${RequestStatus.APPROVED} or ${RequestStatus.REJECTED}`),
+
+  // vc_id is required only if action is APPROVED
+  body("vc_id")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("vc_id is required when action is APPROVED"),
+    // .isUUID() // Add format check if needed
+    // .withMessage("Invalid vc_id format"),
 ];
