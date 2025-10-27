@@ -51,11 +51,14 @@ export interface VCStatusBlockDTO {
 }
 
 export interface VCStatusResponseDTO {
-  vc_id: string;
-  status: string;
-  revoked: boolean;
-  issuer_did: string;
-  holder_did: string;
+  vc_id: string; 
+  issuer_did: string; 
+  holder_did: string; 
+  vc_type: string; 
+  schema_id: string; 
+  schema_version: number; 
+  status: boolean; 
+  hash: string; 
 }
 
 

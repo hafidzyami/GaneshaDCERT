@@ -209,21 +209,20 @@ export const addVCStatusBlock = asyncHandler(async (req: Request, res: Response)
  * Get VC Status Controller
  */
 export const getVCStatus = asyncHandler(async (req: Request, res: Response) => {
+  // Validator now only checks param('vcId')
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     throw new ValidationError("Validation error", errors.array());
   }
 
+  // Extract vcId from URL parameters
   const { vcId } = req.params;
-  const { issuerDid, holderDid } = req.query;
+  // REMOVED extraction of issuerDid and holderDid from query
 
-  const result = await CredentialService.getVCStatus(
-    vcId,
-    issuerDid as string,
-    holderDid as string
-  );
+  // Call the updated service method (only requires vcId)
+  const result = await CredentialService.getVCStatus(vcId);
 
-  res.status(200).json(result);
+  return ResponseHelper.success(res, result, `Successfully retrieved status for VC ${vcId}.`);
 });
 
 export const revokeVC = asyncHandler(async (req: Request, res: Response) => {

@@ -283,26 +283,12 @@ export const addVCStatusBlockValidator = [
 ];
 
 export const getVCStatusValidator = [
-  param("vcId")
+  param("vcId") // Validate vcId from the URL path
     .trim()
     .notEmpty()
-    .withMessage("VC ID is required"),
-
-  query("issuerDid")
-    .trim()
-    .notEmpty()
-    .withMessage("Issuer DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid issuer DID format"),
-
-  query("holderDid")
-    .trim()
-    .notEmpty()
-    .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid holder DID format"),
+    .withMessage("VC ID parameter (vcId) is required"),
+    
 ];
-
 export const revokeVCValidator = [
   body("request_id")
     .trim()
