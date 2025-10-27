@@ -507,8 +507,8 @@ router.post("/add-status-block", addVCStatusBlockValidator, credentialController
  * @swagger
  * /credentials/{vcId}/status:
  *   get:
- *     summary: Get VC status
- *     description: Retrieve current status of a Verifiable Credential from blockchain
+ *     summary: Get VC status from Blockchain
+ *     description: Retrieve the current status record of a Verifiable Credential directly from the blockchain using its ID.
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
  *     parameters:
@@ -517,11 +517,10 @@ router.post("/add-status-block", addVCStatusBlockValidator, credentialController
  *         required: true
  *         schema:
  *           type: string
- *           format: uuid
- *         description: ID of the credential
+ *         description: The unique identifier of the Verifiable Credential.
  *     responses:
  *       200:
- *         description: Credential status retrieved successfully
+ *         description: Credential status retrieved successfully from the blockchain.
  *         content:
  *           application/json:
  *             schema:
@@ -530,24 +529,36 @@ router.post("/add-status-block", addVCStatusBlockValidator, credentialController
  *                 success:
  *                   type: boolean
  *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Successfully retrieved status for VC ..."
  *                 data:
  *                   type: object
  *                   properties:
  *                     vc_id:
  *                       type: string
- *                       format: uuid
+ *                     issuer_did:
+ *                       type: string
+ *                     holder_did:
+ *                       type: string
+ *                     vc_type:
+ *                       type: string
+ *                     schema_id:
+ *                       type: string
+ *                     schema_version:
+ *                       type: integer
  *                     status:
+ *                       type: boolean
+ *                       description: Current status (true = active, false = inactive/revoked).
+ *                     hash:
  *                       type: string
- *                       enum: [ACTIVE, REVOKED, SUSPENDED, EXPIRED]
- *                     last_updated:
- *                       type: string
- *                       format: date-time
- *                     blockchain_hash:
- *                       type: string
+ *                       description: Stored hash of the VC on the blockchain.
+ *       400:
+ *         description: Invalid vcId format in URL.
  *       404:
- *         description: Credential not found
+ *         description: VC not found on the blockchain.
  *       500:
- *         description: Internal server error
+ *         description: Internal server error or blockchain communication error.
  */
 router.get("/:vcId/status", getVCStatusValidator, credentialController.getVCStatus);
 
