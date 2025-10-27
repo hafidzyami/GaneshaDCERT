@@ -79,9 +79,28 @@ export interface ProcessIssuanceVCResponseDTO {
 }
 
 export interface HolderCredentialDTO {
-  vc_response_id: string;
-  request_id: string; // The original request this VC fulfilled
+  id: string;             
+  order_id: string;
+  request_id: string;
   request_type: RequestType;
   issuer_did: string;
   holder_did: string;
+  encrypted_body: string; 
+}
+
+export interface RevokeVCDTO {
+  request_id: string; // ID of the VCRevokeRequest record
+  issuer_did: string; // Issuer DID from the request record
+  holder_did: string; // Holder DID from the request record
+  action: "APPROVED" | "REJECTED"; // Action to perform
+  vc_id?: string; // VC ID to revoke (Required only if action is APPROVED)
+}
+
+// Response body after successful revocation
+export interface RevokeVCResponseDTO {
+  message: string;
+  request_id: string; // ID of the VCRevokeRequest processed
+  status: RequestStatus; // Final status of the VCRevokeRequest
+  transaction_hash?: string; // Blockchain TX hash if approved & successful
+  block_number?: number; // Blockchain block number if approved & successful
 }
