@@ -2,7 +2,7 @@ import { PrismaClient, RequestType, RequestStatus } from "@prisma/client"; // Re
 import { prisma } from "../config/database";
 import { BadRequestError, NotFoundError, BlockchainError } from "../utils/errors/AppError";
 import logger from "../config/logger";
-import { ProcessIssuanceVCDTO, ProcessIssuanceVCResponseDTO, HolderCredentialDTO, RevokeVCDTO, RevokeVCResponseDTO } from "../dtos";
+import { VCStatusResponseDTO,CredentialRevocationRequestDTO, CredentialRevocationResponseDTO, ProcessIssuanceVCDTO, ProcessIssuanceVCResponseDTO, HolderCredentialDTO, RevokeVCDTO, RevokeVCResponseDTO } from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 
 
@@ -51,9 +51,7 @@ class CredentialService {
    * Get credential requests by type
    */
   async getCredentialRequestsByType(type: RequestType, issuerDid?: string, holderDid?: string) { // Added holderDid parameter
-    if (!issuerDid && !holderDid) {
-        throw new BadRequestError('At least one of issuer_did or holder_did must be provided.');
-    }
+    
     interface WhereClause {
         issuer_did?: string;
         holder_did?: string;
@@ -226,25 +224,24 @@ class CredentialService {
   /**
    * Request credential revocation
    */
-  async requestCredentialRevocation(data: {
-    issuer_did: string;
-    holder_did: string;
-    encrypted_body: string;
-  }) {
+  async requestCredentialRevocation(data: CredentialRevocationRequestDTO): Promise<CredentialRevocationResponseDTO> {
+    // Logic to create a new VCRevokeRequest record
     const newRevokeRequest = await this.db.vCRevokeRequest.create({
       data: {
         issuer_did: data.issuer_did,
         holder_did: data.holder_did,
         encrypted_body: data.encrypted_body,
-        status: "PENDING",
+        status: RequestStatus.PENDING, // Default status
       },
     });
 
     logger.success(`VC Revocation request created: ${newRevokeRequest.id}`);
 
+    // TODO: Optionally, notify the issuer via RabbitMQ or another mechanism
+
     return {
       message: "Verifiable Credential revocation request submitted successfully.",
-      request_id: newRevokeRequest.id,
+      request_id: newRevokeRequest.id, // Return the ID of the new request record
     };
   }
 
@@ -270,20 +267,40 @@ class CredentialService {
   /**
    * Get VC status from blockchain
    */
-  async getVCStatus(vcId: string, issuerDid: string, holderDid: string) {
-    // TODO: Implement blockchain query for VC status
-    logger.info(`Checking VC status: ${vcId}`);
+  async getVCStatus(vcId: string): Promise<VCStatusResponseDTO> {
+    logger.info(`Checking VC status from blockchain for: ${vcId}`);
 
-    // Placeholder response
-    const placeholderStatus = {
-      vc_id: vcId,
-      status: "active",
-      revoked: false,
-      issuer_did: issuerDid,
-      holder_did: holderDid,
-    };
+    try {
+      // Call the blockchain service to get the status struct
+      const blockchainStatus = await VCBlockchainService.getVCStatusFromBlockchain(vcId);
 
-    return placeholderStatus;
+      // Map the blockchain response (which is likely an array/tuple or object from ethers)
+      // to our DTO. Adjust indexing/property names based on the actual return structure
+      // of getVCStatusFromBlockchain (which calls contract.getVCStatus).
+      // Based on VCManager.json ABI, it returns a struct, accessible like an object/array.
+      const response: VCStatusResponseDTO = {
+        vc_id: blockchainStatus.id,
+        issuer_did: blockchainStatus.issuerDID,
+        holder_did: blockchainStatus.holderDID,
+        vc_type: blockchainStatus.vcType,
+        schema_id: blockchainStatus.schemaID,
+        // Convert BigInt to number if necessary. Handle potential large numbers if needed.
+        schema_version: Number(blockchainStatus.schemaVersion),
+        status: blockchainStatus.status, // boolean (true=active, false=revoked/inactive)
+        hash: blockchainStatus.hash,
+      };
+
+      logger.info(`Successfully retrieved status for VC: ${vcId}`);
+      return response;
+
+    } catch (error: any) {
+      logger.error(`Failed to get VC status from blockchain for ${vcId}:`, error);
+      // Rethrow specific errors or wrap them
+      if (error instanceof NotFoundError) {
+        throw new NotFoundError(`VC with ID ${vcId} not found on the blockchain.`);
+      }
+      throw new BlockchainError(`Failed to retrieve VC status from blockchain: ${error.message}`);
+    }
   }
 
   async processIssuanceVC(data: ProcessIssuanceVCDTO): Promise<ProcessIssuanceVCResponseDTO> {

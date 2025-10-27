@@ -388,10 +388,12 @@ router.post("/renew-requests", credentialRenewalRequestValidator, credentialCont
  * @swagger
  * /credentials/revoke-request:
  *   post:
- *     summary: Request credential revocation
- *     description: Holder or issuer requests to revoke a Verifiable Credential
+ *     summary: Request credential revocation (Creates DB record) - REVERTED
+ *     description: Submits a request to revoke a Verifiable Credential. This creates a record in the database with PENDING status. The actual revocation processing happens separately (e.g., via an admin/issuer action).
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -399,19 +401,24 @@ router.post("/renew-requests", credentialRenewalRequestValidator, credentialCont
  *           schema:
  *             type: object
  *             required:
- *               - vc_id
- *               - reason
+ *               - encrypted_body
+ *               - issuer_did
+ *               - holder_did
  *             properties:
- *               vc_id:
+ *               encrypted_body:
  *                 type: string
- *                 format: uuid
- *                 description: ID of the credential to revoke
- *               reason:
+ *                 description: Encrypted payload containing the VC ID to revoke and the reason.
+ *               issuer_did:
  *                 type: string
- *                 description: Reason for revocation
+ *                 example: did:ganesha:0xabcdef1234567890
+ *                 description: DID of the entity requesting revocation (usually issuer or holder).
+ *               holder_did:
+ *                 type: string
+ *                 example: did:ganesha:0x1234567890abcdef
+ *                 description: DID of the credential holder.
  *     responses:
  *       201:
- *         description: Revocation request created successfully
+ *         description: Revocation request created successfully in the database.
  *         content:
  *           application/json:
  *             schema:
@@ -422,19 +429,18 @@ router.post("/renew-requests", credentialRenewalRequestValidator, credentialCont
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: Permintaan revokasi kredensial berhasil dibuat
+ *                   example: "Verifiable Credential revocation request submitted successfully."
  *                 data:
  *                   type: object
  *                   properties:
  *                     request_id:
  *                       type: string
  *                       format: uuid
+ *                       description: The ID of the newly created VCRevokeRequest record.
  *       400:
- *         description: Invalid request data
- *       404:
- *         description: Credential not found
+ *         description: Validation error (e.g., missing fields, invalid DIDs).
  *       500:
- *         description: Internal server error
+ *         description: Internal server error.
  */
 router.post("/revoke-request", credentialRevocationRequestValidator, credentialController.requestCredentialRevocation);
 
@@ -501,8 +507,8 @@ router.post("/add-status-block", addVCStatusBlockValidator, credentialController
  * @swagger
  * /credentials/{vcId}/status:
  *   get:
- *     summary: Get VC status
- *     description: Retrieve current status of a Verifiable Credential from blockchain
+ *     summary: Get VC status from Blockchain
+ *     description: Retrieve the current status record of a Verifiable Credential directly from the blockchain using its ID.
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
  *     parameters:
@@ -511,11 +517,10 @@ router.post("/add-status-block", addVCStatusBlockValidator, credentialController
  *         required: true
  *         schema:
  *           type: string
- *           format: uuid
- *         description: ID of the credential
+ *         description: The unique identifier of the Verifiable Credential.
  *     responses:
  *       200:
- *         description: Credential status retrieved successfully
+ *         description: Credential status retrieved successfully from the blockchain.
  *         content:
  *           application/json:
  *             schema:
@@ -524,24 +529,36 @@ router.post("/add-status-block", addVCStatusBlockValidator, credentialController
  *                 success:
  *                   type: boolean
  *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Successfully retrieved status for VC ..."
  *                 data:
  *                   type: object
  *                   properties:
  *                     vc_id:
  *                       type: string
- *                       format: uuid
+ *                     issuer_did:
+ *                       type: string
+ *                     holder_did:
+ *                       type: string
+ *                     vc_type:
+ *                       type: string
+ *                     schema_id:
+ *                       type: string
+ *                     schema_version:
+ *                       type: integer
  *                     status:
+ *                       type: boolean
+ *                       description: Current status (true = active, false = inactive/revoked).
+ *                     hash:
  *                       type: string
- *                       enum: [ACTIVE, REVOKED, SUSPENDED, EXPIRED]
- *                     last_updated:
- *                       type: string
- *                       format: date-time
- *                     blockchain_hash:
- *                       type: string
+ *                       description: Stored hash of the VC on the blockchain.
+ *       400:
+ *         description: Invalid vcId format in URL.
  *       404:
- *         description: Credential not found
+ *         description: VC not found on the blockchain.
  *       500:
- *         description: Internal server error
+ *         description: Internal server error or blockchain communication error.
  */
 router.get("/:vcId/status", getVCStatusValidator, credentialController.getVCStatus);
 
