@@ -33,11 +33,11 @@ const router: Router = express.Router();
  *           description: JSON-LD context
  *         id:
  *           type: string
- *           example: "did:ganesha:0x1234567890abcdef"
+ *           example: "did:dcert:1234567890abcdef"
  *           description: DID identifier
  *         controller:
  *           type: string
- *           example: "did:ganesha:0x1234567890abcdef"
+ *           example: "did:dcert:1234567890abcdef"
  *           description: DID controller
  *         verificationMethod:
  *           type: array
@@ -46,13 +46,13 @@ const router: Router = express.Router();
  *             properties:
  *               id:
  *                 type: string
- *                 example: "did:ganesha:0x123...#key-1"
+ *                 example: "did:dcert:123...#key-1"
  *               type:
  *                 type: string
  *                 example: "EcdsaSecp256k1VerificationKey2019"
  *               controller:
  *                 type: string
- *                 example: "did:ganesha:0x123..."
+ *                 example: "did:dcert:123..."
  *               publicKeyHex:
  *                 type: string
  *                 example: "04a1b2c3d4e5f6..."
@@ -60,12 +60,12 @@ const router: Router = express.Router();
  *           type: array
  *           items:
  *             type: string
- *           example: ["did:ganesha:0x123...#key-1"]
+ *           example: ["did:dcert:123...#key-1"]
  *         assertionMethod:
  *           type: array
  *           items:
  *             type: string
- *           example: ["did:ganesha:0x123...#key-1"]
+ *           example: ["did:dcert:123...#key-1"]
  *         created:
  *           type: string
  *           format: date-time
@@ -91,15 +91,15 @@ const router: Router = express.Router();
  *       4. Verify institution is APPROVED before registration
  *       5. Register DID on blockchain with all required data
  *
- *       **DID Format:** `did:ganesha:<address>`
+ *       **DID Format:** `did:dcert:<address>`
  *
  *       **Roles:**
  *       - `individual`: For personal/individual users (students, employees, etc.) - no email required
  *       - `institution`: For organizations (universities, companies, etc.) - email required to query institution data
  *
  *       **Institution Registration Flow:**
- *       For institution role, the system automatically retrieves name, phone, country, website, and address 
- *       from the InstitutionRegistration table based on the provided email. The institution must have 
+ *       For institution role, the system automatically retrieves name, phone, country, website, and address
+ *       from the InstitutionRegistration table based on the provided email. The institution must have
  *       APPROVED status to proceed with DID registration.
  *     tags:
  *       - DID Management
@@ -116,11 +116,11 @@ const router: Router = express.Router();
  *             properties:
  *               did_string:
  *                 type: string
- *                 example: "did:ganesha:0x1234567890abcdef"
+ *                 example: "did:dcert:1234567890abcdef"
  *                 description: DID string to register
  *               public_key:
  *                 type: string
- *                 example: "0xc137d47e2181ace4e14e7d0870eccf3817e51b34129f98c351230b396e37b5f985c0c2b80ceecafba8ee4017a02dbd5ebfafb29db50b7d5bc4e0800d598460d3"
+ *                 example: "c137d47e2181ace4e14e7d0870eccf3817e51b34129f98c351230b396e37b5f985c0c2b80ceecafba8ee4017a02dbd5ebfafb29db50b7d5bc4e0800d598460d3"
  *                 description: Public key in hexadecimal format (compressed or uncompressed)
  *               role:
  *                 type: string
@@ -136,15 +136,15 @@ const router: Router = express.Router();
  *             institution:
  *               summary: Institution DID (University)
  *               value:
- *                 did_string: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
- *                 public_key: "0x04a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234"
+ *                 did_string: "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                 public_key: "04a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234"
  *                 role: "institution"
  *                 email: "admin@ui.ac.id"
  *             individual:
  *               summary: Individual DID (Student)
  *               value:
- *                 did_string: "did:ganesha:0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199"
- *                 public_key: "0x04b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef012345"
+ *                 did_string: "did:dcert:8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199"
+ *                 public_key: "04b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef012345"
  *                 role: "individual"
  *     responses:
  *       201:
@@ -168,7 +168,7 @@ const router: Router = express.Router();
  *                       example: "Institutional DID registered successfully"
  *                     did:
  *                       type: string
- *                       example: "did:ganesha:0x1234567890abcdef"
+ *                       example: "did:dcert:1234567890abcdef"
  *                     institution:
  *                       type: object
  *                       description: Institution data retrieved from InstitutionRegistration (only for institution role)
@@ -193,7 +193,7 @@ const router: Router = express.Router();
  *                           example: "Depok, West Java, Indonesia"
  *                     transactionHash:
  *                       type: string
- *                       example: "0x9876543210fedcba..."
+ *                       example: "9876543210fedcba..."
  *                       description: Blockchain transaction hash
  *                     blockNumber:
  *                       type: number
@@ -267,8 +267,8 @@ router.post("/", registerDIDValidator, did.registerDID);
  *         required: true
  *         schema:
  *           type: string
- *         example: "did:ganesha:0x742d35635634C0532925a3b844Bc9e7595f0bEb"
- *         description: DID to check (format - did:ganesha:0x<address>)
+ *         example: "did:dcert:742d35635634C0532925a3b844Bc9e7595f0bEb"
+ *         description: DID to check (format - did:dcert:<address>)
  *     responses:
  *       200:
  *         description: DID check result
@@ -289,7 +289,7 @@ router.post("/", registerDIDValidator, did.registerDID);
  *                       description: Whether DID is registered
  *                     did:
  *                       type: string
- *                       example: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                       example: "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *                     status:
  *                       type: string
  *                       enum: [ACTIVE, DEACTIVATED]
@@ -297,7 +297,7 @@ router.post("/", registerDIDValidator, did.registerDID);
  *                       description: Current DID status
  *                     public_key:
  *                       type: string
- *                       example: "0x04a1b2c3d4e5f6..."
+ *                       example: "04a1b2c3d4e5f6..."
  *                       description: Associated public key
  *                     role:
  *                       type: string
@@ -314,9 +314,9 @@ router.post("/", registerDIDValidator, did.registerDID);
  *                   success: true
  *                   data:
  *                     exists: true
- *                     did: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                     did: "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *                     status: "ACTIVE"
- *                     public_key: "0x04a1b2c3..."
+ *                     public_key: "04a1b2c3..."
  *                     role: "institution"
  *                     registered_at: "2025-10-21T10:30:00Z"
  *               notExists:
@@ -325,7 +325,7 @@ router.post("/", registerDIDValidator, did.registerDID);
  *                   success: true
  *                   data:
  *                     exists: false
- *                     did: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                     did: "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *       400:
  *         description: Invalid DID format
  *         content:
@@ -338,7 +338,7 @@ router.post("/", registerDIDValidator, did.registerDID);
  *                   example: false
  *                 message:
  *                   type: string
- *                   example: "Invalid DID format. Expected: did:ganesha:0x<address>"
+ *                   example: "Invalid DID format. Expected: did:dcert:<address>"
  *       500:
  *         description: Internal server error
  */
@@ -409,7 +409,7 @@ router.get("/blocks", did.numberofBlocks);
  *         required: true
  *         schema:
  *           type: string
- *         example: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *         example: "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *         description: DID to rotate key for
  *     requestBody:
  *       required: true
@@ -423,11 +423,11 @@ router.get("/blocks", did.numberofBlocks);
  *             properties:
  *               new_public_key:
  *                 type: string
- *                 example: "0x04f6e5d4c3b2a19876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba98765432"
+ *                 example: "04f6e5d4c3b2a19876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba98765432"
  *                 description: New public key in hexadecimal format
  *               signature:
  *                 type: string
- *                 example: "0x1234567890abcdef..."
+ *                 example: "1234567890abcdef..."
  *                 description: Signature created with old private key (sign the new public key)
  *               reason:
  *                 type: string
@@ -452,16 +452,16 @@ router.get("/blocks", did.numberofBlocks);
  *                   properties:
  *                     did:
  *                       type: string
- *                       example: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                       example: "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *                     old_public_key:
  *                       type: string
- *                       example: "0x04a1b2c3d4e5f6..."
+ *                       example: "04a1b2c3d4e5f6..."
  *                     new_public_key:
  *                       type: string
- *                       example: "0x04f6e5d4c3b2a1..."
+ *                       example: "04f6e5d4c3b2a1..."
  *                     blockchain_tx_hash:
  *                       type: string
- *                       example: "0xabcdef1234567890..."
+ *                       example: "abcdef1234567890..."
  *                     rotated_at:
  *                       type: string
  *                       format: date-time
@@ -514,7 +514,7 @@ router.put("/:did/key-rotation", keyRotationValidator, did.keyRotation);
  *         required: true
  *         schema:
  *           type: string
- *         example: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *         example: "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *         description: DID to deactivate
  *     requestBody:
  *       required: true
@@ -527,7 +527,7 @@ router.put("/:did/key-rotation", keyRotationValidator, did.keyRotation);
  *             properties:
  *               signature:
  *                 type: string
- *                 example: "0x1234567890abcdef..."
+ *                 example: "1234567890abcdef..."
  *                 description: Signature using private key for verification (sign the DID string)
  *               reason:
  *                 type: string
@@ -552,7 +552,7 @@ router.put("/:did/key-rotation", keyRotationValidator, did.keyRotation);
  *                   properties:
  *                     did:
  *                       type: string
- *                       example: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                       example: "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *                     status:
  *                       type: string
  *                       example: "DEACTIVATED"
@@ -562,7 +562,7 @@ router.put("/:did/key-rotation", keyRotationValidator, did.keyRotation);
  *                       example: "2025-10-21T10:30:00Z"
  *                     blockchain_tx_hash:
  *                       type: string
- *                       example: "0xfedcba9876543210..."
+ *                       example: "fedcba9876543210..."
  *       400:
  *         description: Invalid signature or validation error
  *       401:
@@ -603,7 +603,7 @@ router.delete("/:did", deleteDIDValidator, did.deleteDID);
  *         required: true
  *         schema:
  *           type: string
- *         example: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *         example: "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *         description: DID to get document for
  *     responses:
  *       200:
@@ -627,17 +627,17 @@ router.delete("/:did", deleteDIDValidator, did.deleteDID);
  *                     '@context':
  *                       - "https://www.w3.org/ns/did/v1"
  *                       - "https://w3id.org/security/v1"
- *                     id: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
- *                     controller: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                     id: "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                     controller: "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *                     verificationMethod:
- *                       - id: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb#key-1"
+ *                       - id: "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb#key-1"
  *                         type: "EcdsaSecp256k1VerificationKey2019"
- *                         controller: "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+ *                         controller: "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
  *                         publicKeyHex: "04a1b2c3d4e5f6789abcdef..."
  *                     authentication:
- *                       - "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb#key-1"
+ *                       - "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb#key-1"
  *                     assertionMethod:
- *                       - "did:ganesha:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb#key-1"
+ *                       - "did:dcert:742d35Cc6634C0532925a3b844Bc9e7595f0bEb#key-1"
  *                     created: "2025-10-21T10:30:00Z"
  *                     updated: "2025-10-21T10:30:00Z"
  *       404:

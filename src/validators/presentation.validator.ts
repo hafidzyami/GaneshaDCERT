@@ -9,14 +9,14 @@ export const requestVPValidator = [
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder DID format"),
 
   body("verifier_did")
     .trim()
     .notEmpty()
     .withMessage("Verifier DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid verifier DID format"),
 
   body("list_schema_id")
@@ -43,7 +43,7 @@ export const storeVPValidator = [
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder DID format"),
 
   body("vp")

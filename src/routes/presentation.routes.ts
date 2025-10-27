@@ -37,11 +37,11 @@ const router: Router = express.Router();
  *             properties:
  *               verifier_did:
  *                 type: string
- *                 example: did:ganesha:0xverifier123
+ *                 example: did:dcert:verifier123
  *                 description: DID of the verifier requesting the VP
  *               holder_did:
  *                 type: string
- *                 example: did:ganesha:0xholder456
+ *                 example: did:dcert:holder456
  *                 description: DID of the holder who should provide the VP
  *               requested_credentials:
  *                 type: array
@@ -172,7 +172,11 @@ router.post("/request", requestVPValidator, vp.requestVP);
  *       500:
  *         description: Internal server error
  */
-router.get("/request/:vpReqId", getVPRequestDetailsValidator, vp.getVPRequestDetails);
+router.get(
+  "/request/:vpReqId",
+  getVPRequestDetailsValidator,
+  vp.getVPRequestDetails
+);
 
 /**
  * @swagger
@@ -292,7 +296,7 @@ router.post("/", storeVPValidator, vp.storeVP);
  *                       example: ["VerifiablePresentation"]
  *                     holder:
  *                       type: string
- *                       example: did:ganesha:0xholder456
+ *                       example: did:dcert:holder456
  *                     verifiableCredential:
  *                       type: array
  *                       items:

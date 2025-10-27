@@ -42,7 +42,7 @@ const router = Router();
  *             properties:
  *               holder_did:
  *                 type: string
- *                 example: did:ganesha:0x1234567890abcdef
+ *                 example: did:dcert:1234567890abcdef
  *                 description: DID of the token holder
  *               push_token:
  *                 type: string
@@ -148,7 +148,7 @@ router.post("/unregister", unregisterPushTokenValidator, unregisterPushToken);
  *         required: true
  *         schema:
  *           type: string
- *         example: did:ganesha:0x1234567890abcdef
+ *         example: did:dcert:1234567890abcdef
  *         description: DID of the token holder
  *     responses:
  *       200:
@@ -190,7 +190,11 @@ router.post("/unregister", unregisterPushTokenValidator, unregisterPushToken);
  *       500:
  *         description: Internal server error
  */
-router.get("/tokens/:holder_did", getPushTokensByHolderValidator, getPushTokensByHolder);
+router.get(
+  "/tokens/:holder_did",
+  getPushTokensByHolderValidator,
+  getPushTokensByHolder
+);
 
 /**
  * @swagger
@@ -215,7 +219,7 @@ router.get("/tokens/:holder_did", getPushTokensByHolderValidator, getPushTokensB
  *                 type: array
  *                 items:
  *                   type: string
- *                 example: ["did:ganesha:0x1234567890abcdef"]
+ *                 example: ["did:dcert:1234567890abcdef"]
  *                 description: Array of recipient DIDs
  *               title:
  *                 type: string

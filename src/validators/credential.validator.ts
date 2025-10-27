@@ -9,7 +9,7 @@ export const getHolderCredentialsValidator = [
     .trim()
     .notEmpty()
     .withMessage("holder_did query parameter is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder_did format in query parameter"),
 ];
 export const processIssuanceVCValidator = [
@@ -24,14 +24,14 @@ export const processIssuanceVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder DID format"),
 
   body("action")
@@ -39,13 +39,17 @@ export const processIssuanceVCValidator = [
     .notEmpty()
     .withMessage("Action is required")
     .isIn([RequestStatus.APPROVED, RequestStatus.REJECTED])
-    .withMessage(`Action must be ${RequestStatus.APPROVED} or ${RequestStatus.REJECTED}`),
+    .withMessage(
+      `Action must be ${RequestStatus.APPROVED} or ${RequestStatus.REJECTED}`
+    ),
 
   body("request_type")
     .notEmpty()
     .withMessage("Request type is required")
     .isIn([RequestType.ISSUANCE])
-    .withMessage(`Invalid request type for this endpoint. Must be ${RequestType.ISSUANCE}`),
+    .withMessage(
+      `Invalid request type for this endpoint. Must be ${RequestType.ISSUANCE}`
+    ),
 
   // Conditional validation for fields required on APPROVAL
   body("vc_id")
@@ -82,8 +86,8 @@ export const processIssuanceVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("vc_hash is required when action is APPROVED")
-    .matches(/^0x[a-fA-F0-9]{64}$/) // Example validation for Keccak256 hash
-    .withMessage("Invalid vc_hash format (must be a 64-character hex string starting with 0x)"),
+    .matches(/^[a-fA-F0-9]{64}$/) // Example validation for Keccak256 hash
+    .withMessage("Invalid vc_hash format (must be a 64-character)"),
 
   body("encrypted_body")
     .if(body("action").equals(RequestStatus.APPROVED))
@@ -102,14 +106,14 @@ export const requestCredentialValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did") // Checks for holder_did
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder DID format"),
 ];
 
@@ -117,13 +121,20 @@ export const getCredentialRequestsByTypeValidator = [
   query("type")
     .notEmpty()
     .withMessage("Request type is required")
-    .isIn([RequestType.ISSUANCE, RequestType.RENEWAL, RequestType.UPDATE, RequestType.REVOKE])
-    .withMessage("Invalid request type. Must be ISSUANCE, RENEWAL, UPDATE, or REVOKE"),
+    .isIn([
+      RequestType.ISSUANCE,
+      RequestType.RENEWAL,
+      RequestType.UPDATE,
+      RequestType.REVOKE,
+    ])
+    .withMessage(
+      "Invalid request type. Must be ISSUANCE, RENEWAL, UPDATE, or REVOKE"
+    ),
 
   query("issuer_did")
     .optional()
     .trim()
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid issuer DID format"),
 ];
 
@@ -139,14 +150,14 @@ export const processCredentialResponseValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder DID format"),
 
   body("encrypted_body")
@@ -157,7 +168,12 @@ export const processCredentialResponseValidator = [
   body("request_type")
     .notEmpty()
     .withMessage("Request type is required")
-    .isIn([RequestType.ISSUANCE, RequestType.RENEWAL, RequestType.UPDATE, RequestType.REVOKE])
+    .isIn([
+      RequestType.ISSUANCE,
+      RequestType.RENEWAL,
+      RequestType.UPDATE,
+      RequestType.REVOKE,
+    ])
     .withMessage("Invalid request type"),
 ];
 
@@ -166,7 +182,7 @@ export const getHolderVCsValidator = [
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder DID format"),
 ];
 
@@ -175,14 +191,14 @@ export const credentialUpdateRequestValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder DID format"),
 
   body("encrypted_body")
@@ -196,14 +212,14 @@ export const credentialRenewalRequestValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder DID format"),
 
   body("encrypted_body")
@@ -217,14 +233,14 @@ export const credentialRevocationRequestValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder DID format"),
 
   body("encrypted_body")
@@ -234,54 +250,46 @@ export const credentialRevocationRequestValidator = [
 ];
 
 export const addVCStatusBlockValidator = [
-  body("vc_id")
-    .trim()
-    .notEmpty()
-    .withMessage("VC ID is required"),
+  body("vc_id").trim().notEmpty().withMessage("VC ID is required"),
 
   body("issuer_did")
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder DID format"),
 
-  body("status")
-    .isBoolean()
-    .withMessage("Status must be a boolean"),
+  body("status").isBoolean().withMessage("Status must be a boolean"),
 
   body("hash")
     .trim()
     .notEmpty()
     .withMessage("Hash is required")
-    .matches(/^0x[a-fA-F0-9]{64}$/)
+    .matches(/^[a-fA-F0-9]{64}$/)
     .withMessage("Invalid hash format"),
 ];
 
 export const getVCStatusValidator = [
-  param("vcId")
-    .trim()
-    .notEmpty()
-    .withMessage("VC ID is required"),
+  param("vcId").trim().notEmpty().withMessage("VC ID is required"),
 
   query("issuerDid")
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid issuer DID format"),
 
   query("holderDid")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder DID format"),
 ];
