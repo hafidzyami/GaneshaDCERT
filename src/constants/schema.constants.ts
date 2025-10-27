@@ -26,8 +26,9 @@ export const SCHEMA_CONSTANTS = {
   },
 
   // DID format
-  DID_REGEX: /^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/,
-  DID_FORMAT_MESSAGE: "Invalid issuer DID format. Expected format: did:method:identifier",
+  DID_REGEX: /^did:dcert:[iu][a-zA-Z0-9_-]{44}$/,
+  DID_FORMAT_MESSAGE:
+    "Invalid issuer DID format. Expected format: did:method:identifier",
 } as const;
 
 export const SCHEMA_ERRORS = {
@@ -37,7 +38,8 @@ export const SCHEMA_ERRORS = {
     SCHEMA_REQUIRED: "Schema object is required",
     SCHEMA_MUST_BE_OBJECT: "Schema must be a valid JSON object",
     SCHEMA_TYPE_REQUIRED: "Schema must have a 'type' property",
-    SCHEMA_PROPERTIES_REQUIRED: "Schema with type 'object' must have 'properties'",
+    SCHEMA_PROPERTIES_REQUIRED:
+      "Schema with type 'object' must have 'properties'",
     ISSUER_DID_REQUIRED: "Issuer DID is required",
     ISSUER_DID_INVALID: SCHEMA_CONSTANTS.DID_FORMAT_MESSAGE,
     ID_REQUIRED: "Schema ID is required",

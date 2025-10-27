@@ -413,7 +413,7 @@ router.get("/:id/active", isSchemaActiveValidator, vcSchema.isSchemaActive);
  *                 transaction_hash:
  *                   type: string
  *                   description: Blockchain transaction hash
- *                   example: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+ *                   example: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
  *       400:
  *         description: Invalid schema structure, validation error, or blockchain failure
  *         content:
@@ -506,7 +506,7 @@ router.post("/", createVCSchemaValidator, vcSchema.createVCSchema);
  *                 transaction_hash:
  *                   type: string
  *                   description: Blockchain transaction hash
- *                   example: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+ *                   example: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
  *       400:
  *         description: Invalid update data, validation error, or blockchain failure
  *         content:
@@ -579,7 +579,7 @@ router.put("/:id", updateVCSchemaValidator, vcSchema.updateVCSchema);
  *                           example: false
  *                 transaction_hash:
  *                   type: string
- *                   example: "0x9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba"
+ *                   example: "9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba"
  *       400:
  *         description: Schema is already deactivated or blockchain failure
  *       404:
@@ -634,7 +634,7 @@ router.patch(
  *                           example: true
  *                 transaction_hash:
  *                   type: string
- *                   example: "0xfedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+ *                   example: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
  *       400:
  *         description: Schema is already active or blockchain failure
  *       404:
