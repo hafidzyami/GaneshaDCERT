@@ -287,12 +287,7 @@ export const getVCStatusValidator = [
     .trim()
     .notEmpty()
     .withMessage("VC ID parameter (vcId) is required"),
-    // Add specific format validation if needed (e.g., UUID)
-    // .isUUID()
-    // .withMessage("Invalid VC ID format in URL parameter"),
-
-  // REMOVED query("issuerDid") validation
-  // REMOVED query("holderDid") validation
+    
 ];
 export const revokeVCValidator = [
   body("request_id")
