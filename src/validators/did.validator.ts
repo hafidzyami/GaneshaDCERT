@@ -22,9 +22,9 @@ export const registerDIDValidator = [
     .trim()
     .notEmpty()
     .withMessage("Public key is required")
-    .matches(/^0x[a-fA-F0-9]$/)
+    .matches(/^0x[a-fA-F0-9]{128,130}$/)
     .withMessage(
-      "Invalid public key format. Must be hex string starting with 0x"
+      "Invalid public key format. Must be hex string starting with 0x (64-65 bytes, 128-130 hex characters)"
     ),
 
   body("role")

@@ -40,6 +40,7 @@ export const registerDID = asyncHandler(async (req: Request, res: Response) => {
 
 /**
  * Check DID Controller
+ * Returns 200 even if DID not found
  */
 export const checkDID = asyncHandler(async (req: Request, res: Response) => {
   const errors = validationResult(req);
@@ -50,6 +51,11 @@ export const checkDID = asyncHandler(async (req: Request, res: Response) => {
   const { did } = req.params;
 
   const result = await DIDService.checkDID(did);
+
+  // Return 200 with appropriate message
+  if (!result.found) {
+    return ResponseHelper.success(res, result, result.message);
+  }
 
   return ResponseHelper.success(res, result);
 });
@@ -67,6 +73,7 @@ export const numberofBlocks = asyncHandler(
 
 /**
  * Key Rotation Controller
+ * Returns 200 even if DID not found
  */
 export const keyRotation = asyncHandler(async (req: Request, res: Response) => {
   const errors = validationResult(req);
@@ -79,11 +86,17 @@ export const keyRotation = asyncHandler(async (req: Request, res: Response) => {
 
   const result = await DIDService.rotateKey(did, new_public_key);
 
+  // Return 200 with appropriate message
+  if (!result.found) {
+    return ResponseHelper.success(res, result, result.message);
+  }
+
   return ResponseHelper.success(res, result, "Key rotated successfully");
 });
 
 /**
  * Delete DID Controller
+ * Returns 200 even if DID not found
  */
 export const deleteDID = asyncHandler(async (req: Request, res: Response) => {
   const errors = validationResult(req);
@@ -96,11 +109,17 @@ export const deleteDID = asyncHandler(async (req: Request, res: Response) => {
 
   const result = await DIDService.deactivateDID(did);
 
+  // Return 200 with appropriate message
+  if (!result.found) {
+    return ResponseHelper.success(res, result, result.message);
+  }
+
   return ResponseHelper.success(res, result, "DID deactivated successfully");
 });
 
 /**
  * Get DID Document Controller
+ * Returns 200 even if DID not found
  */
 export const getDIDDocument = asyncHandler(
   async (req: Request, res: Response) => {
@@ -113,11 +132,17 @@ export const getDIDDocument = asyncHandler(
 
     const result = await DIDService.getDIDDocument(did);
 
+    // Handle bigint serialization
     const sanitizedDocument = JSON.parse(
       JSON.stringify(result, (key, value) =>
         typeof value === "bigint" ? value.toString() : value
       )
     );
+
+    // Return 200 with appropriate message
+    if (!sanitizedDocument.found) {
+      return ResponseHelper.success(res, sanitizedDocument, sanitizedDocument.message);
+    }
 
     return ResponseHelper.success(res, sanitizedDocument);
   }
