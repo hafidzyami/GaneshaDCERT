@@ -24,8 +24,8 @@ export const registerInstitutionValidator = [
     .trim()
     .notEmpty()
     .withMessage("Phone is required")
-    .matches(/^\+?[1-9]\d{1,14}$/)
-    .withMessage("Must be a valid phone number"),
+    .isMobilePhone("any")
+    .withMessage("Must be a valid mobile phone number with a country code (e.g., +1... or +62...)"),
 
   body("country")
     .trim()

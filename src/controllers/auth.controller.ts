@@ -4,7 +4,6 @@ import { AuthService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler } from "../middlewares";
 import { ResponseHelper } from "../utils/helpers";
-import { HTTP_STATUS } from "../constants";
 
 /**
  * Register Institution Controller

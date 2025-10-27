@@ -1,4 +1,4 @@
-import { ValidationError as ExpressValidatorError } from 'express-validator';
+import { ValidationError as ExpressValidatorError } from "express-validator";
 
 /**
  * Transform Helper
@@ -10,11 +10,22 @@ export class TransformHelper {
    * Transform express-validator errors to readable format
    */
   static transformValidationErrors(errors: ExpressValidatorError[]): any[] {
-    return errors.map((error) => ({
-      field: error.type === 'field' ? (error as any).path : 'unknown',
-      message: error.msg,
-      value: error.type === 'field' ? (error as any).value : undefined,
-    }));
+    return errors.map((error) => {
+      if (error.type === "field") {
+        const fieldError = error as any;
+        return {
+          type: error.type,
+          field: fieldError.path,
+          value: fieldError.value,
+          message: error.msg,
+          location: fieldError.location || "body",
+        };
+      }
+      return {
+        type: error.type,
+        message: error.msg,
+      };
+    });
   }
 
   /**

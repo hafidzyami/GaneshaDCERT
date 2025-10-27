@@ -18,6 +18,16 @@ export const errorHandler = (
   let message = 'Internal server error';
   let errors: any[] | undefined;
 
+  // Debug: Log error type and properties
+  logger.debug('Error Handler Debug:', {
+    errorName: error.name,
+    errorMessage: error.message,
+    isAppError: error instanceof AppError,
+    isValidationError: error instanceof ValidationError,
+    hasErrorsProperty: 'errors' in error,
+    errorProperties: Object.keys(error)
+  });
+
   // Handle operational errors
   if (error instanceof AppError) {
     statusCode = error.statusCode;

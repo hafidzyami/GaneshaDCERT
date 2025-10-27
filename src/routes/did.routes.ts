@@ -211,6 +211,9 @@ const router: Router = express.Router();
  *                 data:
  *                   type: object
  *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Institutional DID registered successfully"
  *                     did:
  *                       type: string
  *                       example: "did:ganesha:0x1234567890abcdef"
