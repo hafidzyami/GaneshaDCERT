@@ -107,6 +107,30 @@ class SchemaService {
         orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
       });
 
+      for (const schema of schemas) {
+        if (!schema.issuer_name) {
+          try {
+            // Get DID document from blockchain
+            const didDocument = await DIDBlockchainService.getDIDDocument(
+              schema.issuer_did
+            );
+
+            // Extract name from DID document
+            const issuerName = didDocument.details?.name || null;
+
+            if (issuerName) {
+              // Update schema with issuer name
+              await prisma.vCSchema.update({
+                where: { id: schema.id },
+                data: { issuer_name: issuerName },
+              });
+            }
+          } catch (error) {
+            console.error(`❌ Failed to process schema ${schema.id}`);
+          }
+        }
+      }
+
       this.logSuccess(
         "Get all schemas",
         `Retrieved ${schemas.length} schema(s)`
@@ -127,6 +151,32 @@ class SchemaService {
 
       const schema = await prisma.vCSchema.findUnique({
         where: { id },
+      });
+
+      if (!schema) {
+        throw new NotFoundError(
+          `${SCHEMA_CONSTANTS.MESSAGES.NOT_FOUND}: ${id}`
+        );
+      }
+
+      this.logSuccess("Get schema by ID", id);
+      return schema;
+    } catch (error: any) {
+      this.logError("Get schema by ID", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get schema by ID
+   */
+  async getLastSchemaById(id: string): Promise<VCSchema> {
+    try {
+      this.logStart("Get schema by ID", id);
+
+      const schema = await prisma.vCSchema.findFirst({
+        where: { id },
+        orderBy: { version: "desc" },
       });
 
       if (!schema) {
@@ -237,13 +287,16 @@ class SchemaService {
       const issuer_did_document =
         await this.didBlockchainService.getDIDDocument(data.issuer_did);
 
+      // Safe property access dengan optional chaining
+      const issuerName = issuer_did_document?.data?.details?.name || null;
+
       // 1. Create in database
       createdSchema = await prisma.vCSchema.create({
         data: {
           name: data.name,
           schema: data.schema as Prisma.InputJsonValue,
           issuer_did: data.issuer_did,
-          issuer_name: issuer_did_document["data"]["details"]["email"],
+          issuer_name: issuerName,
           version: SCHEMA_CONSTANTS.INITIAL_VERSION,
           isActive: true,
         },
@@ -298,12 +351,13 @@ class SchemaService {
 
     try {
       // 1. Get existing schema
-      const existingSchema = await this.getSchemaById(id);
+      const existingSchema = await this.getLastSchemaById(id);
 
       // 2. Create new version in database
       const newVersion = existingSchema.version + 1;
       newVersionSchema = await prisma.vCSchema.create({
         data: {
+          id: existingSchema.id,
           name: existingSchema.name,
           schema: data.schema as Prisma.InputJsonValue,
           issuer_did: existingSchema.issuer_did,

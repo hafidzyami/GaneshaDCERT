@@ -1,11 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { AppError, ValidationError } from '../utils';
 import { env, logger } from '../config';
-import { HTTP_STATUS } from '../constants';
 import { TransformHelper } from '../utils/helpers';
 
 /**
  * Global Error Handler Middleware
+ * 
+ * NEW PATTERN: All errors return HTTP 200 with success: false
+ * This provides consistent response structure for frontend handling
  */
 export const errorHandler = (
   error: Error | AppError,
@@ -13,8 +15,7 @@ export const errorHandler = (
   res: Response,
   next: NextFunction
 ): void => {
-  // Default error values
-  let statusCode: number = HTTP_STATUS.INTERNAL_SERVER_ERROR;
+  // Default error message
   let message = 'Internal server error';
   let errors: any[] | undefined;
 
@@ -30,7 +31,6 @@ export const errorHandler = (
 
   // Handle operational errors
   if (error instanceof AppError) {
-    statusCode = error.statusCode;
     message = error.message;
 
     // Handle ValidationError specifically
@@ -47,6 +47,15 @@ export const errorHandler = (
           body: req.body,
         });
       }
+    } else {
+      // Log other operational errors
+      logger.warn('Operational Error:', {
+        name: error.name,
+        message: error.message,
+        statusCode: error.statusCode,
+        url: req.originalUrl,
+        method: req.method,
+      });
     }
   } else {
     // Log unexpected errors
@@ -70,7 +79,7 @@ export const errorHandler = (
     }
   }
 
-  // Build response object
+  // Build response object - ALWAYS with success: false
   const responseObj: any = {
     success: false,
     message,
@@ -92,17 +101,18 @@ export const errorHandler = (
     responseObj.name = error.name;
   }
 
-  // Send error response
-  res.status(statusCode).json(responseObj);
+  // IMPORTANT: Always return HTTP 200 with success: false
+  res.status(200).json(responseObj);
 };
 
 /**
  * Handle 404 Not Found
+ * Returns HTTP 200 with success: false
  */
 export const notFoundHandler = (req: Request, res: Response): void => {
   logger.warn(`Route not found: ${req.method} ${req.originalUrl}`);
   
-  res.status(HTTP_STATUS.NOT_FOUND).json({
+  res.status(200).json({
     success: false,
     message: `Route ${req.method} ${req.originalUrl} not found`,
     ...(req.requestId && { requestId: req.requestId }),
