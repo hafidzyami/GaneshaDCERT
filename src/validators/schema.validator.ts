@@ -101,7 +101,26 @@ export const getAllSchemaVersionsValidator = [
 ];
 
 /**
- * Validator for GET /schemas/:id
+ * Validator for GET /schemas/:id/versions
+ */
+export const getAllVersionsByIdValidator = [schemaIdValidation];
+
+/**
+ * Validator for GET /schemas/:id/version/:version
+ */
+export const getSchemaByIdAndVersionValidator = [
+  schemaIdValidation,
+  param("version")
+    .trim()
+    .notEmpty()
+    .withMessage("Version is required")
+    .isInt({ min: 1 })
+    .withMessage("Version must be a positive integer")
+    .toInt(),
+];
+
+/**
+ * Validator for GET /schemas/:id (deprecated - kept for backward compatibility)
  */
 export const getSchemaByIdValidator = [schemaIdValidation];
 

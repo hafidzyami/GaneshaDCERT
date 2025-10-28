@@ -4,6 +4,8 @@ import {
   getAllVCSchemasValidator,
   getLatestSchemaVersionValidator,
   getAllSchemaVersionsValidator,
+  getAllVersionsByIdValidator,
+  getSchemaByIdAndVersionValidator,
   getSchemaByIdValidator,
   createVCSchemaValidator,
   updateVCSchemaValidator,
@@ -19,7 +21,7 @@ const router: Router = express.Router();
  * @swagger
  * tags:
  *   name: VC Schema Management
- *   description: Verifiable Credential schema management endpoints (Database + Blockchain)
+ *   description: Verifiable Credential schema management endpoints
  */
 
 /**
@@ -91,7 +93,7 @@ const router: Router = express.Router();
  *       **Filters:**
  *       - Filter by issuer DID (institution only)
  *       - Show only active schemas
- *       
+ *
  *       **DID Format:** `did:dcert:[i/u][44 chars]`
  *       - Characters allowed: a-z, A-Z, 0-9, _ (underscore), - (hyphen)
  *     tags:
@@ -145,7 +147,7 @@ router.get("/", getAllVCSchemasValidator, vcSchema.getAllVCSchemas);
  *       Get the latest version of a schema by name and issuer DID (READ from Database only).
  *
  *       **Use Case:** Get current active version of a credential schema.
- *       
+ *
  *       **DID Format:** `did:dcert:[i/u][44 chars]`
  *       - Characters allowed: a-z, A-Z, 0-9, _ (underscore), - (hyphen)
  *     tags:
@@ -203,7 +205,7 @@ router.get(
  *       Get all versions of a specific schema by name and issuer DID (READ from Database only).
  *
  *       **Use Case:** View version history of a credential schema.
- *       
+ *
  *       **DID Format:** `did:dcert:[i/u][44 chars]`
  *       - Characters allowed: a-z, A-Z, 0-9, _ (underscore), - (hyphen)
  *     tags:
@@ -260,10 +262,15 @@ router.get(
 
 /**
  * @swagger
- * /schemas/{id}:
+ * /schemas/{id}/versions:
  *   get:
- *     summary: Get schema by ID
- *     description: Retrieve a specific schema by its UUID (READ from Database only)
+ *     summary: Get all versions of a schema by ID
+ *     description: |
+ *       Retrieve all versions of a specific schema by its UUID (READ from Database only).
+ *
+ *       **Use Case:** View version history of a schema based on ID only.
+ *
+ *       **Returns:** All versions sorted by version number (descending - newest first)
  *     tags:
  *       - VC Schema Management
  *     parameters:
@@ -275,6 +282,68 @@ router.get(
  *           format: uuid
  *         description: Schema UUID
  *         example: "550e8400-e29b-41d4-a716-446655440000"
+ *     responses:
+ *       200:
+ *         description: All schema versions retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 count:
+ *                   type: integer
+ *                   description: Number of versions found
+ *                   example: 3
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/VCSchema'
+ *       400:
+ *         description: Invalid UUID format
+ *       404:
+ *         description: Schema not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/:id/versions",
+  getAllVersionsByIdValidator,
+  vcSchema.getAllVersionsById
+);
+
+/**
+ * @swagger
+ * /schemas/{id}/version/{version}:
+ *   get:
+ *     summary: Get schema by ID and Version
+ *     description: |
+ *       Retrieve a specific schema by its UUID and version number (READ from Database only).
+ *
+ *       **Use Case:** Get exact version of a schema.
+ *
+ *       **Both parameters are required.**
+ *     tags:
+ *       - VC Schema Management
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schema UUID
+ *         example: "550e8400-e29b-41d4-a716-446655440000"
+ *       - in: path
+ *         name: version
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: Schema version number
+ *         example: 2
  *     responses:
  *       200:
  *         description: Schema retrieved successfully
@@ -289,13 +358,17 @@ router.get(
  *                 data:
  *                   $ref: '#/components/schemas/VCSchema'
  *       400:
- *         description: Invalid UUID format
+ *         description: Invalid UUID or version format
  *       404:
- *         description: Schema not found
+ *         description: Schema version not found
  *       500:
  *         description: Internal server error
  */
-router.get("/:id", getSchemaByIdValidator, vcSchema.getSchemaById);
+router.get(
+  "/:id/version/:version",
+  getSchemaByIdAndVersionValidator,
+  vcSchema.getSchemaByIdAndVersion
+);
 
 /**
  * @swagger
@@ -362,7 +435,7 @@ router.get("/:id/active", isSchemaActiveValidator, vcSchema.isSchemaActive);
  *       - Object schemas must have 'properties'
  *       - Issuer DID format: did:dcert:[i/u][44 chars]
  *       - Only institutions (prefix 'i') can create schemas
- *       
+ *
  *       **DID Format Rules:**
  *       - Pattern: `did:dcert:[i/u][44 chars]` (55 chars total)
  *       - Prefix 'i' for institution (required), 'u' for individual
@@ -535,7 +608,7 @@ router.post("/", createVCSchemaValidator, vcSchema.createVCSchema);
  *       - Each update creates a new version
  *       - Previous versions remain accessible
  *       - Version number auto-increments
- *       
+ *
  *       **Important:**
  *       - Schema must have 'type' property
  *       - Object schemas must have 'properties'

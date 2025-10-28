@@ -81,6 +81,7 @@ export interface VCSchemaListResponseDTO {
  */
 export interface SchemaActiveStatusDTO {
   id: string;
+  version: number;
   isActive: boolean;
 }
 
