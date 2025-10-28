@@ -1,6 +1,7 @@
 import { BadRequestError, NotFoundError } from "../utils/errors/AppError";
 import logger from "../config/logger";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
+import DIDBlockchainService from "./blockchain/didBlockchain.service";
 import { prisma } from "../config/database";
 import { VCSchema, Prisma } from "@prisma/client";
 import {
@@ -16,11 +17,11 @@ import { SCHEMA_CONSTANTS } from "../constants/schema.constants";
 
 /**
  * VC Schema Service
- * 
+ *
  * ARCHITECTURE STRATEGY:
  * - GET operations: Read from Database only (fast, no blockchain calls)
  * - POST/PUT/DELETE operations: Write to both Database + Blockchain (with rollback on failure)
- * 
+ *
  * PRINCIPLES:
  * - Single Responsibility: Each method does one thing well
  * - DRY: Reusable helper methods
@@ -28,10 +29,15 @@ import { SCHEMA_CONSTANTS } from "../constants/schema.constants";
  * - Transaction Safety: Database rollback on blockchain failures
  */
 class SchemaService {
-  private blockchainService: typeof VCBlockchainService;
+  private vcBlockchainService: typeof VCBlockchainService;
+  private didBlockchainService: typeof DIDBlockchainService;
 
-  constructor(blockchainService?: typeof VCBlockchainService) {
-    this.blockchainService = blockchainService || VCBlockchainService;
+  constructor(
+    vcBlockchainService?: typeof VCBlockchainService,
+    didBlockchainService?: typeof DIDBlockchainService
+  ) {
+    this.vcBlockchainService = vcBlockchainService || VCBlockchainService;
+    this.didBlockchainService = didBlockchainService || DIDBlockchainService;
   }
 
   // ============================================
@@ -98,14 +104,13 @@ class SchemaService {
 
       const schemas = await prisma.vCSchema.findMany({
         where,
-        orderBy: [
-          { issuer_did: "asc" },
-          { name: "asc" },
-          { version: "desc" },
-        ],
+        orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
       });
 
-      this.logSuccess("Get all schemas", `Retrieved ${schemas.length} schema(s)`);
+      this.logSuccess(
+        "Get all schemas",
+        `Retrieved ${schemas.length} schema(s)`
+      );
       return schemas;
     } catch (error: any) {
       this.logError("Get all schemas", error);
@@ -125,7 +130,9 @@ class SchemaService {
       });
 
       if (!schema) {
-        throw new NotFoundError(`${SCHEMA_CONSTANTS.MESSAGES.NOT_FOUND}: ${id}`);
+        throw new NotFoundError(
+          `${SCHEMA_CONSTANTS.MESSAGES.NOT_FOUND}: ${id}`
+        );
       }
 
       this.logSuccess("Get schema by ID", id);
@@ -141,7 +148,10 @@ class SchemaService {
    */
   async getLatestVersion(params: SchemaByNameDTO): Promise<VCSchema> {
     try {
-      this.logStart("Get latest version", `${params.name} by ${params.issuerDid}`);
+      this.logStart(
+        "Get latest version",
+        `${params.name} by ${params.issuerDid}`
+      );
 
       const schema = await prisma.vCSchema.findFirst({
         where: {
@@ -159,7 +169,10 @@ class SchemaService {
         );
       }
 
-      this.logSuccess("Get latest version", `v${schema.version} (ID: ${schema.id})`);
+      this.logSuccess(
+        "Get latest version",
+        `v${schema.version} (ID: ${schema.id})`
+      );
       return schema;
     } catch (error: any) {
       this.logError("Get latest version", error);
@@ -221,12 +234,16 @@ class SchemaService {
     let createdSchema: VCSchema | null = null;
 
     try {
+      const issuer_did_document =
+        await this.didBlockchainService.getDIDDocument(data.issuer_did);
+
       // 1. Create in database
       createdSchema = await prisma.vCSchema.create({
         data: {
           name: data.name,
           schema: data.schema as Prisma.InputJsonValue,
           issuer_did: data.issuer_did,
+          issuer_name: issuer_did_document["data"]["details"]["email"],
           version: SCHEMA_CONSTANTS.INITIAL_VERSION,
           isActive: true,
         },
@@ -236,7 +253,7 @@ class SchemaService {
 
       // 2. Create in blockchain
       const schemaString = this.toBlockchainFormat(data.schema);
-      const receipt = await this.blockchainService.createVCSchemaInBlockchain(
+      const receipt = await this.vcBlockchainService.createVCSchemaInBlockchain(
         createdSchema.id,
         data.name,
         schemaString,
@@ -253,8 +270,12 @@ class SchemaService {
     } catch (error: any) {
       // Rollback database if blockchain fails
       if (createdSchema) {
-        logger.warn(`[SchemaService] Rolling back database for schema: ${createdSchema.id}`);
-        await prisma.vCSchema.delete({ where: { id: createdSchema.id } }).catch(() => {});
+        logger.warn(
+          `[SchemaService] Rolling back database for schema: ${createdSchema.id}`
+        );
+        await prisma.vCSchema
+          .delete({ where: { id: createdSchema.id } })
+          .catch(() => {});
       }
 
       this.logError("Create schema", error);
@@ -286,16 +307,20 @@ class SchemaService {
           name: existingSchema.name,
           schema: data.schema as Prisma.InputJsonValue,
           issuer_did: existingSchema.issuer_did,
+          issuer_name: existingSchema.issuer_name,
           version: newVersion,
           isActive: true,
         },
       });
 
-      this.logSuccess("Update schema in DB", `${newVersionSchema.id} v${newVersion}`);
+      this.logSuccess(
+        "Update schema in DB",
+        `${newVersionSchema.id} v${newVersion}`
+      );
 
       // 3. Update in blockchain
       const schemaString = this.toBlockchainFormat(data.schema);
-      const receipt = await this.blockchainService.updateVCSchemaInBlockchain(
+      const receipt = await this.vcBlockchainService.updateVCSchemaInBlockchain(
         existingSchema.id,
         schemaString
       );
@@ -310,8 +335,12 @@ class SchemaService {
     } catch (error: any) {
       // Rollback database if blockchain fails
       if (newVersionSchema) {
-        logger.warn(`[SchemaService] Rolling back database for schema: ${newVersionSchema.id}`);
-        await prisma.vCSchema.delete({ where: { id: newVersionSchema.id } }).catch(() => {});
+        logger.warn(
+          `[SchemaService] Rolling back database for schema: ${newVersionSchema.id}`
+        );
+        await prisma.vCSchema
+          .delete({ where: { id: newVersionSchema.id } })
+          .catch(() => {});
       }
 
       this.logError("Update schema", error);
@@ -344,10 +373,11 @@ class SchemaService {
       this.logSuccess("Deactivate schema in DB", id);
 
       // 3. Deactivate in blockchain
-      const receipt = await this.blockchainService.deactivateVCSchemaInBlockchain(
-        schema.id,
-        schema.version
-      );
+      const receipt =
+        await this.vcBlockchainService.deactivateVCSchemaInBlockchain(
+          schema.id,
+          schema.version
+        );
 
       this.logSuccess("Deactivate schema in blockchain", `TX: ${receipt.hash}`);
 
@@ -358,13 +388,20 @@ class SchemaService {
       };
     } catch (error: any) {
       // Rollback database if blockchain fails
-      if (error instanceof BadRequestError && error.message.includes("Blockchain")) {
-        logger.warn(`[SchemaService] Rolling back deactivation for schema: ${id}`);
-        await prisma.vCSchema.update({ where: { id }, data: { isActive: true } }).catch(() => {});
+      if (
+        error instanceof BadRequestError &&
+        error.message.includes("Blockchain")
+      ) {
+        logger.warn(
+          `[SchemaService] Rolling back deactivation for schema: ${id}`
+        );
+        await prisma.vCSchema
+          .update({ where: { id }, data: { isActive: true } })
+          .catch(() => {});
       }
 
       this.logError("Deactivate schema", error);
-      
+
       if (error instanceof BadRequestError) {
         throw error;
       }
@@ -398,10 +435,11 @@ class SchemaService {
       this.logSuccess("Reactivate schema in DB", id);
 
       // 3. Reactivate in blockchain
-      const receipt = await this.blockchainService.reactivateVCSchemaInBlockchain(
-        schema.id,
-        schema.version
-      );
+      const receipt =
+        await this.vcBlockchainService.reactivateVCSchemaInBlockchain(
+          schema.id,
+          schema.version
+        );
 
       this.logSuccess("Reactivate schema in blockchain", `TX: ${receipt.hash}`);
 
@@ -412,13 +450,20 @@ class SchemaService {
       };
     } catch (error: any) {
       // Rollback database if blockchain fails
-      if (error instanceof BadRequestError && error.message.includes("Blockchain")) {
-        logger.warn(`[SchemaService] Rolling back reactivation for schema: ${id}`);
-        await prisma.vCSchema.update({ where: { id }, data: { isActive: false } }).catch(() => {});
+      if (
+        error instanceof BadRequestError &&
+        error.message.includes("Blockchain")
+      ) {
+        logger.warn(
+          `[SchemaService] Rolling back reactivation for schema: ${id}`
+        );
+        await prisma.vCSchema
+          .update({ where: { id }, data: { isActive: false } })
+          .catch(() => {});
       }
 
       this.logError("Reactivate schema", error);
-      
+
       if (error instanceof BadRequestError) {
         throw error;
       }

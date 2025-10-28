@@ -114,14 +114,14 @@ router.post(
  *         schema:
  *           type: string
  *         description: Filter by issuer DID. (Either this or holder_did is required).
- *         example: did:ganesha:0xabcdef1234567890
+ *         example: did:dcert:abcdef1234567890
  *       - in: query
  *         name: holder_did
  *         required: false
  *         schema:
  *           type: string
  *         description: Filter by holder DID. (Either this or issuer_did is required).
- *         example: did:ganesha:0x1234567890abcdef
+ *         example: did:dcert:1234567890abcdef
  *     responses:
  *       200:
  *         description: List of credential requests retrieved successfully.
@@ -435,11 +435,11 @@ router.post(
  *                 description: Encrypted payload containing the VC ID to revoke and the reason.
  *               issuer_did:
  *                 type: string
- *                 example: did:ganesha:0xabcdef1234567890
+ *                 example: did:dcert:abcdef1234567890
  *                 description: DID of the entity requesting revocation (usually issuer or holder).
  *               holder_did:
  *                 type: string
- *                 example: did:ganesha:0x1234567890abcdef
+ *                 example: did:dcert:1234567890abcdef
  *                 description: DID of the credential holder.
  *     responses:
  *       201:

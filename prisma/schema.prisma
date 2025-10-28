@@ -140,14 +140,15 @@ model InstitutionRegistration {
 }
 
 model VCSchema {
-  id         String   @id @default(uuid())
-  name       String
-  schema     Json
-  issuer_did String
-  version    Int      @default(1)
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          String   @id @default(uuid())
+  name        String
+  schema      Json
+  issuer_did  String
+  issuer_name String?
+  version     Int      @default(1)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 
