@@ -244,6 +244,32 @@ class SchemaService {
   }
 
   /**
+   * Get schema by ID
+   */
+  async getLastSchemaById(id: string): Promise<VCSchema> {
+    try {
+      this.logStart("Get schema by ID", id);
+
+      const schema = await prisma.vCSchema.findFirst({
+        where: { id },
+        orderBy: { version: "desc" },
+      });
+
+      if (!schema) {
+        throw new NotFoundError(
+          `${SCHEMA_CONSTANTS.MESSAGES.NOT_FOUND}: ${id}`
+        );
+      }
+
+      this.logSuccess("Get schema by ID", id);
+      return schema;
+    } catch (error: any) {
+      this.logError("Get schema by ID", error);
+      throw error;
+    }
+  }
+
+  /**
    * Get latest version of a schema by name and issuer
    */
   async getLatestVersion(params: SchemaByNameDTO): Promise<VCSchema> {
@@ -411,7 +437,7 @@ class SchemaService {
 
     try {
       // 1. Get existing schema
-      const existingSchema = await this.getSchemaById(id);
+      const existingSchema = await this.getLastSchemaById(id);
 
       // 2. Create new version in database
       const newVersion = existingSchema.version + 1;
