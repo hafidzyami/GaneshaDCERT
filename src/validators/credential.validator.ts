@@ -151,7 +151,7 @@ export const getCredentialRequestsByTypeValidator: ValidationChain[] = [
   query("issuer_did")
     .optional() // Keep optional
     .trim()
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid issuer_did format in query parameter"),
 
   query("holder_did") // Add validation for holder_did
@@ -253,7 +253,8 @@ export const credentialRenewalRequestValidator = [
     .withMessage("Encrypted body is required"),
 ];
 
-export const credentialRevocationRequestValidator = [ // Name matches route usage
+export const credentialRevocationRequestValidator = [
+  // Name matches route usage
   body("issuer_did") // Validate issuer_did
     .trim()
     .notEmpty()
@@ -268,11 +269,10 @@ export const credentialRevocationRequestValidator = [ // Name matches route usag
     .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid holder DID format"),
 
-  body("encrypted_body") 
+  body("encrypted_body")
     .trim()
     .notEmpty()
     .withMessage("Encrypted body is required"),
-
 ];
 
 export const addVCStatusBlockValidator = [
@@ -331,7 +331,7 @@ export const revokeVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did")
