@@ -89,8 +89,22 @@ class SchemaService {
     return where;
   }
 
+  /**
+   * Internal helper: Get schema by ID with optional version
+   * Used internally by other methods (deactivate, reactivate, etc)
+   */
+  private async getSchemaById(id: string, version?: number): Promise<VCSchema> {
+    if (version !== undefined) {
+      return this.getSchemaByIdAndVersion(id, version);
+    }
+    
+    // Get latest version
+    const schemas = await this.getAllVersionsById(id);
+    return schemas[0]; // Already sorted by version desc
+  }
+
   // ============================================
-  // 🔹 GETTER METHODS (Database Only)
+  // 🔹 PUBLIC GETTER METHODS (Database Only)
   // ============================================
 
   /**
@@ -204,46 +218,6 @@ class SchemaService {
   }
 
   /**
-   * Internal helper: Get schema by ID with optional version
-   * Used internally by other methods (deactivate, reactivate, etc)
-   */
-  private async getSchemaById(id: string, version?: number): Promise<VCSchema> {
-    if (version !== undefined) {
-      return this.getSchemaByIdAndVersion(id, version);
-    }
-    
-    // Get latest version
-    const schemas = await this.getAllVersionsById(id);
-    return schemas[0]; // Already sorted by version desc
-  }
-
-  /**
-   * Get schema by ID
-   */
-  async getLastSchemaById(id: string): Promise<VCSchema> {
-    try {
-      this.logStart("Get schema by ID", id);
-
-      const schema = await prisma.vCSchema.findFirst({
-        where: { id },
-        orderBy: { version: "desc" },
-      });
-
-      if (!schema) {
-        throw new NotFoundError(
-          `${SCHEMA_CONSTANTS.MESSAGES.NOT_FOUND}: ${id}`
-        );
-      }
-
-      this.logSuccess("Get schema by ID", id);
-      return schema;
-    } catch (error: any) {
-      this.logError("Get schema by ID", error);
-      throw error;
-    }
-  }
-
-  /**
    * Get latest version of a schema by name and issuer
    */
   async getLatestVersion(params: SchemaByNameDTO): Promise<VCSchema> {
@@ -281,7 +255,7 @@ class SchemaService {
   }
 
   /**
-   * Get all versions of a schema
+   * Get all versions of a schema by name and issuer
    */
   async getAllVersions(params: SchemaByNameDTO): Promise<VCSchema[]> {
     try {
