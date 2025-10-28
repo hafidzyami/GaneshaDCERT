@@ -1,11 +1,11 @@
-import { Request, Response, NextFunction } from 'express';
-import { AppError, ValidationError } from '../utils';
-import { env, logger } from '../config';
-import { TransformHelper } from '../utils/helpers';
+import { Request, Response, NextFunction } from "express";
+import { AppError, ValidationError } from "../utils";
+import { env, logger } from "../config";
+import { TransformHelper } from "../utils/helpers";
 
 /**
  * Global Error Handler Middleware
- * 
+ *
  * NEW PATTERN: All errors return HTTP 200 with success: false
  * This provides consistent response structure for frontend handling
  */
@@ -16,17 +16,17 @@ export const errorHandler = (
   next: NextFunction
 ): void => {
   // Default error message
-  let message = 'Internal server error';
+  let message = "Internal server error";
   let errors: any[] | undefined;
 
   // Debug: Log error type and properties
-  logger.debug('Error Handler Debug:', {
+  logger.debug("Error Handler Debug:", {
     errorName: error.name,
     errorMessage: error.message,
     isAppError: error instanceof AppError,
     isValidationError: error instanceof ValidationError,
-    hasErrorsProperty: 'errors' in error,
-    errorProperties: Object.keys(error)
+    hasErrorsProperty: "errors" in error,
+    errorProperties: Object.keys(error),
   });
 
   // Handle operational errors
@@ -35,11 +35,15 @@ export const errorHandler = (
 
     // Handle ValidationError specifically
     if (error instanceof ValidationError) {
-      if (error.errors && Array.isArray(error.errors) && error.errors.length > 0) {
+      if (
+        error.errors &&
+        Array.isArray(error.errors) &&
+        error.errors.length > 0
+      ) {
         errors = TransformHelper.transformValidationErrors(error.errors);
-        
+
         // Log validation errors for debugging
-        logger.warn('Validation Error:', {
+        logger.warn("Validation Error:", {
           message: error.message,
           errors: errors,
           url: req.originalUrl,
@@ -49,7 +53,7 @@ export const errorHandler = (
       }
     } else {
       // Log other operational errors
-      logger.warn('Operational Error:', {
+      logger.warn("Operational Error:", {
         name: error.name,
         message: error.message,
         statusCode: error.statusCode,
@@ -59,7 +63,7 @@ export const errorHandler = (
     }
   } else {
     // Log unexpected errors
-    logger.error('Unexpected Error', {
+    logger.error("Unexpected Error", {
       name: error.name,
       message: error.message,
       stack: error.stack,
@@ -72,8 +76,8 @@ export const errorHandler = (
     });
 
     // Don't expose internal error details in production
-    if (env.NODE_ENV === 'production') {
-      message = 'Something went wrong';
+    if (env.NODE_ENV === "production") {
+      message = "Something went wrong";
     } else {
       message = error.message;
     }
@@ -96,7 +100,7 @@ export const errorHandler = (
   }
 
   // Add stack trace in development
-  if (env.NODE_ENV === 'development') {
+  if (env.NODE_ENV === "development") {
     responseObj.stack = error.stack;
     responseObj.name = error.name;
   }
@@ -111,7 +115,7 @@ export const errorHandler = (
  */
 export const notFoundHandler = (req: Request, res: Response): void => {
   logger.warn(`Route not found: ${req.method} ${req.originalUrl}`);
-  
+
   res.status(200).json({
     success: false,
     message: `Route ${req.method} ${req.originalUrl} not found`,
