@@ -83,7 +83,7 @@ class SchemaService {
     }
 
     if (filter.activeOnly) {
-      where.isActive = true;
+      where.isActive = filter.activeOnly;
     }
 
     return where;

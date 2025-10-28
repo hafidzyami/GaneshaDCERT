@@ -84,12 +84,15 @@ export const getSchemaByIdAndVersion = asyncHandler(
 
     const { id, version } = req.params;
     const versionNumber = parseInt(version);
-    
+
     if (isNaN(versionNumber)) {
       throw new ValidationError("Version must be a valid number");
     }
 
-    const schema = await SchemaService.getSchemaByIdAndVersion(id, versionNumber);
+    const schema = await SchemaService.getSchemaByIdAndVersion(
+      id,
+      versionNumber
+    );
 
     return ResponseHelper.success(res, schema);
   }
@@ -154,7 +157,9 @@ export const isSchemaActive = asyncHandler(
     }
 
     const { id } = req.params;
-    const version = req.query.version ? parseInt(req.query.version as string) : undefined;
+    const version = req.query.version
+      ? parseInt(req.query.version as string)
+      : undefined;
     const status = await SchemaService.isActive(id, version);
 
     return ResponseHelper.success(res, status);
@@ -236,7 +241,9 @@ export const deactivateVCSchema = asyncHandler(
     }
 
     const { id } = req.params;
-    const version = req.query.version ? parseInt(req.query.version as string) : undefined;
+    const version = req.query.version
+      ? parseInt(req.query.version as string)
+      : undefined;
     const result = await SchemaService.deactivate(id, version);
 
     return ResponseHelper.success(
@@ -262,7 +269,9 @@ export const reactivateVCSchema = asyncHandler(
     }
 
     const { id } = req.params;
-    const version = req.query.version ? parseInt(req.query.version as string) : undefined;
+    const version = req.query.version
+      ? parseInt(req.query.version as string)
+      : undefined;
     const result = await SchemaService.reactivate(id, version);
 
     return ResponseHelper.success(
@@ -288,7 +297,9 @@ export const deleteVCSchema = asyncHandler(
     }
 
     const { id } = req.params;
-    const version = req.query.version ? parseInt(req.query.version as string) : undefined;
+    const version = req.query.version
+      ? parseInt(req.query.version as string)
+      : undefined;
     const result = await SchemaService.delete(id, version);
 
     return ResponseHelper.success(

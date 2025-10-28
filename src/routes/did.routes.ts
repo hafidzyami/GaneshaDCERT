@@ -1,6 +1,9 @@
 import express, { Router } from "express";
 import * as did from "../controllers/did.controller";
-import { optionalInstitutionAuthMiddleware } from "../middlewares/auth.middleware";
+import {
+  optionalInstitutionAuthMiddleware,
+  verifyTokenInstitutionAuthMiddleware,
+} from "../middlewares/auth.middleware";
 import {
   registerDIDValidator,
   checkDIDValidator,
@@ -364,7 +367,7 @@ const router: Router = express.Router();
 router.post(
   "/",
   registerDIDValidator,
-  optionalInstitutionAuthMiddleware,
+  verifyTokenInstitutionAuthMiddleware,
   did.registerDID
 );
 
