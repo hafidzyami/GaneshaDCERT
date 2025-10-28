@@ -3,7 +3,6 @@ import { verifySessionToken } from "../services";
 import { HTTP_STATUS } from "../constants";
 import { logger } from "../config";
 import { prisma } from "../config/database";
-import { generateSessionToken } from "../services/jwt.service";
 
 /**
  * Extended Request interface with institution data
@@ -226,7 +225,7 @@ export const verifyTokenInstitutionAuthMiddleware = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { role, email } = req.body;
+    const { role } = req.body;
 
     // If role is "individual", skip token validation
     if (role === "individual") {
@@ -268,29 +267,13 @@ export const verifyTokenInstitutionAuthMiddleware = async (
         return;
       }
 
-      const institution = await prisma.institutionRegistration.findUnique({
-        where: { email },
-      });
+      // Verify token
+      const decoded = verifySessionToken(token);
 
-      // Check if institution registry not found
-      if (!institution) {
-        res.status(HTTP_STATUS.NOT_FOUND).json({
-          success: false,
-          message: `Institution with Email ${email} Not Found`,
-        });
-        return;
-      }
-
-      const sessionToken = generateSessionToken(
-        institution.id,
-        institution.email
-      );
-
-      // Check if token token match
-      if (token === sessionToken) {
+      if (!decoded) {
         res.status(HTTP_STATUS.UNAUTHORIZED).json({
           success: false,
-          message: "Token does not match. Please fill your valid token.",
+          message: "Token tidak valid atau sudah kadaluarsa",
         });
         return;
       }
