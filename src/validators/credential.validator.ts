@@ -15,7 +15,7 @@ export const getHolderCredentialsValidator = [
     .trim()
     .notEmpty()
     .withMessage("holder_did query parameter is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder_did format in query parameter"),
 ];
 export const processIssuanceVCValidator = [
@@ -30,14 +30,14 @@ export const processIssuanceVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder DID format"),
 
   body("action")
@@ -112,14 +112,14 @@ export const requestCredentialValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did") // Checks for holder_did
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder DID format"),
 ];
 
@@ -151,13 +151,13 @@ export const getCredentialRequestsByTypeValidator: ValidationChain[] = [
   query("issuer_did")
     .optional() // Keep optional
     .trim()
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid issuer_did format in query parameter"),
 
   query("holder_did") // Add validation for holder_did
     .optional() // Make it optional individually
     .trim()
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder_did format in query parameter"),
 
   // Add custom validation to ensure at least one DID is present
@@ -175,14 +175,14 @@ export const processCredentialResponseValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder DID format"),
 
   body("encrypted_body")
@@ -207,7 +207,7 @@ export const getHolderVCsValidator = [
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder DID format"),
 ];
 
@@ -216,14 +216,14 @@ export const credentialUpdateRequestValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder DID format"),
 
   body("encrypted_body")
@@ -237,14 +237,14 @@ export const credentialRenewalRequestValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder DID format"),
 
   body("encrypted_body")
@@ -259,14 +259,14 @@ export const credentialRevocationRequestValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did") // Validate holder_did
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder DID format"),
 
   body("encrypted_body")
@@ -282,14 +282,14 @@ export const addVCStatusBlockValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder DID format"),
 
   body("status").isBoolean().withMessage("Status must be a boolean"),
@@ -309,14 +309,14 @@ export const getVCStatusValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid issuer DID format"),
 
   query("holderDid")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder DID format"),
 ];
 export const revokeVCValidator = [
@@ -331,14 +331,14 @@ export const revokeVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("Issuer DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid issuer DID format"),
 
   body("holder_did")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder DID format"),
 
   body("action")
