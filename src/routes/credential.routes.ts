@@ -42,17 +42,17 @@ const router: Router = express.Router();
  *             properties:
  *               holder_did:
  *                 type: string
- *                 example: did:ganesha:0x1234567890abcdef
+ *                 example: did:dcert:1234567890abcdef
  *                 description: DID of the credential holder
  *               issuer_did:
  *                 type: string
- *                 example: did:ganesha:0xabcdef1234567890
+ *                 example: did:dcert:string_hash
  *                 description: DID of the credential issuer
  *               encrypted_body:
  *                 type: string
  *                 format: uuid
  *                 description: ID of the VC schema to use
- *               
+ *
  *     responses:
  *       201:
  *         description: Credential request created successfully
@@ -83,7 +83,11 @@ const router: Router = express.Router();
  *       500:
  *         description: Internal server error
  */
-router.post("/requests", requestCredentialValidator, credentialController.requestCredential);
+router.post(
+  "/requests",
+  requestCredentialValidator,
+  credentialController.requestCredential
+);
 
 /**
  * @swagger
@@ -107,14 +111,14 @@ router.post("/requests", requestCredentialValidator, credentialController.reques
  *         schema:
  *           type: string
  *         description: Filter by issuer DID. (Either this or holder_did is required).
- *         example: did:ganesha:0xabcdef1234567890
+ *         example: did:dcert:abcdef1234567890
  *       - in: query
  *         name: holder_did
  *         required: false
  *         schema:
  *           type: string
  *         description: Filter by holder DID. (Either this or issuer_did is required).
- *         example: did:ganesha:0x1234567890abcdef
+ *         example: did:dcert:1234567890abcdef
  *     responses:
  *       200:
  *         description: List of credential requests retrieved successfully.
@@ -151,8 +155,78 @@ router.post("/requests", requestCredentialValidator, credentialController.reques
  *       500:
  *         description: Internal server error.
  */
-router.get("/get-requests", getCredentialRequestsByTypeValidator, credentialController.getCredentialRequestsByType);
+router.get(
+  "/get-requests",
+  getCredentialRequestsByTypeValidator,
+  credentialController.getCredentialRequestsByType
+);
 
+/**
+ * @swagger
+ * /credentials/response:
+ *   post:
+ *     summary: Process credential response
+ *     description: Issuer approves or rejects credential request (issuance, renewal, or update)
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - request_id
+ *               - action
+ *             properties:
+ *               request_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the credential request
+ *               action:
+ *                 type: string
+ *                 enum: [APPROVE, REJECT]
+ *                 description: Action to take on the request
+ *               rejection_reason:
+ *                 type: string
+ *                 description: Required if action is REJECT
+ *               credential_data:
+ *                 type: object
+ *                 description: Credential data if approving
+ *     responses:
+ *       200:
+ *         description: Credential response processed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Kredensial berhasil diterbitkan
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vc_id:
+ *                       type: string
+ *                       format: uuid
+ *                     status:
+ *                       type: string
+ *       400:
+ *         description: Invalid request or validation error
+ *       404:
+ *         description: Request not found
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  "/response",
+  processCredentialResponseValidator,
+  credentialController.processCredentialResponse
+);
 
 /**
  * @swagger
@@ -208,7 +282,11 @@ router.get("/get-requests", getCredentialRequestsByTypeValidator, credentialCont
  *       500:
  *         description: Internal server error
  */
-router.get("/credentials", getHolderVCsValidator, credentialController.getHolderVCs);
+router.get(
+  "/credentials",
+  getHolderVCsValidator,
+  credentialController.getHolderVCs
+);
 
 /**
  * @swagger
@@ -268,7 +346,11 @@ router.get("/credentials", getHolderVCsValidator, credentialController.getHolder
  *       500:
  *         description: Internal server error.
  */
-router.post("/update-request", credentialUpdateRequestValidator, credentialController.requestCredentialUpdate);
+router.post(
+  "/update-request",
+  credentialUpdateRequestValidator,
+  credentialController.requestCredentialUpdate
+);
 
 /**
  * @swagger
@@ -328,7 +410,11 @@ router.post("/update-request", credentialUpdateRequestValidator, credentialContr
  *       500:
  *         description: Internal server error.
  */
-router.post("/renew-request", credentialRenewalRequestValidator, credentialController.requestCredentialRenewal);
+router.post(
+  "/renew-requests",
+  credentialRenewalRequestValidator,
+  credentialController.requestCredentialRenewal
+);
 
 /**
  * @swagger
@@ -356,11 +442,11 @@ router.post("/renew-request", credentialRenewalRequestValidator, credentialContr
  *                 description: Encrypted payload containing the VC ID to revoke and the reason.
  *               issuer_did:
  *                 type: string
- *                 example: did:ganesha:0xabcdef1234567890
+ *                 example: did:dcert:abcdef1234567890
  *                 description: DID of the entity requesting revocation (usually issuer or holder).
  *               holder_did:
  *                 type: string
- *                 example: did:ganesha:0x1234567890abcdef
+ *                 example: did:dcert:1234567890abcdef
  *                 description: DID of the credential holder.
  *     responses:
  *       201:
@@ -388,8 +474,74 @@ router.post("/renew-request", credentialRenewalRequestValidator, credentialContr
  *       500:
  *         description: Internal server error.
  */
-router.post("/revoke-request", credentialRevocationRequestValidator, credentialController.requestCredentialRevocation);
+router.post(
+  "/revoke-request",
+  credentialRevocationRequestValidator,
+  credentialController.requestCredentialRevocation
+);
 
+/**
+ * @swagger
+ * /credentials/add-status-block:
+ *   post:
+ *     summary: Add VC status block to blockchain
+ *     description: Record credential status change on the blockchain
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - vc_id
+ *               - status
+ *             properties:
+ *               vc_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the credential
+ *               status:
+ *                 type: string
+ *                 enum: [ACTIVE, REVOKED, SUSPENDED, EXPIRED]
+ *                 description: New status of the credential
+ *               reason:
+ *                 type: string
+ *                 description: Reason for status change
+ *     responses:
+ *       201:
+ *         description: Status block added to blockchain successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Status block berhasil ditambahkan ke blockchain
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     block_hash:
+ *                       type: string
+ *                     block_index:
+ *                       type: integer
+ *       400:
+ *         description: Invalid request data
+ *       404:
+ *         description: Credential not found
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  "/add-status-block",
+  addVCStatusBlockValidator,
+  credentialController.addVCStatusBlock
+);
 
 /**
  * @swagger
@@ -448,7 +600,11 @@ router.post("/revoke-request", credentialRevocationRequestValidator, credentialC
  *       500:
  *         description: Internal server error or blockchain communication error.
  */
-router.get("/:vcId/status", getVCStatusValidator, credentialController.getVCStatus);
+router.get(
+  "/:vcId/status",
+  getVCStatusValidator,
+  credentialController.getVCStatus
+);
 
 /**
  * @swagger
@@ -477,11 +633,11 @@ router.get("/:vcId/status", getVCStatusValidator, credentialController.getVCStat
  *                 description: ID of the VCIssuanceRequest to process
  *               issuer_did:
  *                 type: string
- *                 example: did:ganesha:0xabcdef1234567890
+ *                 example: did:dcert:string_hash0
  *                 description: DID of the issuer (must match original request)
  *               holder_did:
  *                 type: string
- *                 example: did:ganesha:0x1234567890abcdef
+ *                 example: did:dcert:string_hashf
  *                 description: DID of the holder (must match original request)
  *               action:
  *                 type: string
@@ -508,7 +664,7 @@ router.get("/:vcId/status", getVCStatusValidator, credentialController.getVCStat
  *                 description: Version of the schema used (Required if action is APPROVED)
  *               vc_hash:
  *                 type: string
- *                 example: "0x..."
+ *                 example: "string_hash"
  *                 description: Hash of the VC data (Required if action is APPROVED)
  *               encrypted_body:
  *                 type: string
@@ -573,7 +729,7 @@ router.post(
  *         required: true
  *         schema:
  *           type: string
- *         example: did:ganesha:0x1234567890abcdef
+ *         example: did:dcert:string_hashf
  *         description: DID of the credential holder whose VCs are requested
  *     responses:
  *       200:
@@ -588,7 +744,7 @@ router.post(
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: "Successfully retrieved 2 credentials for holder did:ganesha:..."
+ *                   example: "Successfully retrieved 2 credentials for holder did:dcert:..."
  *                 data:
  *                   type: array
  *                   items:
@@ -619,9 +775,9 @@ router.post(
  *         description: Internal server error.
  */
 router.get(
-  "/get-credentials-from-db", 
-  getHolderCredentialsValidator, 
-  credentialController.getHolderCredentialsFromDB 
+  "/get-credentials-from-db",
+  getHolderCredentialsValidator,
+  credentialController.getHolderCredentialsFromDB
 );
 
 /**

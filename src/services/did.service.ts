@@ -120,18 +120,24 @@ class DIDService {
 
   /**
    * Check if DID exists
+   * Returns 200 with found status instead of throwing NotFoundError
    */
   async checkDID(did: string) {
     const exists = await this.blockchainService.isDIDRegistered(did);
 
     if (!exists) {
-      throw new NotFoundError("DID not found");
+      return {
+        found: false,
+        error: "Not Found",
+        message: "DID not found on blockchain",
+        did,
+      };
     }
 
     return {
+      found: true,
       message: "DID exists",
       did,
-      exists: true,
     };
   }
 
@@ -149,12 +155,18 @@ class DIDService {
 
   /**
    * Rotate DID key
+   * Returns 200 with found status instead of throwing NotFoundError
    */
   async rotateKey(did: string, newPublicKey: string) {
     // Check if DID exists
     const exists = await this.blockchainService.isDIDRegistered(did);
     if (!exists) {
-      throw new NotFoundError("DID not found");
+      return {
+        found: false,
+        error: "Not Found",
+        message: "DID not found on blockchain",
+        did,
+      };
     }
 
     // Rotate key
@@ -164,6 +176,7 @@ class DIDService {
     );
 
     return {
+      found: true,
       message: "DID key rotated successfully",
       did,
       transactionHash: receipt.hash,
@@ -173,12 +186,18 @@ class DIDService {
 
   /**
    * Deactivate DID
+   * Returns 200 with found status instead of throwing NotFoundError
    */
   async deactivateDID(did: string) {
     // Check if DID exists
     const exists = await this.blockchainService.isDIDRegistered(did);
     if (!exists) {
-      throw new NotFoundError("DID not found");
+      return {
+        found: false,
+        error: "Not Found",
+        message: "DID not found on blockchain",
+        did,
+      };
     }
 
     // Deactivate DID
@@ -187,6 +206,7 @@ class DIDService {
     // TODO: Trigger batch revocation for all associated VCs via message queue
 
     return {
+      found: true,
       message: "DID deactivated successfully",
       did,
       transactionHash: receipt.hash,
@@ -196,9 +216,15 @@ class DIDService {
 
   /**
    * Get DID Document
+   * Returns 200 with found status instead of throwing NotFoundError
    */
   async getDIDDocument(did: string) {
     const document = await this.blockchainService.getDIDDocument(did);
+
+    // If DID not found, return the error response with 200 status
+    if (!document.found) {
+      return document;
+    }
 
     return {
       message: "DID document retrieved successfully",

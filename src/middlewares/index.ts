@@ -11,3 +11,6 @@ export * from './rateLimit.middleware';
 
 // Export asyncHandler separately for convenience
 export { asyncHandler } from './errorHandler.middleware';
+
+// Export types
+export type { RequestWithInstitution } from './auth.middleware';
