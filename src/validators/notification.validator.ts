@@ -9,7 +9,7 @@ export const registerPushTokenValidator = [
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
+    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder DID format"),
 
   body("token").trim().notEmpty().withMessage("Push token is required"),
@@ -30,7 +30,7 @@ export const getPushTokensByHolderValidator = [
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
+    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder DID format"),
 ];
 
@@ -41,7 +41,7 @@ export const sendPushNotificationValidator = [
 
   body("holder_dids.*")
     .trim()
-    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
+    .matches(/^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Each holder DID must be valid"),
 
   body("title")
