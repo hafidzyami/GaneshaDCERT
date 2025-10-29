@@ -2,7 +2,7 @@ import express, { Router } from 'express';
 import {
   registerInstitution,
   getPendingInstitutions,
-  getAllInstitutions,
+  getAllRegistrationInstitutions,
   approveInstitution,
   rejectInstitution,
   verifyMagicLink,
@@ -251,7 +251,7 @@ router.get('/pending-institutions', adminAuthMiddleware, getPendingInstitutions)
  *       500:
  *         description: Internal server error
  */
-router.get('/institutions', adminAuthMiddleware, getAllInstitutionsValidator, getAllInstitutions);
+router.get('/institutions', adminAuthMiddleware, getAllInstitutionsValidator, getAllRegistrationInstitutions);
 
 /**
  * @swagger

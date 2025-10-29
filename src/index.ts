@@ -26,6 +26,7 @@ import {
   schemaRoutes,
   presentationRoutes,
   notificationRoutes,
+  institutionRoutes,
 } from "./routes";
 
 const app: Application = express();
@@ -225,6 +226,7 @@ app.use("/api/v1/schemas", schemaRoutes);
 app.use("/api/v1/credentials", credentialRoutes);
 app.use("/api/v1/presentations", presentationRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
+app.use("/api/v1/institutions", institutionRoutes);
 
 // 404 Handler - must be after all routes
 app.use(notFoundHandler);
