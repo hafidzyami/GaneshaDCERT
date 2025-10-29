@@ -802,6 +802,7 @@ router.delete("/:did", deleteDIDValidator, did.deleteDID);
  *                     id: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
  *                     status: "Active"
  *                     role: "Institutional"
+ *                     keyId: "#key-1"
  *                     "#key-1": "04a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd"
  *                     details:
  *                       email: "admin@ui.ac.id"

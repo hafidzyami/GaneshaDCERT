@@ -267,6 +267,7 @@ class DIDBlockchainService {
         id: did,
         status: document[0] == 1 ? "InActive" : "Active",
         role: document[1] == 1 ? "Individual" : "Institutional",
+        keyId: keyId,
         [keyId]: publicKey,
         details: jsonDetails,
       };
