@@ -356,7 +356,6 @@ export const revokeVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("vc_id is required when action is APPROVED"),
-<<<<<<< HEAD
     // .isUUID() // Add format check if needed
     // .withMessage("Invalid vc_id format"),
 ];
@@ -456,8 +455,3 @@ export const processUpdateVCValidator = [
     .notEmpty()
     .withMessage("encrypted_body (new VC data) is required when action is APPROVED"),
 ];
-=======
-  // .isUUID() // Add format check if needed
-  // .withMessage("Invalid vc_id format"),
-];
->>>>>>> 4a3e8e3d5a56b4e9432a07471eed1cd30bca7d8b
