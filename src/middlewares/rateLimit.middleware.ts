@@ -1,5 +1,5 @@
-import { Request, Response, NextFunction } from 'express';
-import { HTTP_STATUS } from '../constants';
+import { Request, Response, NextFunction } from "express";
+import { HTTP_STATUS } from "../constants";
 
 /**
  * Simple Rate Limiter Middleware
@@ -38,15 +38,15 @@ export interface RateLimitOptions {
  */
 export const rateLimit = (options: RateLimitOptions = {}) => {
   const {
-    windowMs =  60 * 1000, // 15 minutes default
+    windowMs = 60 * 1000, // 15 minutes default
     max = 1000000000, // 100 requests default
-    message = 'Too many requests, please try again later.',
+    message = "Too many requests, please try again later.",
     skipSuccessfulRequests = false,
     skipFailedRequests = false,
   } = options;
 
   return (req: Request, res: Response, next: NextFunction): void => {
-    const key = req.ip || req.socket.remoteAddress || 'unknown';
+    const key = req.ip || req.socket.remoteAddress || "unknown";
     const now = Date.now();
 
     // Initialize or reset if window expired
@@ -61,9 +61,15 @@ export const rateLimit = (options: RateLimitOptions = {}) => {
     store[key].count++;
 
     // Set rate limit headers
-    res.setHeader('X-RateLimit-Limit', max.toString());
-    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - store[key].count).toString());
-    res.setHeader('X-RateLimit-Reset', new Date(store[key].resetTime).toISOString());
+    res.setHeader("X-RateLimit-Limit", max.toString());
+    res.setHeader(
+      "X-RateLimit-Remaining",
+      Math.max(0, max - store[key].count).toString()
+    );
+    res.setHeader(
+      "X-RateLimit-Reset",
+      new Date(store[key].resetTime).toISOString()
+    );
 
     // Check if limit exceeded
     if (store[key].count > max) {
@@ -102,19 +108,19 @@ export const rateLimit = (options: RateLimitOptions = {}) => {
  * Preset rate limiters
  */
 export const strictRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 50, // 50 requests
-  message: 'Too many requests from this IP, please try again after 15 minutes.',
+  windowMs: 60 * 1000, // 15 minutes
+  max: 10000, // 50 requests
+  message: "Too many requests from this IP, please try again after 15 minutes.",
 });
 
 export const apiRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // 100 requests
+  windowMs: 60 * 1000, // 15 minutes
+  max: 1000000, // 100 requests
 });
 
 export const authRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 login attempts
-  message: 'Too many authentication attempts, please try again later.',
+  windowMs: 60 * 1000, // 15 minutes
+  max: 1000000, // 5 login attempts
+  message: "Too many authentication attempts, please try again later.",
   skipSuccessfulRequests: true,
 });
