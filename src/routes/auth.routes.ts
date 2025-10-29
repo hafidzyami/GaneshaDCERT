@@ -15,7 +15,7 @@ import {
   approveInstitutionValidator,
   rejectInstitutionValidator,
   verifyMagicLinkValidator,
-  getAllInstitutionsValidator,
+  getAllRegistrationInstitutionsValidator,
 } from '../validators/auth.validator';
 
 const router: Router = express.Router();
@@ -251,7 +251,7 @@ router.get('/pending-institutions', adminAuthMiddleware, getPendingInstitutions)
  *       500:
  *         description: Internal server error
  */
-router.get('/institutions', adminAuthMiddleware, getAllInstitutionsValidator, getAllRegistrationInstitutions);
+router.get('/institutions', adminAuthMiddleware, getAllRegistrationInstitutionsValidator, getAllRegistrationInstitutions);
 
 /**
  * @swagger
