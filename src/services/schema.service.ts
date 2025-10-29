@@ -346,11 +346,13 @@ class SchemaService {
     let createdSchema: VCSchema | null = null;
 
     try {
-      const issuer_did_document =
-        await this.didBlockchainService.getDIDDocument(data.issuer_did);
+      // Get DID document from blockchain
+      const didDocument = await DIDBlockchainService.getDIDDocument(
+        data.issuer_did
+      );
 
-      // Safe property access dengan optional chaining
-      const issuerName = issuer_did_document?.data?.details?.name || null;
+      // Extract name from DID document
+      const issuerName = didDocument.details?.name || null;
 
       // 1. Create in database
       createdSchema = await prisma.vCSchema.create({

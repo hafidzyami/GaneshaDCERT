@@ -34,6 +34,17 @@ const envSchema = z.object({
 
   // Frontend
   FRONTEND_URL: z.string().url(),
+
+  // MinIO
+  MINIO_ENDPOINT: z.string().default("localhost"),
+  MINIO_PORT: z.string().default("9000").transform(Number),
+  MINIO_ACCESS_KEY: z.string().min(1),
+  MINIO_SECRET_KEY: z.string().min(1),
+  MINIO_USE_SSL: z
+    .string()
+    .default("false")
+    .transform((val) => val === "true"),
+  MINIO_BUCKET_NAME: z.string().default("dcert-storage"),
 });
 
 type Env = z.infer<typeof envSchema>;
