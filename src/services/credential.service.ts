@@ -2,7 +2,7 @@ import { PrismaClient, RequestType, RequestStatus } from "@prisma/client"; // Re
 import { prisma } from "../config/database";
 import { BadRequestError, NotFoundError, BlockchainError } from "../utils/errors/AppError";
 import logger from "../config/logger";
-import { VCStatusResponseDTO,CredentialRevocationRequestDTO, CredentialRevocationResponseDTO, ProcessIssuanceVCDTO, ProcessIssuanceVCResponseDTO, HolderCredentialDTO, RevokeVCDTO, RevokeVCResponseDTO } from "../dtos";
+import { ProcessUpdateVCDTO, ProcessUpdateVCResponseDTO, ProcessRenewalVCDTO, ProcessRenewalVCResponseDTO, VCStatusResponseDTO,CredentialRevocationRequestDTO, CredentialRevocationResponseDTO, ProcessIssuanceVCDTO, ProcessIssuanceVCResponseDTO, HolderCredentialDTO, RevokeVCDTO, RevokeVCResponseDTO } from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 
 
@@ -556,6 +556,221 @@ class CredentialService {
       throw new BadRequestError(`Invalid action specified: ${action}.`);
     }
   }
+
+  async processRenewalVC(data: ProcessRenewalVCDTO): Promise<ProcessRenewalVCResponseDTO> {
+    const { request_id, issuer_did, holder_did, action, vc_id, encrypted_body } = data;
+
+    // 1. Find the original renewal request
+    const renewalRequest = await this.db.vCRenewalRequest.findUnique({
+      where: { id: request_id },
+    });
+
+    if (!renewalRequest) {
+      throw new NotFoundError(`Renewal request with ID ${request_id} not found.`);
+    }
+
+    // 2. Check if already processed
+    if (renewalRequest.status !== RequestStatus.PENDING) {
+      throw new BadRequestError(`Renewal request ${request_id} has already been processed (Status: ${renewalRequest.status}).`);
+    }
+
+    // 3. Validate DIDs
+    if (renewalRequest.issuer_did !== issuer_did || renewalRequest.holder_did !== holder_did) {
+      throw new BadRequestError(`Issuer DID or Holder DID does not match the original renewal request.`);
+    }
+
+    // 4. Process based on action
+    if (action === RequestStatus.REJECTED) {
+      // Update DB status to REJECTED
+      const updatedRequest = await this.db.vCRenewalRequest.update({
+        where: { id: request_id },
+        data: { status: RequestStatus.REJECTED },
+      });
+
+      logger.warn(`VC Renewal request rejected: ${request_id}`);
+
+      return {
+        message: "Verifiable Credential renewal request rejected.",
+        request_id: updatedRequest.id,
+        status: updatedRequest.status,
+      };
+
+    } else if (action === RequestStatus.APPROVED) {
+      // Ensure required fields for approval are present
+      if (!vc_id || !encrypted_body) {
+        throw new BadRequestError("vc_id and encrypted_body are required when action is APPROVED.");
+      }
+
+      logger.info(`Processing approval for renewal request ${request_id} targeting VC ${vc_id}`);
+
+      // --- Blockchain Call ---
+      let blockchainReceipt: any;
+      try {
+        // Call the renew function on the blockchain
+        blockchainReceipt = await VCBlockchainService.renewVCInBlockchain(vc_id);
+        logger.success(`VC ${vc_id} renewed successfully on blockchain. TX: ${blockchainReceipt?.hash}`);
+      } catch (blockchainError: any) {
+        logger.error(`Blockchain renewal failed during approval for request ${request_id} (VC ${vc_id}):`, blockchainError);
+        // Handle specific errors like NotFoundError if the service throws them
+        if (blockchainError instanceof NotFoundError) {
+             throw new NotFoundError(`VC with ID ${vc_id} not found on the blockchain. Cannot process renewal request ${request_id}.`);
+        }
+        throw new BadRequestError(`Blockchain renewal failed: ${blockchainError.message}`);
+      }
+      // -------------------------
+
+      // --- Database Updates ---
+      // Use a transaction for atomicity
+      const result = await this.db.$transaction(async (tx) => {
+          // Update renewal request status
+          const updatedRequest = await tx.vCRenewalRequest.update({
+            where: { id: request_id },
+            data: { status: RequestStatus.APPROVED },
+          });
+
+          // Create a new VCResponse record for the renewal
+          const newVCResponse = await tx.vCResponse.create({
+            data: {
+              request_id: request_id, // Link to the VCRenewalRequest
+              request_type: RequestType.RENEWAL, // Set type to RENEWAL
+              issuer_did: issuer_did,
+              holder_did: holder_did,
+              encrypted_body: encrypted_body, // Store the new encrypted body
+            },
+          });
+
+          logger.info(`Renewal request ${request_id} status updated to APPROVED. New VCResponse created: ${newVCResponse.id}`);
+          return { updatedRequest, newVCResponse };
+      });
+      // ------------------------
+
+      return {
+        message: "Verifiable Credential renewal request approved and VC renewed on blockchain.",
+        request_id: result.updatedRequest.id,
+        status: result.updatedRequest.status,
+        vc_response_id: result.newVCResponse.id, // Include the new VCResponse ID
+        transaction_hash: blockchainReceipt?.hash,
+        block_number: blockchainReceipt?.blockNumber,
+      };
+    } else {
+      throw new BadRequestError(`Invalid action specified: ${action}.`);
+    }
+  }
+
+  async processUpdateVC(data: ProcessUpdateVCDTO): Promise<ProcessUpdateVCResponseDTO> {
+    const { request_id, issuer_did, holder_did, action, vc_id, new_vc_hash, encrypted_body } = data;
+
+    // 1. Find the original update request
+    const updateRequest = await this.db.vCUpdateRequest.findUnique({
+      where: { id: request_id },
+    });
+
+    if (!updateRequest) {
+      throw new NotFoundError(`Update request with ID ${request_id} not found.`);
+    }
+
+    // 2. Check if already processed
+    if (updateRequest.status !== RequestStatus.PENDING) {
+      throw new BadRequestError(`Update request ${request_id} has already been processed (Status: ${updateRequest.status}).`);
+    }
+
+    // 3. Validate DIDs
+    if (updateRequest.issuer_did !== issuer_did || updateRequest.holder_did !== holder_did) {
+      throw new BadRequestError(`Issuer DID or Holder DID does not match the original update request.`);
+    }
+
+    // 4. Process based on action
+    if (action === RequestStatus.REJECTED) {
+      // Update DB status to REJECTED
+      const updatedRequest = await this.db.vCUpdateRequest.update({
+        where: { id: request_id },
+        data: { status: RequestStatus.REJECTED },
+      });
+
+      logger.warn(`VC Update request rejected: ${request_id}`);
+
+      return {
+        message: "Verifiable Credential update request rejected.",
+        request_id: updatedRequest.id,
+        status: updatedRequest.status,
+      };
+
+    } else if (action === RequestStatus.APPROVED) {
+      // Ensure required fields for approval are present
+      if (!vc_id || !new_vc_hash || !encrypted_body) {
+        throw new BadRequestError("vc_id, new_vc_hash, and encrypted_body are required when action is APPROVED.");
+      }
+
+      logger.info(`Processing approval for update request ${request_id} targeting VC ${vc_id}`);
+
+      // --- Pre-Update Blockchain Check ---
+      try {
+        const currentVcStatus = await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
+        if (currentVcStatus && currentVcStatus.status === false) {
+           logger.warn(`Attempted to approve update for an inactive/revoked VC: ${vc_id}`);
+           // Decide if you should allow updating a revoked VC. Usually not.
+           throw new BadRequestError(`Cannot approve update for VC ${vc_id} because it is currently inactive/revoked on the blockchain.`);
+        }
+        logger.info(`VC ${vc_id} found and is active. Proceeding with blockchain update.`);
+      } catch (error: any) {
+          logger.error(`Pre-update check failed for VC ${vc_id}:`, error);
+          if (error instanceof NotFoundError) {
+               throw new NotFoundError(`Original VC with ID ${vc_id} not found on the blockchain. Cannot approve update request ${request_id}.`);
+          }
+           if (error instanceof BadRequestError) { throw error; } // Rethrow specific errors
+          throw new BadRequestError(`Failed to verify VC status before update: ${error.message}`);
+      }
+      // ------------------------------------
+
+      // --- Blockchain Update Call ---
+      let blockchainReceipt: any;
+      try {
+        // Call the update function on the blockchain
+        blockchainReceipt = await VCBlockchainService.updateVCInBlockchain(vc_id, new_vc_hash);
+        logger.success(`VC ${vc_id} updated successfully on blockchain with new hash. TX: ${blockchainReceipt?.hash}`);
+      } catch (blockchainError: any) {
+        logger.error(`Blockchain update failed during approval for request ${request_id} (VC ${vc_id}):`, blockchainError);
+        throw new BadRequestError(`Blockchain update failed: ${blockchainError.message}`);
+      }
+      // -----------------------------
+
+      // --- Database Updates ---
+      const result = await this.db.$transaction(async (tx) => {
+          // Update update request status
+          const updatedRequest = await tx.vCUpdateRequest.update({
+            where: { id: request_id },
+            data: { status: RequestStatus.APPROVED },
+          });
+
+          // Create a new VCResponse record for the update
+          const newVCResponse = await tx.vCResponse.create({
+            data: {
+              request_id: request_id, // Link to the VCUpdateRequest
+              request_type: RequestType.UPDATE, // Set type to UPDATE
+              issuer_did: issuer_did,
+              holder_did: holder_did,
+              encrypted_body: encrypted_body, // Store the new encrypted body
+            },
+          });
+
+          logger.info(`Update request ${request_id} status updated to APPROVED. New VCResponse created: ${newVCResponse.id}`);
+          return { updatedRequest, newVCResponse };
+      });
+      // ------------------------
+
+      return {
+        message: "Verifiable Credential update request approved and VC updated on blockchain.",
+        request_id: result.updatedRequest.id,
+        status: result.updatedRequest.status,
+        vc_response_id: result.newVCResponse.id, // Include the new VCResponse ID
+        transaction_hash: blockchainReceipt?.hash,
+        block_number: blockchainReceipt?.blockNumber,
+      };
+    } else {
+      throw new BadRequestError(`Invalid action specified: ${action}.`);
+    }
+  }
+
 }
 
 // Export singleton instance for backward compatibility

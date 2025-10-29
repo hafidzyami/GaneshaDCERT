@@ -1,7 +1,9 @@
 import BlockchainService from "./blockchain/didBlockchain.service";
+import InstitutionService from "./institution.service";
 import { BadRequestError, NotFoundError } from "../utils/errors/AppError";
 import { PrismaClient } from "@prisma/client";
 import { prisma } from "../config/database";
+import { logger } from "../config";
 
 /**
  * DID Service with Dependency Injection
@@ -76,6 +78,9 @@ class DIDService {
         },
       });
 
+      logger.info(`Queried institution data for email ${email}: ${JSON.stringify(institution)}`);
+
+
       if (!institution) {
         throw new NotFoundError(
           `Institution with email ${email} not found in registration database`
@@ -101,10 +106,22 @@ class DIDService {
         institution.address
       );
 
+      // Insert institution data to Institution table
+      const createdInstitution = await InstitutionService.createInstitution({
+        did: did_string,
+        email,
+        name: institution.name,
+        phone: institution.phone,
+        country: institution.country,
+        website: institution.website,
+        address: institution.address,
+      });
+
       return {
         message: "Institutional DID registered successfully",
         did: did_string,
         institution: {
+          id: createdInstitution.id,
           email,
           name: institution.name,
           phone: institution.phone,

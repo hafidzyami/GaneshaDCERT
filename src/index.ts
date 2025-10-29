@@ -26,6 +26,7 @@ import {
   schemaRoutes,
   presentationRoutes,
   notificationRoutes,
+  institutionRoutes,
 } from "./routes";
 
 const app: Application = express();
@@ -70,7 +71,7 @@ const swaggerOptions: swaggerJsdoc.Options = {
     ],
     components: {
       securitySchemes: {
-        bearerAuth: {
+        InstitutionBearerAuth: {
           type: "http",
           scheme: "bearer",
           bearerFormat: "JWT",
@@ -81,6 +82,12 @@ const swaggerOptions: swaggerJsdoc.Options = {
           scheme: "bearer",
           bearerFormat: "JWT",
           description: "Enter JWT token for admin authentication",
+        },
+        HolderBearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+          description: "Enter JWT token for holder authentication",
         },
       },
     },
@@ -225,6 +232,7 @@ app.use("/api/v1/schemas", schemaRoutes);
 app.use("/api/v1/credentials", credentialRoutes);
 app.use("/api/v1/presentations", presentationRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
+app.use("/api/v1/institutions", institutionRoutes);
 
 // 404 Handler - must be after all routes
 app.use(notFoundHandler);

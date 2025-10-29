@@ -95,7 +95,7 @@ class AuthService {
   /**
    * Get all institutions with optional status filter
    */
-  async getAllInstitutions(status?: string): Promise<InstitutionRegistration[]> {
+  async getAllRegistrationInstitutions(status?: string): Promise<InstitutionRegistration[]> {
     const whereClause = status ? { status: status as any } : {};
 
     return await this.db.institutionRegistration.findMany({

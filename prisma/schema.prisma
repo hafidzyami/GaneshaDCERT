@@ -124,19 +124,19 @@ model PaymentMethod {
 }
 
 model InstitutionRegistration {
-  id           String        @id @default(uuid())
-  email        String        @unique
-  name         String
-  phone        String
-  country      String
-  website      String
-  address      String
-  status       RequestStatus @default(PENDING)
-  approvedBy   String?
-  approvedAt   DateTime?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  magicLinks   MagicLink[]
+  id         String        @id @default(uuid())
+  email      String        @unique
+  name       String
+  phone      String
+  country    String
+  website    String
+  address    String
+  status     RequestStatus @default(PENDING)
+  approvedBy String?
+  approvedAt DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  magicLinks MagicLink[]
 }
 
 model VCSchema {
@@ -156,16 +156,15 @@ model VCSchema {
   @@index([isActive])
 }
 
-
 model MagicLink {
-  id             String                   @id @default(uuid())
-  institutionId  String
-  token          String                   @unique
-  expiresAt      DateTime
-  used           Boolean                  @default(false)
-  usedAt         DateTime?
-  createdAt      DateTime                 @default(now())
-  institution    InstitutionRegistration  @relation(fields: [institutionId], references: [id])
+  id            String                  @id @default(uuid())
+  institutionId String
+  token         String                  @unique
+  expiresAt     DateTime
+  used          Boolean                 @default(false)
+  usedAt        DateTime?
+  createdAt     DateTime                @default(now())
+  institution   InstitutionRegistration @relation(fields: [institutionId], references: [id])
 
   @@index([token])
   @@index([institutionId])
@@ -179,7 +178,7 @@ model VPRequest {
   createdAt      DateTime @default(now())
 }
 
-model Admin{
+model Admin {
   id        String   @id @default(uuid())
   email     String   @unique
   password  String
@@ -199,4 +198,17 @@ model PushToken {
 
   @@index([holder_did])
   @@index([token])
+}
+
+model Institution {
+  id        String   @id @default(uuid())
+  did       String   @unique
+  email     String   @unique
+  name      String
+  phone     String
+  country   String
+  website   String
+  address   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

@@ -2,7 +2,7 @@ import express, { Router } from 'express';
 import {
   registerInstitution,
   getPendingInstitutions,
-  getAllInstitutions,
+  getAllRegistrationInstitutions,
   approveInstitution,
   rejectInstitution,
   verifyMagicLink,
@@ -15,7 +15,7 @@ import {
   approveInstitutionValidator,
   rejectInstitutionValidator,
   verifyMagicLinkValidator,
-  getAllInstitutionsValidator,
+  getAllRegistrationInstitutionsValidator,
 } from '../validators/auth.validator';
 
 const router: Router = express.Router();
@@ -251,7 +251,7 @@ router.get('/pending-institutions', adminAuthMiddleware, getPendingInstitutions)
  *       500:
  *         description: Internal server error
  */
-router.get('/institutions', adminAuthMiddleware, getAllInstitutionsValidator, getAllInstitutions);
+router.get('/institutions', adminAuthMiddleware, getAllRegistrationInstitutionsValidator, getAllRegistrationInstitutions);
 
 /**
  * @swagger
@@ -417,7 +417,7 @@ router.post('/verify-magic-link', verifyMagicLinkValidator, verifyMagicLink);
  *     tags:
  *       - Authentication
  *     security:
- *       - bearerAuth: []
+ *       - InstitutionBearerAuth: []
  *     responses:
  *       200:
  *         description: Institution profile data
