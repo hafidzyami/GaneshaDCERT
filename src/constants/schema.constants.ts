@@ -27,7 +27,7 @@ export const SCHEMA_CONSTANTS = {
 
   // DID format
   DID_REGEX:
-    /^(?:(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})|[a-zA-Z0-9_-]{87})$/,
+    /^(?:did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})|[a-zA-Z0-9_-]{87})$/,
   DID_FORMAT_MESSAGE:
     "Invalid issuer DID format. Expected format: did:method:identifier",
 } as const;
