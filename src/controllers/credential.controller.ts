@@ -6,7 +6,7 @@ import { CredentialService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler } from "../middlewares";
 import { ResponseHelper } from "../utils/helpers";
-import { ProcessIssuanceVCDTO, RevokeVCDTO, CredentialRevocationRequestDTO } from "../dtos";
+import { ProcessUpdateVCDTO, ProcessIssuanceVCDTO, RevokeVCDTO, CredentialRevocationRequestDTO, ProcessRenewalVCDTO } from "../dtos";
 
 /**
  * Request Credential Issuance Controller
@@ -237,6 +237,40 @@ export const revokeVC = asyncHandler(async (req: Request, res: Response) => {
 
   // Call the MODIFIED service function (which now processes the request)
   const result = await CredentialService.revokeVC(requestData); // The service method name might be kept or changed
+
+  // Send success response
+  return ResponseHelper.success(res, result, result.message);
+});
+
+export const processRenewalVC = asyncHandler(async (req: Request, res: Response) => {
+  // Validate request body
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Cast body to DTO
+  const requestData: ProcessRenewalVCDTO = req.body;
+
+  // Call the service function
+  const result = await CredentialService.processRenewalVC(requestData);
+
+  // Send success response
+  return ResponseHelper.success(res, result, result.message);
+});
+
+export const processUpdateVC = asyncHandler(async (req: Request, res: Response) => {
+  // Validate request body
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Cast body to DTO
+  const requestData: ProcessUpdateVCDTO = req.body;
+
+  // Call the service function
+  const result = await CredentialService.processUpdateVC(requestData);
 
   // Send success response
   return ResponseHelper.success(res, result, result.message);
