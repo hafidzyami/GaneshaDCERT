@@ -51,6 +51,9 @@ class StorageService {
     metadata?: Record<string, string>
   ): Promise<{ filePath: string; url: string; size: number }> {
     try {
+      // Ensure bucket exists (lazy initialization)
+      await MinioConfig.ensureBucketExists();
+
       const filePath = this.buildFilePath(directory, fileName);
 
       // Prepare metadata
@@ -111,6 +114,9 @@ class StorageService {
     metadata?: Record<string, string>
   ): Promise<{ filePath: string; url: string }> {
     try {
+      // Ensure bucket exists (lazy initialization)
+      await MinioConfig.ensureBucketExists();
+
       const filePath = this.buildFilePath(directory, fileName);
 
       // Prepare metadata

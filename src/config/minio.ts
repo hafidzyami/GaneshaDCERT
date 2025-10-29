@@ -52,8 +52,11 @@ class MinioConfig {
 
   /**
    * Initialize bucket - create if not exists
+   * @param throwOnError - If true, throws error on failure. If false, logs error only.
    */
-  public static async initializeBucket(): Promise<void> {
+  public static async initializeBucket(
+    throwOnError: boolean = false
+  ): Promise<boolean> {
     const client = MinioConfig.getClient();
     const bucketName = MinioConfig.getBucketName();
 
@@ -66,13 +69,33 @@ class MinioConfig {
       } else {
         logger.info(`Bucket '${bucketName}' already exists`);
       }
+      return true;
     } catch (error) {
       logger.error(`Failed to initialize bucket '${bucketName}'`, { error });
-      throw new Error(
-        `Bucket initialization failed: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+      if (throwOnError) {
+        throw new Error(
+          `Bucket initialization failed: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
+        );
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Ensure bucket exists (lazy initialization)
+   * Creates bucket if it doesn't exist, used automatically by storage service
+   */
+  private static bucketInitialized = false;
+  public static async ensureBucketExists(): Promise<void> {
+    if (MinioConfig.bucketInitialized) {
+      return; // Already initialized, skip
+    }
+
+    const success = await MinioConfig.initializeBucket(false);
+    if (success) {
+      MinioConfig.bucketInitialized = true;
     }
   }
 
@@ -92,10 +115,8 @@ class MinioConfig {
   }
 }
 
-// Initialize bucket on module load
-MinioConfig.initializeBucket().catch((error) => {
-  logger.error("Failed to initialize MinIO bucket on startup", { error });
-});
+// Note: Bucket initialization is now lazy-loaded on first use
+// This prevents startup errors when MinIO is not immediately available
 
 export default MinioConfig;
 export { MinioConfig };
