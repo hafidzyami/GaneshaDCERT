@@ -37,9 +37,9 @@ const router: Router = express.Router();
  *           description: JSON-LD context
  *         id:
  *           type: string
- *           pattern: '^did:dcert:[iu][a-zA-Z0-9_-]{44}$'
+ *           pattern: '^(?:(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})|[a-zA-Z0-9_-]{87})$'
  *           example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
- *           description: DID identifier (55 chars total - did:dcert:[i/u] + 44 identifier chars)
+ *           description: DID identifier (55 chars total - did:dcert:[i/u] + 44 identifier chars or 98 chars total - did:dcert:[i/u] + 87 identifier chars)
  *         controller:
  *           type: string
  *           example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
@@ -121,7 +121,7 @@ const router: Router = express.Router();
  *       - Institution role: Bearer token (MagicLink) REQUIRED
  *
  *       **DID Format Rules:**
- *       - Pattern: `did:dcert:[i/u][44 alphanumeric chars]`
+ *       - Pattern: `did:dcert:[i/u][44 alphanumeric chars] | [87 alphanumeric chars]`
  *       - Total length: 55 characters
  *       - Prefix 'i' for institution, 'u' for individual/user
  *       - Characters allowed: a-z, A-Z, 0-9, _ (underscore), - (hyphen)
@@ -173,7 +173,7 @@ const router: Router = express.Router();
  *             properties:
  *               did_string:
  *                 type: string
- *                 pattern: '^did:dcert:[iu][a-zA-Z0-9_-]{44}$'
+ *                 pattern: '^(?:(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})|[a-zA-Z0-9_-]{87})$'
  *                 example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
  *                 description: DID string (55 chars - did:dcert:[i/u] + 44 identifier chars)
  *               public_key:
@@ -394,7 +394,7 @@ router.post(
  *         required: true
  *         schema:
  *           type: string
- *           pattern: '^did:dcert:[iu][a-zA-Z0-9_-]{44}$'
+ *           pattern: '^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$'
  *         example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
  *         description: DID to check (format - did:dcert:[i/u] + 44 chars)
  *     responses:
@@ -528,7 +528,7 @@ router.get("/blocks", did.numberofBlocks);
  *         required: true
  *         schema:
  *           type: string
- *           pattern: '^did:dcert:[iu][a-zA-Z0-9_-]{44}$'
+ *           pattern: '^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$'
  *         example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
  *         description: DID to rotate key for (55 chars total)
  *     requestBody:
@@ -647,7 +647,7 @@ router.put("/:did/key-rotation", keyRotationValidator, did.keyRotation);
  *         required: true
  *         schema:
  *           type: string
- *           pattern: '^did:dcert:[iu][a-zA-Z0-9_-]{44}$'
+ *           pattern: '^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$'
  *         example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
  *         description: DID to deactivate (55 chars total)
  *     requestBody:
@@ -761,7 +761,7 @@ router.delete("/:did", deleteDIDValidator, did.deleteDID);
  *         required: true
  *         schema:
  *           type: string
- *           pattern: '^did:dcert:[iu][a-zA-Z0-9_-]{44}$'
+ *           pattern: '^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$'
  *         example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
  *         description: DID to get document for (55 chars total)
  *     responses:

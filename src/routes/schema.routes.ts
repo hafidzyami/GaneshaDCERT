@@ -56,7 +56,7 @@ const router: Router = express.Router();
  *                 type: number
  *         issuer_did:
  *           type: string
- *           pattern: '^did:dcert:[iu][a-zA-Z0-9_-]{44}$'
+ *           pattern: '^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$'
  *           description: DID of the issuer (55 chars total - did:dcert:[i/u] + 44 identifier chars)
  *           example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
  *         version:
@@ -103,7 +103,7 @@ const router: Router = express.Router();
  *         name: issuerDid
  *         schema:
  *           type: string
- *           pattern: '^did:dcert:[iu][a-zA-Z0-9_-]{44}$'
+ *           pattern: '^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$'
  *         description: Filter by issuer DID (format did:dcert:[i/u][44 chars])
  *         example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
  *       - in: query
@@ -167,7 +167,7 @@ router.get("/", getAllVCSchemasValidator, vcSchema.getAllVCSchemas);
  *         required: true
  *         schema:
  *           type: string
- *           pattern: '^did:dcert:[iu][a-zA-Z0-9_-]{44}$'
+ *           pattern: '^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$'
  *         description: Issuer DID (format did:dcert:[i/u][44 chars])
  *         example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
  *     responses:
@@ -225,7 +225,7 @@ router.get(
  *         required: true
  *         schema:
  *           type: string
- *           pattern: '^did:dcert:[iu][a-zA-Z0-9_-]{44}$'
+ *           pattern: '^(?:did:dcert:[iu][a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$'
  *         description: Issuer DID (format did:dcert:[i/u][44 chars])
  *         example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
  *     responses:
