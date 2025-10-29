@@ -2,16 +2,8 @@ import { Request, Response, NextFunction } from "express";
 import { HTTP_STATUS } from "../constants";
 import { logger } from "../config";
 import DIDService from "../services/did.service";
-
-// Dynamic import untuk @noble/secp256k1 (ES Module)
-let secp: any = null;
-
-async function loadSecp() {
-  if (!secp) {
-    secp = await import("@noble/secp256k1");
-  }
-  return secp;
-}
+import { decodeJWT, verifyJWT, validateJWTClaims } from "../config/jwt-es256";
+import { debugJWT, tryAllVerificationMethods, verifyJWTWithNodeCrypto } from "../config/jwt-debug";
 
 /**
  * Extended Request interface with DID holder data
@@ -24,31 +16,26 @@ export interface RequestWithDID extends Request {
 }
 
 /**
- * Helper function to decode JWT without verification
+ * Helper function to convert hex string to Uint8Array
  */
-function decodeJWT(token: string): { header: any; payload: any; signature: string } {
-  const parts = token.split('.');
-  if (parts.length !== 3) {
-    throw new Error('Invalid JWT format');
+function hexToBytes(hex: string): Uint8Array {
+  // Remove any spaces or prefixes
+  const cleanHex = hex.replace(/^0x/, '').replace(/\s/g, '');
+  
+  // Validate hex string
+  if (!/^[0-9a-fA-F]*$/.test(cleanHex)) {
+    throw new Error('Invalid hex string');
   }
-
-  const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
-  const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-  const signature = parts[2];
-
-  return { header, payload, signature };
-}
-
-/**
- * Helper function to convert base64url to hex
- */
-function base64urlToHex(base64url: string): string {
-  // Convert base64url to base64
-  const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
-  // Decode base64 to bytes
-  const bytes = Buffer.from(base64, 'base64');
-  // Convert bytes to hex
-  return bytes.toString('hex');
+  
+  if (cleanHex.length % 2 !== 0) {
+    throw new Error('Hex string must have even length');
+  }
+  
+  const bytes = new Uint8Array(cleanHex.length / 2);
+  for (let i = 0; i < cleanHex.length; i += 2) {
+    bytes[i / 2] = parseInt(cleanHex.slice(i, i + 2), 16);
+  }
+  return bytes;
 }
 
 /**
@@ -62,7 +49,7 @@ function base64urlToHex(base64url: string): string {
  * 1. Extract and decode JWT token
  * 2. Get DID from 'iss' claim in payload
  * 3. Get public key from DID document on blockchain
- * 4. Verify JWT signature (signs "header.payload") using public key
+ * 4. Verify JWT signature using public key
  * 5. Validate iss matches sub and token not expired
  */
 export const verifyDIDSignature = async (
@@ -73,6 +60,8 @@ export const verifyDIDSignature = async (
   try {
     // Get token from Authorization header
     const authHeader = req.headers.authorization;
+    logger.info("Starting DID signature verification middleware");
+    logger.info("Authorization header received", { authHeaderPresent: !!authHeader });
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
@@ -85,31 +74,42 @@ export const verifyDIDSignature = async (
     // Extract token (remove 'Bearer ' prefix)
     const token = authHeader.substring(7);
 
-    // Decode JWT without verification first
+    // Step 1: Decode JWT without verification first
     let decoded;
     try {
       decoded = decodeJWT(token);
+      logger.debug("JWT decoded successfully", {
+        header: decoded.header,
+        payload: decoded.payload
+      });
     } catch (error) {
+      logger.error("Failed to decode JWT", {
+        error: error instanceof Error ? error.message : String(error)
+      });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "Invalid JWT token format",
+        error: error instanceof Error ? error.message : "Unknown error"
       });
       return;
     }
 
-    const { header, payload, signature } = decoded;
+    const { header, payload } = decoded;
 
     // Validate JWT header
     if (header.alg !== "ES256" || header.typ !== "JWT") {
+      logger.warn("Invalid JWT header", { header });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "Invalid JWT header. Expected alg: ES256, typ: JWT",
+        received: header
       });
       return;
     }
 
     // Validate required claims
     if (!payload.iss || !payload.sub) {
+      logger.warn("Missing required JWT claims", { payload });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "JWT payload must contain 'iss' and 'sub' claims",
@@ -121,15 +121,18 @@ export const verifyDIDSignature = async (
 
     // Validate DID format
     if (!holderDID.startsWith("did:dcert:")) {
+      logger.warn("Invalid DID format", { holderDID });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
-        message: "Invalid DID format in 'iss' claim",
+        message: "Invalid DID format in 'iss' claim. Expected did:dcert:...",
+        received: holderDID
       });
       return;
     }
 
     // Validate iss matches sub
     if (payload.iss !== payload.sub) {
+      logger.warn("JWT claims mismatch", { iss: payload.iss, sub: payload.sub });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "JWT 'iss' and 'sub' claims must match",
@@ -137,25 +140,29 @@ export const verifyDIDSignature = async (
       return;
     }
 
-    // Check token expiration
-    if (payload.exp) {
-      const now = Math.floor(Date.now() / 1000);
-      if (now > payload.exp) {
-        res.status(HTTP_STATUS.UNAUTHORIZED).json({
-          success: false,
-          message: "JWT token has expired",
-        });
-        return;
-      }
+    // Step 2: Validate JWT claims (expiration, nbf, iat)
+    const claimsValidation = validateJWTClaims(payload);
+    if (!claimsValidation.valid) {
+      logger.warn("JWT claims validation failed", {
+        did: holderDID,
+        errors: claimsValidation.errors
+      });
+      res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        message: "JWT claims validation failed",
+        errors: claimsValidation.errors,
+      });
+      return;
     }
 
     logger.info(`Verifying JWT signature for DID: ${holderDID}`);
 
-    // Get DID document to retrieve public key
+    // Step 3: Get DID document to retrieve public key
     const didDocument = await DIDService.getDIDDocument(holderDID);
 
     // Check if DID exists
     if (!didDocument.found) {
+      logger.warn("DID not found on blockchain", { did: holderDID });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "DID not found on blockchain",
@@ -166,6 +173,10 @@ export const verifyDIDSignature = async (
 
     // Check if DID is active
     if (didDocument.status !== "Active") {
+      logger.warn("DID is not active", {
+        did: holderDID,
+        status: didDocument.status
+      });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: `DID is not active. Current status: ${didDocument.status}`,
@@ -179,6 +190,11 @@ export const verifyDIDSignature = async (
     const publicKeyHex = didDocument[keyId]; // Get public key from the keyId field
 
     if (!publicKeyHex) {
+      logger.error("Public key not found in DID document", {
+        did: holderDID,
+        keyId,
+        availableKeys: Object.keys(didDocument)
+      });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "Public key not found in DID document",
@@ -187,30 +203,48 @@ export const verifyDIDSignature = async (
       return;
     }
 
-    logger.debug(`Public key retrieved: ${publicKeyHex}`);
+    logger.debug("Public key retrieved from DID document", {
+      did: holderDID,
+      publicKeyHex,
+      publicKeyLength: publicKeyHex.length
+    });
 
-    // Verify JWT signature
+    // Step 4: Verify JWT signature using public key
     try {
-      // Load secp256k1 module dynamically
-      const secpModule = await loadSecp();
-      
-      // Get the message to verify (header.payload) - standard JWT
-      const parts = token.split('.');
-      const message = `${parts[0]}.${parts[1]}`;
-      const messageBytes = new TextEncoder().encode(message);
+      // Convert hex public key to Uint8Array
+      const publicKeyBytes = hexToBytes(publicKeyHex);
+      logger.debug("Public key converted to bytes", {
+        bytesLength: publicKeyBytes.length,
+        firstBytes: Array.from(publicKeyBytes.slice(0, 10)).map(b => b.toString(16).padStart(2, '0')).join('')
+      });
 
-      // Convert signature from base64url to hex
-      const signatureHex = base64urlToHex(signature);
-      const signatureBytes = secpModule.etc.hexToBytes(signatureHex);
+      // 🔍 DEBUG: Print detailed JWT info
+      debugJWT(token, publicKeyHex);
       
-      // Convert public key to bytes
-      const publicKeyBytes = secpModule.etc.hexToBytes(publicKeyHex);
-
-      // Verify JWT signature using secp256k1
-      // This verifies that the signature was created by signing "header.payload" with the private key
-      const isValid = await secpModule.verify(signatureBytes, messageBytes, publicKeyBytes);
+      // 🔍 DEBUG: Try all verification methods
+      const verificationResults = await tryAllVerificationMethods(token, publicKeyHex);
+      
+      // Try Node.js crypto method first (often more reliable)
+      let isValid = await verifyJWTWithNodeCrypto(token, publicKeyBytes);
+      
+      // If that fails, try the webcrypto method
+      if (!isValid) {
+        logger.info("Node.js crypto verification failed, trying webcrypto...");
+        isValid = await verifyJWT(token, publicKeyBytes);
+      }
+      
+      logger.debug("JWT signature verification result", {
+        did: holderDID,
+        isValid
+      });
 
       if (!isValid) {
+        logger.warn("JWT signature verification failed", {
+          did: holderDID,
+          publicKeyHex,
+          tokenPreview: token.substring(0, 50) + "...",
+          verificationResults
+        });
         res.status(HTTP_STATUS.UNAUTHORIZED).json({
           success: false,
           message: "Invalid JWT signature. Token verification failed",
@@ -219,7 +253,7 @@ export const verifyDIDSignature = async (
         return;
       }
 
-      logger.success(`JWT signature verified successfully for DID: ${holderDID}`);
+      logger.success(`✅ JWT signature verified successfully for DID: ${holderDID}`);
 
       // Attach DID data and payload to request
       req.holderDID = holderDID;
@@ -229,7 +263,12 @@ export const verifyDIDSignature = async (
 
       next();
     } catch (error) {
-      logger.error("Error verifying JWT signature", error);
+      logger.error("Error during JWT signature verification", {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        did: holderDID,
+        publicKeyHex
+      });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "Failed to verify JWT signature",
@@ -238,7 +277,10 @@ export const verifyDIDSignature = async (
       return;
     }
   } catch (error) {
-    logger.error("Error in verifyDIDSignature middleware", error);
+    logger.error("Error in verifyDIDSignature middleware", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: "Internal server error during JWT verification",
@@ -278,7 +320,10 @@ export const optionalVerifyDIDSignature = async (
     // Use the same verification logic
     await verifyDIDSignature(req, res, next);
   } catch (error) {
-    logger.error("Error in optionalVerifyDIDSignature middleware", error);
+    logger.error("Error in optionalVerifyDIDSignature middleware", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: "Internal server error during optional JWT verification",

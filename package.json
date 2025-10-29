@@ -33,7 +33,7 @@
   "author": "Hafidz Yami",
   "license": "ISC",
   "dependencies": {
-    "@noble/secp256k1": "^3.0.0",
+    "@noble/curves": "^2.0.1",
     "@prisma/client": "^6.17.0",
     "amqplib": "^0.10.3",
     "axios": "^1.12.2",
