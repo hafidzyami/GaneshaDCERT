@@ -161,72 +161,7 @@ router.get(
   credentialController.getCredentialRequestsByType
 );
 
-/**
- * @swagger
- * /credentials/response:
- *   post:
- *     summary: Process credential response
- *     description: Issuer approves or rejects credential request (issuance, renewal, or update)
- *     tags:
- *       - Verifiable Credential (VC) Lifecycle
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - request_id
- *               - action
- *             properties:
- *               request_id:
- *                 type: string
- *                 format: uuid
- *                 description: ID of the credential request
- *               action:
- *                 type: string
- *                 enum: [APPROVE, REJECT]
- *                 description: Action to take on the request
- *               rejection_reason:
- *                 type: string
- *                 description: Required if action is REJECT
- *               credential_data:
- *                 type: object
- *                 description: Credential data if approving
- *     responses:
- *       200:
- *         description: Credential response processed successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: Kredensial berhasil diterbitkan
- *                 data:
- *                   type: object
- *                   properties:
- *                     vc_id:
- *                       type: string
- *                       format: uuid
- *                     status:
- *                       type: string
- *       400:
- *         description: Invalid request or validation error
- *       404:
- *         description: Request not found
- *       500:
- *         description: Internal server error
- */
-router.post(
-  "/response",
-  processCredentialResponseValidator,
-  credentialController.processCredentialResponse
-);
+
 
 /**
  * @swagger
@@ -480,68 +415,6 @@ router.post(
   credentialController.requestCredentialRevocation
 );
 
-/**
- * @swagger
- * /credentials/add-status-block:
- *   post:
- *     summary: Add VC status block to blockchain
- *     description: Record credential status change on the blockchain
- *     tags:
- *       - Verifiable Credential (VC) Lifecycle
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - vc_id
- *               - status
- *             properties:
- *               vc_id:
- *                 type: string
- *                 format: uuid
- *                 description: ID of the credential
- *               status:
- *                 type: string
- *                 enum: [ACTIVE, REVOKED, SUSPENDED, EXPIRED]
- *                 description: New status of the credential
- *               reason:
- *                 type: string
- *                 description: Reason for status change
- *     responses:
- *       201:
- *         description: Status block added to blockchain successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: Status block berhasil ditambahkan ke blockchain
- *                 data:
- *                   type: object
- *                   properties:
- *                     block_hash:
- *                       type: string
- *                     block_index:
- *                       type: integer
- *       400:
- *         description: Invalid request data
- *       404:
- *         description: Credential not found
- *       500:
- *         description: Internal server error
- */
-router.post(
-  "/add-status-block",
-  addVCStatusBlockValidator,
-  credentialController.addVCStatusBlock
-);
 
 /**
  * @swagger
