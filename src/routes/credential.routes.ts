@@ -1,5 +1,6 @@
 import express, { Router } from "express";
 import * as credentialController from "../controllers/credential.controller";
+import { verifyDIDSignature } from "../middlewares";
 import {
   requestCredentialValidator,
   getCredentialRequestsByTypeValidator,
@@ -85,6 +86,7 @@ const router: Router = express.Router();
  */
 router.post(
   "/requests",
+  verifyDIDSignature,
   requestCredentialValidator,
   credentialController.requestCredential
 );
@@ -283,6 +285,7 @@ router.get(
  */
 router.post(
   "/update-request",
+  verifyDIDSignature,
   credentialUpdateRequestValidator,
   credentialController.requestCredentialUpdate
 );
@@ -347,6 +350,7 @@ router.post(
  */
 router.post(
   "/renew-requests",
+  verifyDIDSignature,
   credentialRenewalRequestValidator,
   credentialController.requestCredentialRenewal
 );
@@ -411,6 +415,7 @@ router.post(
  */
 router.post(
   "/revoke-request",
+  verifyDIDSignature,
   credentialRevocationRequestValidator,
   credentialController.requestCredentialRevocation
 );

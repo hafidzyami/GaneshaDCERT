@@ -71,7 +71,7 @@ const swaggerOptions: swaggerJsdoc.Options = {
     ],
     components: {
       securitySchemes: {
-        bearerAuth: {
+        InstitutionBearerAuth: {
           type: "http",
           scheme: "bearer",
           bearerFormat: "JWT",
@@ -82,6 +82,12 @@ const swaggerOptions: swaggerJsdoc.Options = {
           scheme: "bearer",
           bearerFormat: "JWT",
           description: "Enter JWT token for admin authentication",
+        },
+        HolderBearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+          description: "Enter JWT token for holder authentication",
         },
       },
     },
