@@ -327,3 +327,99 @@ export const revokeVCValidator = [
     // .isUUID() // Add format check if needed
     // .withMessage("Invalid vc_id format"),
 ];
+
+
+export const processRenewalVCValidator = [
+  body("request_id")
+    .trim()
+    .notEmpty()
+    .withMessage("Request ID is required")
+    .isUUID()
+    .withMessage("Invalid request ID format (must be UUID)"),
+
+  body("issuer_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Issuer DID is required")
+    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .withMessage("Invalid issuer DID format"),
+
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Holder DID is required")
+    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .withMessage("Invalid holder DID format"),
+
+  body("action")
+    .trim()
+    .notEmpty()
+    .withMessage("Action is required")
+    .isIn([RequestStatus.APPROVED, RequestStatus.REJECTED])
+    .withMessage(`Action must be ${RequestStatus.APPROVED} or ${RequestStatus.REJECTED}`),
+
+  // vc_id is required only if action is APPROVED
+  body("vc_id")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("vc_id is required when action is APPROVED"),
+    // .isUUID() // Add format check if needed
+
+  // encrypted_body is required only if action is APPROVED
+  body("encrypted_body")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("encrypted_body is required when action is APPROVED"),
+];
+
+export const processUpdateVCValidator = [
+  body("request_id")
+    .trim()
+    .notEmpty()
+    .withMessage("Request ID is required")
+    .isUUID()
+    .withMessage("Invalid request ID format (must be UUID)"),
+
+  body("issuer_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Issuer DID is required")
+    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .withMessage("Invalid issuer DID format"),
+
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Holder DID is required")
+    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .withMessage("Invalid holder DID format"),
+
+  body("action")
+    .trim()
+    .notEmpty()
+    .withMessage("Action is required")
+    .isIn([RequestStatus.APPROVED, RequestStatus.REJECTED])
+    .withMessage(`Action must be ${RequestStatus.APPROVED} or ${RequestStatus.REJECTED}`),
+
+  body("vc_id")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("vc_id (original VC ID) is required when action is APPROVED"),
+
+  body("new_vc_hash")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("new_vc_hash is required when action is APPROVED")
+    .matches(/^0x[a-fA-F0-9]{64}$/)
+    .withMessage("Invalid new_vc_hash format (must be a 64-character hex string starting with 0x)"),
+
+  body("encrypted_body")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("encrypted_body (new VC data) is required when action is APPROVED"),
+];
