@@ -83,7 +83,7 @@ export const verifyMagicLinkValidator = [
     .withMessage("Invalid token format"),
 ];
 
-export const getAllInstitutionsValidator = [
+export const getAllRegistrationInstitutionsValidator = [
   query("status")
     .optional()
     .isIn(["PENDING", "APPROVED", "REJECTED"])

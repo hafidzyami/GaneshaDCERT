@@ -113,3 +113,42 @@ export interface RevokeVCResponseDTO {
   transaction_hash?: string; // Blockchain TX hash if approved & successful
   block_number?: number; // Blockchain block number if approved & successful
 }
+
+export interface ProcessRenewalVCDTO {
+  request_id: string; // ID of the VCRenewalRequest record
+  issuer_did: string;
+  holder_did: string;
+  action: "APPROVED" | "REJECTED";
+  vc_id?: string;         // VC ID to renew (Required only if action is APPROVED)
+  encrypted_body?: string; // Newly issued/renewed encrypted VC body (Required only if action is APPROVED)
+}
+
+// Response body DTO for POST /credentials/renew-vc
+export interface ProcessRenewalVCResponseDTO {
+  message: string;
+  request_id: string; 
+  status: RequestStatus; 
+  vc_response_id?: string; 
+  transaction_hash?: string; 
+  block_number?: number; 
+}
+
+export interface ProcessUpdateVCDTO {
+  request_id: string; // ID of the VCUpdateRequest record
+  issuer_did: string;
+  holder_did: string;
+  action: "APPROVED" | "REJECTED";
+  vc_id?: string;         // Original VC ID to update on blockchain (Required if action is APPROVED)
+  new_vc_hash?: string;   // New hash for the updated VC (Required if action is APPROVED)
+  encrypted_body?: string; // New encrypted body for the updated VC (Required if action is APPROVED)
+}
+
+// Response body DTO for POST /credentials/update-vc
+export interface ProcessUpdateVCResponseDTO {
+  message: string;
+  request_id: string; // ID of the VCUpdateRequest processed
+  status: RequestStatus; // Final status of the VCUpdateRequest
+  vc_response_id?: string; // ID of the new VCResponse record if approved
+  transaction_hash?: string; // Blockchain TX hash if approved & successful
+  block_number?: number; // Blockchain block number if approved & successful
+}

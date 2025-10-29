@@ -151,7 +151,7 @@ const router: Router = express.Router();
  *     tags:
  *       - DID Management
  *     security:
- *       - bearerAuth: []
+ *       - InstitutionBearerAuth: []
  *     parameters:
  *       - in: header
  *         name: Authorization

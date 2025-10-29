@@ -10,3 +10,4 @@ export * from './credential.validator';
 export * from './schema.validator';
 export * from './presentation.validator';
 export * from './notification.validator';
+export * from './institution.validator';
