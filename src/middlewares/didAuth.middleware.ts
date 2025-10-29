@@ -2,7 +2,16 @@ import { Request, Response, NextFunction } from "express";
 import { HTTP_STATUS } from "../constants";
 import { logger } from "../config";
 import DIDService from "../services/did.service";
-import * as secp from "@noble/secp256k1";
+
+// Dynamic import untuk @noble/secp256k1 (ES Module)
+let secp: any = null;
+
+async function loadSecp() {
+  if (!secp) {
+    secp = await import("@noble/secp256k1");
+  }
+  return secp;
+}
 
 /**
  * Extended Request interface with DID holder data
@@ -182,6 +191,9 @@ export const verifyDIDSignature = async (
 
     // Verify JWT signature
     try {
+      // Load secp256k1 module dynamically
+      const secpModule = await loadSecp();
+      
       // Get the message to verify (header.payload) - standard JWT
       const parts = token.split('.');
       const message = `${parts[0]}.${parts[1]}`;
@@ -189,14 +201,14 @@ export const verifyDIDSignature = async (
 
       // Convert signature from base64url to hex
       const signatureHex = base64urlToHex(signature);
-      const signatureBytes = secp.etc.hexToBytes(signatureHex);
+      const signatureBytes = secpModule.etc.hexToBytes(signatureHex);
       
       // Convert public key to bytes
-      const publicKeyBytes = secp.etc.hexToBytes(publicKeyHex);
+      const publicKeyBytes = secpModule.etc.hexToBytes(publicKeyHex);
 
       // Verify JWT signature using secp256k1
       // This verifies that the signature was created by signing "header.payload" with the private key
-      const isValid = await secp.verifyAsync(signatureBytes, messageBytes, publicKeyBytes);
+      const isValid = await secpModule.verify(signatureBytes, messageBytes, publicKeyBytes);
 
       if (!isValid) {
         res.status(HTTP_STATUS.UNAUTHORIZED).json({
