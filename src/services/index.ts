@@ -11,6 +11,7 @@ export { default as CredentialService } from "./credential.service";
 export { default as SchemaService } from "./schema.service";
 export { default as PresentationService } from "./presentation.service";
 export { default as NotificationService } from "./notification.service";
+export { default as StorageService } from "./storage.service";
 export { default as DIDBlockchainService } from "./blockchain/didBlockchain.service";
 export { default as VCBlockchainService } from "./blockchain/vcBlockchain.service";
 export * from "./jwt.service";
