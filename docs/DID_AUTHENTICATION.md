@@ -23,8 +23,8 @@ npm install @noble/secp256k1
    - Extracts JWT from `Authorization: Bearer <token>` header
    - Decodes JWT to get payload (including `iss` which contains the DID)
    - Fetches public key from DID document on blockchain
-   - **Verifies that the signature was created by signing the DID (value of `iss`)**
-   - "Opens" the signature using the public key and compares with the DID
+   - **Verifies JWT signature using standard JWT verification (signs "header.payload")**
+   - Signature is valid if it was created with the private key corresponding to the public key
    - Validates that `iss` matches `sub` and token is not expired
 
 3. **Request proceeds:**
@@ -62,9 +62,12 @@ eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiaW5zdGl0dXRpb24iLCJpYXQiOjE3NjE
 - **Payload** (base64url): `eyJyb2xlIjoiaW5zdGl0dXRpb24iLCJpYXQiOjE3NjE3MDQxODAsImlzcyI6ImRpZDpkY2VydDppQWszVmlpVTVmb0VVMzJIN1lYZzRmR1pSQ3hIVk9nN1Rud3dCZFd5UjFrM2IiLCJzdWIiOiJkaWQ6ZGNlcnQ6aUFrM1ZpaVU1Zm9FVTMySDdZWGc0ZkdaUkN4SFZPZzdUbnd3QmRXeVIxazNiIiwiZXhwIjoxNzYyMzA4OTgwfQ`
 - **Signature** (base64url): `BhE7POwzdVYUFPa40acI4pxoL72qz63RckcFrV70oBXi4VrAE3DBvtA6X8s7Gc1q97hJ8fPqXhFqHRUV5sv4Ww`
 
-**⚠️ IMPORTANT:** The signature is created by signing **ONLY the DID** (value from `iss` claim), NOT the entire JWT message. This is a custom implementation where:
-1. Signature = `sign(DID, privateKey)`
-2. Verification = `verify(signature, DID, publicKey)`
+**⚠️ IMPORTANT:** The signature is created using **standard JWT signing** where:
+1. Message to sign = `base64url(header) + "." + base64url(payload)`
+2. Signature = `sign(message, privateKey)`
+3. Verification = `verify(signature, message, publicKey)`
+
+The `iss` claim contains the DID, which is used to fetch the public key from blockchain for verification.
 
 ## Usage in Routes
 
@@ -139,9 +142,12 @@ const base64urlEncode = (obj: any) => {
 const encodedHeader = base64urlEncode(header);
 const encodedPayload = base64urlEncode(payload);
 
-// ⚠️ IMPORTANT: Sign ONLY the DID, not the entire JWT message!
-const didBytes = new TextEncoder().encode(did);
-const signature = await secp.signAsync(didBytes, privateKey);
+// Create the message to sign (header.payload) - STANDARD JWT
+const message = `${encodedHeader}.${encodedPayload}`;
+const messageBytes = new TextEncoder().encode(message);
+
+// Sign the message with private key
+const signature = await secp.signAsync(messageBytes, privateKey);
 
 // Convert signature to base64url
 const signatureBase64url = Buffer.from(signature)

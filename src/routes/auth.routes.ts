@@ -417,7 +417,7 @@ router.post('/verify-magic-link', verifyMagicLinkValidator, verifyMagicLink);
  *     tags:
  *       - Authentication
  *     security:
- *       - bearerAuth: []
+ *       - InstitutionBearerAuth: []
  *     responses:
  *       200:
  *         description: Institution profile data

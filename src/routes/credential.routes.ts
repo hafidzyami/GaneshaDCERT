@@ -30,6 +30,8 @@ const router: Router = express.Router();
  *     description: Holder requests a new Verifiable Credential from an issuer
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -234,7 +236,7 @@ router.get(
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
  *     security:
- *       - bearerAuth: []
+ *       - HolderBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -299,7 +301,7 @@ router.post(
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
  *     security:
- *       - bearerAuth: []
+ *       - HolderBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -364,7 +366,7 @@ router.post(
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
  *     security:
- *       - bearerAuth: []
+ *       - HolderBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -667,7 +669,7 @@ router.get(
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
  *     security:
- *       - bearerAuth: []
+ *       - InstitutionBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -749,7 +751,7 @@ router.post(
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
  *     security:
- *       - bearerAuth: []
+ *       - InstitutionBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -837,7 +839,7 @@ router.post(
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
  *     security:
- *       - bearerAuth: []
+ *       - InstitutionBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:

@@ -51,9 +51,9 @@ function base64urlToHex(base64url: string): string {
  * 
  * Process:
  * 1. Extract and decode JWT token
- * 2. Get DID from 'iss' claim
+ * 2. Get DID from 'iss' claim in payload
  * 3. Get public key from DID document on blockchain
- * 4. Verify JWT signature using public key
+ * 4. Verify JWT signature (signs "header.payload") using public key
  * 5. Validate iss matches sub and token not expired
  */
 export const verifyDIDSignature = async (
@@ -182,6 +182,11 @@ export const verifyDIDSignature = async (
 
     // Verify JWT signature
     try {
+      // Get the message to verify (header.payload) - standard JWT
+      const parts = token.split('.');
+      const message = `${parts[0]}.${parts[1]}`;
+      const messageBytes = new TextEncoder().encode(message);
+
       // Convert signature from base64url to hex
       const signatureHex = base64urlToHex(signature);
       const signatureBytes = secp.etc.hexToBytes(signatureHex);
@@ -189,13 +194,9 @@ export const verifyDIDSignature = async (
       // Convert public key to bytes
       const publicKeyBytes = secp.etc.hexToBytes(publicKeyHex);
 
-      // The signature is signing the DID (value of 'iss')
-      // We need to verify that the signature was created by signing the DID
-      const didBytes = new TextEncoder().encode(holderDID);
-
-      // Verify signature using secp256k1
-      // This will hash the DID with SHA-256 and verify the signature
-      const isValid = await secp.verifyAsync(signatureBytes, didBytes, publicKeyBytes);
+      // Verify JWT signature using secp256k1
+      // This verifies that the signature was created by signing "header.payload" with the private key
+      const isValid = await secp.verifyAsync(signatureBytes, messageBytes, publicKeyBytes);
 
       if (!isValid) {
         res.status(HTTP_STATUS.UNAUTHORIZED).json({
