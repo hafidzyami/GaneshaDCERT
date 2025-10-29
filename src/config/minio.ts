@@ -20,8 +20,8 @@ class MinioConfig {
           endPoint: env.MINIO_ENDPOINT,
           port: env.MINIO_PORT,
           useSSL: env.MINIO_USE_SSL,
-          accessKey: env.MINIO_ACCESS_KEY,
-          secretKey: env.MINIO_SECRET_KEY,
+          accessKey: env.MINIO_ROOT_USER,
+          secretKey: env.MINIO_ROOT_PASSWORD,
         });
 
         logger.info("MinIO client initialized successfully", {
@@ -33,7 +33,9 @@ class MinioConfig {
       } catch (error) {
         logger.error("Failed to initialize MinIO client", { error });
         throw new Error(
-          `MinIO initialization failed: ${error instanceof Error ? error.message : "Unknown error"}`
+          `MinIO initialization failed: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
         );
       }
     }
@@ -67,7 +69,9 @@ class MinioConfig {
     } catch (error) {
       logger.error(`Failed to initialize bucket '${bucketName}'`, { error });
       throw new Error(
-        `Bucket initialization failed: ${error instanceof Error ? error.message : "Unknown error"}`
+        `Bucket initialization failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
       );
     }
   }
