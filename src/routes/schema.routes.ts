@@ -92,7 +92,7 @@ const router: Router = express.Router();
  *
  *       **Filters:**
  *       - Filter by issuer DID (institution only)
- *       - Show only active schemas
+ *       - Show active, inactive, or all schemas
  *
  *       **DID Format:** `did:dcert:[i/u][44 chars]`
  *       - Characters allowed: a-z, A-Z, 0-9, _ (underscore), - (hyphen)
@@ -107,10 +107,10 @@ const router: Router = express.Router();
  *         description: Filter by issuer DID (format did:dcert:[i/u][44 chars])
  *         example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
  *       - in: query
- *         name: activeOnly
+ *         name: isActive
  *         schema:
  *           type: boolean
- *         description: Filter to show only active schemas
+ *         description: Filter to show active, inactive, or all schemas
  *         example: true
  *     responses:
  *       200:

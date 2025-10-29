@@ -82,8 +82,8 @@ class SchemaService {
       where.issuer_did = filter.issuerDid;
     }
 
-    if (filter.activeOnly !== undefined) {
-      where.isActive = filter.activeOnly;
+    if (filter.isActive !== undefined) {
+      where.isActive = filter.isActive;
     }
 
     return where;

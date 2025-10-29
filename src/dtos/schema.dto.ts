@@ -30,7 +30,7 @@ export interface UpdateVCSchemaDTO {
  */
 export interface SchemaFilterDTO {
   issuerDid?: string;
-  activeOnly?: boolean;
+  isActive?: boolean;
 }
 
 /**

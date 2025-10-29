@@ -38,9 +38,9 @@ export const getAllVCSchemas = asyncHandler(
 
     const filter: SchemaFilterDTO = {
       issuerDid: req.query.issuerDid as string | undefined,
-      activeOnly:
-        req.query.activeOnly !== undefined
-          ? req.query.activeOnly === "true"
+      isActive:
+        req.query.isActive !== undefined
+          ? req.query.isActive === "true"
           : undefined,
     };
 

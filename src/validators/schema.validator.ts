@@ -3,7 +3,7 @@ import { SCHEMA_CONSTANTS, SCHEMA_ERRORS } from "../constants/schema.constants";
 
 /**
  * VC Schema Validators
- * 
+ *
  * PRINCIPLES:
  * - DRY: Reusable validation rules
  * - Clear error messages
@@ -51,7 +51,8 @@ const schemaObjectValidation = body("schema")
   });
 
 const issuerDidValidation = (location: "body" | "query") => {
-  const validator = location === "body" ? body("issuer_did") : query("issuerDid");
+  const validator =
+    location === "body" ? body("issuer_did") : query("issuerDid");
   return validator
     .trim()
     .notEmpty()
@@ -66,10 +67,10 @@ const issuerDidOptionalValidation = query("issuerDid")
   .matches(SCHEMA_CONSTANTS.DID_REGEX)
   .withMessage(SCHEMA_ERRORS.VALIDATION.ISSUER_DID_INVALID);
 
-const activeOnlyValidation = query("activeOnly")
+const isActiveValidation = query("isActive")
   .optional()
   .isBoolean()
-  .withMessage(SCHEMA_ERRORS.QUERY.ACTIVE_ONLY_INVALID)
+  .withMessage(SCHEMA_ERRORS.QUERY.IS_ACTIVE_INVALID)
   .toBoolean();
 
 // ============================================
@@ -81,7 +82,7 @@ const activeOnlyValidation = query("activeOnly")
  */
 export const getAllVCSchemasValidator = [
   issuerDidOptionalValidation,
-  activeOnlyValidation,
+  isActiveValidation,
 ];
 
 /**

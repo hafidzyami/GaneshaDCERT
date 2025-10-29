@@ -30,14 +30,16 @@ export interface CredentialRenewalRequestDTO {
   encrypted_body: string;
 }
 
-export interface CredentialRevocationRequestDTO { // Renamed back
+export interface CredentialRevocationRequestDTO {
+  // Renamed back
   encrypted_body: string; // Contains VC ID and reason (encrypted)
   issuer_did: string;
   holder_did: string;
 }
 
 // REVERTED: Response body DTO for POST /credentials/revoke-request (now CREATING a request)
-export interface CredentialRevocationResponseDTO { // Renamed back
+export interface CredentialRevocationResponseDTO {
+  // Renamed back
   message: string;
   request_id: string; // The ID of the newly created VCRevokeRequest record
 }
@@ -51,16 +53,15 @@ export interface VCStatusBlockDTO {
 }
 
 export interface VCStatusResponseDTO {
-  vc_id: string; 
-  issuer_did: string; 
-  holder_did: string; 
-  vc_type: string; 
-  schema_id: string; 
-  schema_version: number; 
-  status: boolean; 
-  hash: string; 
+  vc_id: string;
+  issuer_did: string;
+  holder_did: string;
+  vc_type: string;
+  schema_id: string;
+  schema_version: number;
+  status: boolean;
+  hash: string;
 }
-
 
 export interface ProcessIssuanceVCDTO {
   request_id: string; // ID of the VCIssuanceRequest
@@ -88,13 +89,13 @@ export interface ProcessIssuanceVCResponseDTO {
 }
 
 export interface HolderCredentialDTO {
-  id: string;             
+  id: string;
   order_id: string;
   request_id: string;
   request_type: RequestType;
   issuer_did: string;
   holder_did: string;
-  encrypted_body: string; 
+  encrypted_body: string;
 }
 
 export interface RevokeVCDTO {
@@ -119,18 +120,18 @@ export interface ProcessRenewalVCDTO {
   issuer_did: string;
   holder_did: string;
   action: "APPROVED" | "REJECTED";
-  vc_id?: string;         // VC ID to renew (Required only if action is APPROVED)
+  vc_id?: string; // VC ID to renew (Required only if action is APPROVED)
   encrypted_body?: string; // Newly issued/renewed encrypted VC body (Required only if action is APPROVED)
 }
 
 // Response body DTO for POST /credentials/renew-vc
 export interface ProcessRenewalVCResponseDTO {
   message: string;
-  request_id: string; 
-  status: RequestStatus; 
-  vc_response_id?: string; 
-  transaction_hash?: string; 
-  block_number?: number; 
+  request_id: string;
+  status: RequestStatus;
+  vc_response_id?: string;
+  transaction_hash?: string;
+  block_number?: number;
 }
 
 export interface ProcessUpdateVCDTO {
@@ -138,8 +139,8 @@ export interface ProcessUpdateVCDTO {
   issuer_did: string;
   holder_did: string;
   action: "APPROVED" | "REJECTED";
-  vc_id?: string;         // Original VC ID to update on blockchain (Required if action is APPROVED)
-  new_vc_hash?: string;   // New hash for the updated VC (Required if action is APPROVED)
+  vc_id?: string; // Original VC ID to update on blockchain (Required if action is APPROVED)
+  new_vc_hash?: string; // New hash for the updated VC (Required if action is APPROVED)
   encrypted_body?: string; // New encrypted body for the updated VC (Required if action is APPROVED)
 }
 

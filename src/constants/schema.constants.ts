@@ -49,6 +49,6 @@ export const SCHEMA_ERRORS = {
   QUERY: {
     NAME_REQUIRED: "Schema name is required",
     ISSUER_DID_REQUIRED: "Issuer DID is required",
-    ACTIVE_ONLY_INVALID: "activeOnly must be a boolean value (true or false)",
+    IS_ACTIVE_INVALID: "isActive must be a boolean value (true or false)",
   },
 } as const;
