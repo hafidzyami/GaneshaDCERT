@@ -22,6 +22,14 @@ const schemaIdValidation = param("id")
   .isUUID()
   .withMessage(SCHEMA_ERRORS.VALIDATION.ID_INVALID_UUID);
 
+const schemaVersionValidation = param("version")
+  .trim()
+  .notEmpty()
+  .withMessage("Version is required")
+  .isInt({ min: 1 })
+  .withMessage("Version must be a positive integer")
+  .toInt();
+
 const schemaNameValidation = (location: "body" | "query") => {
   const validator = location === "body" ? body("name") : query("name");
   return validator
@@ -111,13 +119,7 @@ export const getAllVersionsByIdValidator = [schemaIdValidation];
  */
 export const getSchemaByIdAndVersionValidator = [
   schemaIdValidation,
-  param("version")
-    .trim()
-    .notEmpty()
-    .withMessage("Version is required")
-    .isInt({ min: 1 })
-    .withMessage("Version must be a positive integer")
-    .toInt(),
+  schemaVersionValidation,
 ];
 
 /**
@@ -126,9 +128,12 @@ export const getSchemaByIdAndVersionValidator = [
 export const getSchemaByIdValidator = [schemaIdValidation];
 
 /**
- * Validator for GET /schemas/:id/active
+ * Validator for GET /schemas/:id/version/:version/active
  */
-export const isSchemaActiveValidator = [schemaIdValidation];
+export const isSchemaActiveValidator = [
+  schemaIdValidation,
+  schemaVersionValidation,
+];
 
 // ============================================
 // 🔹 REQUEST BODY VALIDATORS
@@ -152,16 +157,25 @@ export const updateVCSchemaValidator = [
 ];
 
 /**
- * Validator for PATCH /schemas/:id/deactivate
+ * Validator for PATCH /schemas/:id/version/:version/deactivate
  */
-export const deactivateVCSchemaValidator = [schemaIdValidation];
+export const deactivateVCSchemaValidator = [
+  schemaIdValidation,
+  schemaVersionValidation,
+];
 
 /**
- * Validator for PATCH /schemas/:id/reactivate
+ * Validator for PATCH /schemas/:id/version/:version/reactivate
  */
-export const reactivateVCSchemaValidator = [schemaIdValidation];
+export const reactivateVCSchemaValidator = [
+  schemaIdValidation,
+  schemaVersionValidation,
+];
 
 /**
- * Validator for DELETE /schemas/:id
+ * Validator for DELETE /schemas/:id/version/:version
  */
-export const deleteVCSchemaValidator = [schemaIdValidation];
+export const deleteVCSchemaValidator = [
+  schemaIdValidation,
+  schemaVersionValidation,
+];

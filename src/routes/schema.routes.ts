@@ -372,10 +372,10 @@ router.get(
 
 /**
  * @swagger
- * /schemas/{id}/active:
+ * /schemas/{id}/version/{version}/active:
  *   get:
- *     summary: Check if schema is active
- *     description: Check the active status of a schema (READ from Database only)
+ *     summary: Check if schema version is active
+ *     description: Check the active status of a specific schema version (READ from Database only)
  *     tags:
  *       - VC Schema Management
  *     parameters:
@@ -387,6 +387,14 @@ router.get(
  *           format: uuid
  *         description: Schema UUID
  *         example: "550e8400-e29b-41d4-a716-446655440000"
+ *       - in: path
+ *         name: version
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: Schema version number
+ *         example: 1
  *     responses:
  *       200:
  *         description: Schema status retrieved successfully
@@ -405,17 +413,20 @@ router.get(
  *                       type: string
  *                       format: uuid
  *                       example: "550e8400-e29b-41d4-a716-446655440000"
+ *                     version:
+ *                       type: integer
+ *                       example: 1
  *                     isActive:
  *                       type: boolean
  *                       example: true
  *       400:
- *         description: Invalid UUID format
+ *         description: Invalid UUID or version format
  *       404:
- *         description: Schema not found
+ *         description: Schema version not found
  *       500:
  *         description: Internal server error
  */
-router.get("/:id/active", isSchemaActiveValidator, vcSchema.isSchemaActive);
+router.get("/:id/version/:version/active", isSchemaActiveValidator, vcSchema.isSchemaActive);
 
 // ============================================
 // 🔹 POST/PUT/PATCH/DELETE ENDPOINTS (Database + Blockchain)
@@ -712,15 +723,16 @@ router.put("/:id", updateVCSchemaValidator, vcSchema.updateVCSchema);
 
 /**
  * @swagger
- * /schemas/{id}/deactivate:
+ * /schemas/{id}/version/{version}/deactivate:
  *   patch:
- *     summary: Deactivate VC schema
+ *     summary: Deactivate VC schema version
  *     description: |
- *       Deactivate a VC schema in both Database and Blockchain.
+ *       Deactivate a specific VC schema version in both Database and Blockchain.
  *
  *       **Effect:**
- *       - Schema cannot be used for new credentials
+ *       - This specific version cannot be used for new credentials
  *       - Existing credentials remain valid
+ *       - Other versions are not affected
  *     tags:
  *       - VC Schema Management
  *     parameters:
@@ -732,9 +744,17 @@ router.put("/:id", updateVCSchemaValidator, vcSchema.updateVCSchema);
  *           format: uuid
  *         description: UUID of the schema to deactivate
  *         example: "550e8400-e29b-41d4-a716-446655440000"
+ *       - in: path
+ *         name: version
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: Version number to deactivate
+ *         example: 1
  *     responses:
  *       200:
- *         description: Schema deactivated successfully
+ *         description: Schema version deactivated successfully
  *         content:
  *           application/json:
  *             schema:
@@ -760,24 +780,29 @@ router.put("/:id", updateVCSchemaValidator, vcSchema.updateVCSchema);
  *                   description: Blockchain transaction hash (hex without 0x prefix)
  *                   example: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
  *       400:
- *         description: Schema already deactivated or blockchain failure
+ *         description: Schema version already deactivated or blockchain failure
  *       404:
- *         description: Schema not found
+ *         description: Schema version not found
  *       500:
  *         description: Internal server error
  */
 router.patch(
-  "/:id/deactivate",
+  "/:id/version/:version/deactivate",
   deactivateVCSchemaValidator,
   vcSchema.deactivateVCSchema
 );
 
 /**
  * @swagger
- * /schemas/{id}/reactivate:
+ * /schemas/{id}/version/{version}/reactivate:
  *   patch:
- *     summary: Reactivate VC schema
- *     description: Reactivate a deactivated VC schema in both Database and Blockchain
+ *     summary: Reactivate VC schema version
+ *     description: |
+ *       Reactivate a deactivated VC schema version in both Database and Blockchain.
+ *
+ *       **Effect:**
+ *       - This specific version can be used for new credentials again
+ *       - Other versions are not affected
  *     tags:
  *       - VC Schema Management
  *     parameters:
@@ -789,9 +814,17 @@ router.patch(
  *           format: uuid
  *         description: UUID of the schema to reactivate
  *         example: "550e8400-e29b-41d4-a716-446655440000"
+ *       - in: path
+ *         name: version
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: Version number to reactivate
+ *         example: 1
  *     responses:
  *       200:
- *         description: Schema reactivated successfully
+ *         description: Schema version reactivated successfully
  *         content:
  *           application/json:
  *             schema:
@@ -817,14 +850,14 @@ router.patch(
  *                   description: Blockchain transaction hash (hex without 0x prefix)
  *                   example: "abcdef9876543210abcdef9876543210abcdef9876543210abcdef9876543210"
  *       400:
- *         description: Schema already active or blockchain failure
+ *         description: Schema version already active or blockchain failure
  *       404:
- *         description: Schema not found
+ *         description: Schema version not found
  *       500:
  *         description: Internal server error
  */
 router.patch(
-  "/:id/reactivate",
+  "/:id/version/:version/reactivate",
   reactivateVCSchemaValidator,
   vcSchema.reactivateVCSchema
 );
