@@ -149,8 +149,8 @@ export const getAllSchemaVersions = asyncHandler(
 );
 
 /**
- * Check if schema is active
- * @route GET /api/schemas/:id/active?version=1
+ * Check if schema version is active
+ * @route GET /api/schemas/:id/version/:version/active
  */
 export const isSchemaActive = asyncHandler(
   async (req: Request, res: Response) => {
@@ -159,11 +159,14 @@ export const isSchemaActive = asyncHandler(
       throw new ValidationError("Validation error", errors.array());
     }
 
-    const { id } = req.params;
-    const version = req.query.version
-      ? parseInt(req.query.version as string)
-      : undefined;
-    const status = await SchemaService.isActive(id, version);
+    const { id, version } = req.params;
+    const versionNumber = parseInt(version);
+
+    if (isNaN(versionNumber)) {
+      throw new ValidationError("Version must be a valid number");
+    }
+
+    const status = await SchemaService.isActive(id, versionNumber);
 
     return ResponseHelper.success(res, status);
   }
@@ -233,8 +236,8 @@ export const updateVCSchema = asyncHandler(
 );
 
 /**
- * Deactivate VC schema
- * @route PATCH /api/schemas/:id/deactivate?version=1
+ * Deactivate VC schema version
+ * @route PATCH /api/schemas/:id/version/:version/deactivate
  */
 export const deactivateVCSchema = asyncHandler(
   async (req: Request, res: Response) => {
@@ -243,11 +246,14 @@ export const deactivateVCSchema = asyncHandler(
       throw new ValidationError("Validation error", errors.array());
     }
 
-    const { id } = req.params;
-    const version = req.query.version
-      ? parseInt(req.query.version as string)
-      : undefined;
-    const result = await SchemaService.deactivate(id, version);
+    const { id, version } = req.params;
+    const versionNumber = parseInt(version);
+
+    if (isNaN(versionNumber)) {
+      throw new ValidationError("Version must be a valid number");
+    }
+
+    const result = await SchemaService.deactivate(id, versionNumber);
 
     return ResponseHelper.success(
       res,
@@ -261,8 +267,8 @@ export const deactivateVCSchema = asyncHandler(
 );
 
 /**
- * Reactivate VC schema
- * @route PATCH /api/schemas/:id/reactivate?version=1
+ * Reactivate VC schema version
+ * @route PATCH /api/schemas/:id/version/:version/reactivate
  */
 export const reactivateVCSchema = asyncHandler(
   async (req: Request, res: Response) => {
@@ -271,11 +277,14 @@ export const reactivateVCSchema = asyncHandler(
       throw new ValidationError("Validation error", errors.array());
     }
 
-    const { id } = req.params;
-    const version = req.query.version
-      ? parseInt(req.query.version as string)
-      : undefined;
-    const result = await SchemaService.reactivate(id, version);
+    const { id, version } = req.params;
+    const versionNumber = parseInt(version);
+
+    if (isNaN(versionNumber)) {
+      throw new ValidationError("Version must be a valid number");
+    }
+
+    const result = await SchemaService.reactivate(id, versionNumber);
 
     return ResponseHelper.success(
       res,
@@ -289,8 +298,8 @@ export const reactivateVCSchema = asyncHandler(
 );
 
 /**
- * Delete VC schema (soft delete)
- * @route DELETE /api/schemas/:id?version=1
+ * Delete VC schema version (soft delete)
+ * @route DELETE /api/schemas/:id/version/:version
  */
 export const deleteVCSchema = asyncHandler(
   async (req: Request, res: Response) => {
@@ -299,11 +308,14 @@ export const deleteVCSchema = asyncHandler(
       throw new ValidationError("Validation error", errors.array());
     }
 
-    const { id } = req.params;
-    const version = req.query.version
-      ? parseInt(req.query.version as string)
-      : undefined;
-    const result = await SchemaService.delete(id, version);
+    const { id, version } = req.params;
+    const versionNumber = parseInt(version);
+
+    if (isNaN(versionNumber)) {
+      throw new ValidationError("Version must be a valid number");
+    }
+
+    const result = await SchemaService.delete(id, versionNumber);
 
     return ResponseHelper.success(
       res,

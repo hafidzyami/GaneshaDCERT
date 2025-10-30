@@ -178,12 +178,7 @@ class DIDService {
     // Check if DID exists
     const exists = await this.blockchainService.isDIDRegistered(did);
     if (!exists) {
-      return {
-        found: false,
-        error: "Not Found",
-        message: "DID not found on blockchain",
-        did,
-      };
+      throw new NotFoundError("DID not found on blockchain");
     }
 
     // Rotate key
@@ -193,7 +188,6 @@ class DIDService {
     );
 
     return {
-      found: true,
       message: "DID key rotated successfully",
       did,
       transactionHash: receipt.hash,
@@ -203,18 +197,13 @@ class DIDService {
 
   /**
    * Deactivate DID
-   * Returns 200 with found status instead of throwing NotFoundError
+   * Throws NotFoundError if DID doesn't exist
    */
   async deactivateDID(did: string) {
     // Check if DID exists
     const exists = await this.blockchainService.isDIDRegistered(did);
     if (!exists) {
-      return {
-        found: false,
-        error: "Not Found",
-        message: "DID not found on blockchain",
-        did,
-      };
+      throw new NotFoundError("DID not found on blockchain");
     }
 
     // Deactivate DID
@@ -223,7 +212,6 @@ class DIDService {
     // TODO: Trigger batch revocation for all associated VCs via message queue
 
     return {
-      found: true,
       message: "DID deactivated successfully",
       did,
       transactionHash: receipt.hash,

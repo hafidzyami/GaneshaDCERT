@@ -64,7 +64,7 @@ export const requestCredential = asyncHandler(async (req: Request, res: Response
     holder_did,
   });
 
-  res.status(201).json(result);
+  return ResponseHelper.created(res, result, "Credential issuance request created successfully");
 });
 
 /**
@@ -83,7 +83,7 @@ export const getCredentialRequestsByType = asyncHandler(async (req: Request, res
     issuer_did as string | undefined
   );
 
-  res.status(200).json(result);
+  return ResponseHelper.success(res, result, "Credential requests retrieved successfully");
 });
 
 /**
@@ -105,7 +105,7 @@ export const processCredentialResponse = asyncHandler(async (req: Request, res: 
     request_type,
   });
 
-  res.status(201).json(result);
+  return ResponseHelper.created(res, result, "Credential response processed successfully");
 });
 
 /**
@@ -121,7 +121,7 @@ export const getHolderVCs = asyncHandler(async (req: Request, res: Response) => 
 
   const result = await CredentialService.getHolderVCs(holderDid as string);
 
-  res.status(200).json(result);
+  return ResponseHelper.success(res, result, "Holder VCs retrieved successfully");
 });
 
 /**
@@ -141,7 +141,7 @@ export const requestCredentialUpdate = asyncHandler(async (req: Request, res: Re
     encrypted_body,
   });
 
-  res.status(201).json(result);
+  return ResponseHelper.created(res, result, "Credential update request created successfully");
 });
 
 /**
@@ -161,7 +161,7 @@ export const requestCredentialRenewal = asyncHandler(async (req: Request, res: R
     encrypted_body,
   });
 
-  res.status(201).json(result);
+  return ResponseHelper.created(res, result, "Credential renewal request created successfully");
 });
 
 /**
@@ -202,7 +202,7 @@ export const addVCStatusBlock = asyncHandler(async (req: Request, res: Response)
     hash,
   });
 
-  res.status(201).json(result);
+  return ResponseHelper.created(res, result, "VC status block added successfully");
 });
 
 /**

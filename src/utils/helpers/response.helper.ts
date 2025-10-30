@@ -3,17 +3,19 @@ import { ApiResponse, PaginationMeta } from '../../types';
 
 /**
  * Response Helper
- * Standardized API response formats
- * 
- * NEW PATTERN: All responses return HTTP 200 with success flag
- * - success: true  → Operation successful
- * - success: false → Operation failed (validation, not found, etc.)
+ * Standardized API response formats with proper HTTP status codes
+ *
+ * PATTERN:
+ * - Success responses: HTTP 200 with success: true
+ * - Created responses: HTTP 201 with success: true
+ * - Error responses: Proper HTTP status (400, 401, 404, 500, etc.) with success: false
+ * - GET not found: HTTP 200 with success: true, found: false, data: null
  */
 
 export class ResponseHelper {
   /**
    * Send success response (success: true)
-   * Always returns HTTP 200
+   * Returns HTTP 200
    */
   static success<T>(
     res: Response,
@@ -31,7 +33,7 @@ export class ResponseHelper {
 
   /**
    * Send success response with pagination
-   * Always returns HTTP 200
+   * Returns HTTP 200
    */
   static successWithPagination<T>(
     res: Response,
@@ -51,27 +53,54 @@ export class ResponseHelper {
 
   /**
    * Send created response (success: true)
-   * Always returns HTTP 200 (not 201)
+   * Returns HTTP 201
    */
   static created<T>(
-    res: Response, 
-    data: T, 
+    res: Response,
+    data: T,
     message: string = 'Resource created successfully'
   ): Response {
-    return ResponseHelper.success(res, data, message);
+    const response: ApiResponse<T> = {
+      success: true,
+      message,
+      data,
+    };
+
+    return res.status(201).json(response);
+  }
+
+  /**
+   * Send GET not found response (for GET requests only)
+   * Returns HTTP 200 with found: false
+   * Use this when a GET request doesn't find a resource
+   */
+  static getNotFound(
+    res: Response,
+    message: string = 'Resource not found'
+  ): Response {
+    const response: any = {
+      success: true,
+      found: false,
+      message,
+      data: null,
+    };
+
+    return res.status(200).json(response);
   }
 
   /**
    * Send error response (success: false)
-   * Always returns HTTP 200 (not 4xx or 5xx)
-   * 
+   * Returns specified HTTP status code
+   *
    * @param res - Express Response object
+   * @param statusCode - HTTP status code (400, 401, 404, 500, etc.)
    * @param message - Error message
    * @param errors - Optional validation errors array
    * @param data - Optional additional data
    */
   static error(
     res: Response,
+    statusCode: number,
     message: string,
     errors?: any[],
     data?: any
@@ -83,87 +112,87 @@ export class ResponseHelper {
       ...(data && { data }),
     };
 
-    return res.status(200).json(response);
+    return res.status(statusCode).json(response);
   }
 
   /**
    * Send not found response (success: false)
-   * Always returns HTTP 200
+   * Returns HTTP 404
    */
   static notFound(
     res: Response,
     message: string = 'Resource not found',
     data?: any
   ): Response {
-    return ResponseHelper.error(res, message, undefined, data);
+    return ResponseHelper.error(res, 404, message, undefined, data);
   }
 
   /**
    * Send validation error response (success: false)
-   * Always returns HTTP 200
+   * Returns HTTP 422
    */
   static validationError(
     res: Response,
     message: string = 'Validation failed',
     errors: any[]
   ): Response {
-    return ResponseHelper.error(res, message, errors);
+    return ResponseHelper.error(res, 422, message, errors);
   }
 
   /**
    * Send bad request response (success: false)
-   * Always returns HTTP 200
+   * Returns HTTP 400
    */
   static badRequest(
     res: Response,
     message: string = 'Bad request',
     data?: any
   ): Response {
-    return ResponseHelper.error(res, message, undefined, data);
+    return ResponseHelper.error(res, 400, message, undefined, data);
   }
 
   /**
    * Send unauthorized response (success: false)
-   * Always returns HTTP 200
+   * Returns HTTP 401
    */
   static unauthorized(
     res: Response,
     message: string = 'Unauthorized'
   ): Response {
-    return ResponseHelper.error(res, message);
+    return ResponseHelper.error(res, 401, message);
   }
 
   /**
    * Send forbidden response (success: false)
-   * Always returns HTTP 200
+   * Returns HTTP 403
    */
   static forbidden(
     res: Response,
     message: string = 'Forbidden'
   ): Response {
-    return ResponseHelper.error(res, message);
+    return ResponseHelper.error(res, 403, message);
   }
 
   /**
    * Send conflict response (success: false)
-   * Always returns HTTP 200
+   * Returns HTTP 409
    */
   static conflict(
     res: Response,
     message: string = 'Resource conflict',
     data?: any
   ): Response {
-    return ResponseHelper.error(res, message, undefined, data);
+    return ResponseHelper.error(res, 409, message, undefined, data);
   }
 
   /**
    * Send internal server error response (success: false)
-   * Always returns HTTP 200
+   * Returns HTTP 500
    */
   static internalError(
     res: Response,
     message: string = 'Internal server error'
   ): Response {
-    return ResponseHelper.error(res, message);
+    return ResponseHelper.error(res, 500, message);
   }
 }
