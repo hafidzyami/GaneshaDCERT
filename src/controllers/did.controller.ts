@@ -86,7 +86,7 @@ export const numberofBlocks = asyncHandler(
 
 /**
  * Key Rotation Controller
- * Returns 200 even if DID not found
+ * Returns 404 if DID not found
  */
 export const keyRotation = asyncHandler(
   async (req: RequestWithInstitution, res: Response) => {
@@ -100,18 +100,13 @@ export const keyRotation = asyncHandler(
 
     const result = await DIDService.rotateKey(did, new_public_key);
 
-    // Return 200 with appropriate message
-    if (!result.found) {
-      return ResponseHelper.success(res, result, result.message);
-    }
-
-    return ResponseHelper.success(res, result, "Key rotated successfully");
+    return ResponseHelper.success(res, result, result.message);
   }
 );
 
 /**
  * Delete DID Controller
- * Returns 200 even if DID not found
+ * Returns 404 if DID not found
  */
 export const deleteDID = asyncHandler(
   async (req: RequestWithInstitution, res: Response) => {
@@ -125,12 +120,7 @@ export const deleteDID = asyncHandler(
 
     const result = await DIDService.deactivateDID(did);
 
-    // Return 200 with appropriate message
-    if (!result.found) {
-      return ResponseHelper.success(res, result, result.message);
-    }
-
-    return ResponseHelper.success(res, result, "DID deactivated successfully");
+    return ResponseHelper.success(res, result, result.message);
   }
 );
 

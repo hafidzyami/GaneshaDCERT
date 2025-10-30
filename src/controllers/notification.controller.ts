@@ -3,6 +3,7 @@ import { validationResult } from "express-validator";
 import { NotificationService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler } from "../middlewares";
+import { ResponseHelper } from "../utils/helpers";
 
 /**
  * Register Push Token Controller
@@ -21,17 +22,16 @@ export const registerPushToken = asyncHandler(async (req: Request, res: Response
     deviceInfo,
   });
 
-  const statusCode = pushToken.createdAt === pushToken.updatedAt ? 201 : 200;
-  const message =
-    statusCode === 201
-      ? "Push token registered successfully"
-      : "Push token updated successfully";
+  const isNewToken = pushToken.createdAt === pushToken.updatedAt;
+  const message = isNewToken
+    ? "Push token registered successfully"
+    : "Push token updated successfully";
 
-  res.status(statusCode).json({
-    success: true,
-    message,
-    data: pushToken,
-  });
+  // Use created (201) for new tokens, success (200) for updates
+  if (isNewToken) {
+    return ResponseHelper.created(res, pushToken, message);
+  }
+  return ResponseHelper.success(res, pushToken, message);
 });
 
 /**
@@ -47,11 +47,7 @@ export const unregisterPushToken = asyncHandler(async (req: Request, res: Respon
 
   const pushToken = await NotificationService.unregisterPushToken(token);
 
-  res.status(200).json({
-    success: true,
-    message: "Push token unregistered successfully",
-    data: pushToken,
-  });
+  return ResponseHelper.success(res, pushToken, "Push token unregistered successfully");
 });
 
 /**
@@ -67,10 +63,7 @@ export const getPushTokensByHolder = asyncHandler(async (req: Request, res: Resp
 
   const tokens = await NotificationService.getPushTokensByHolder(holder_did);
 
-  res.status(200).json({
-    success: true,
-    data: tokens,
-  });
+  return ResponseHelper.success(res, tokens, "Push tokens retrieved successfully");
 });
 
 /**
@@ -91,9 +84,5 @@ export const sendPushNotification = asyncHandler(async (req: Request, res: Respo
     data,
   });
 
-  res.status(200).json({
-    success: true,
-    message: "Push notifications sent",
-    data: result,
-  });
+  return ResponseHelper.success(res, result, "Push notifications sent");
 });

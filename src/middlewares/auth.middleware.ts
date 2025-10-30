@@ -225,7 +225,34 @@ export const verifyTokenInstitutionAuthMiddleware = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { role } = req.body;
+    const { role, did_string } = req.body;
+
+    // Validate DID format based on role
+    if (did_string && role) {
+      const didPrefix = did_string.substring(0, 12); // "did:dcert:x"
+
+      if (role === "individual") {
+        // Individual DID must start with "did:dcert:u"
+        if (!did_string.startsWith("did:dcert:u")) {
+          res.status(HTTP_STATUS.BAD_REQUEST).json({
+            success: false,
+            message:
+              "Invalid DID format for individual. DID must start with 'did:dcert:u'",
+          });
+          return;
+        }
+      } else if (role === "institution") {
+        // Institution DID must start with "did:dcert:i"
+        if (!did_string.startsWith("did:dcert:i")) {
+          res.status(HTTP_STATUS.BAD_REQUEST).json({
+            success: false,
+            message:
+              "Invalid DID format for institution. DID must start with 'did:dcert:i'",
+          });
+          return;
+        }
+      }
+    }
 
     // If role is "individual", skip token validation
     if (role === "individual") {
@@ -288,7 +315,7 @@ export const verifyTokenInstitutionAuthMiddleware = async (
     // Let validator handle invalid role
     next();
   } catch (error) {
-    logger.error("Error in optionalInstitutionAuthMiddleware", error);
+    logger.error("Error in verifyTokenInstitutionAuthMiddleware", error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: "Terjadi kesalahan server",

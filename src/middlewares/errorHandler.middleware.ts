@@ -6,8 +6,9 @@ import { TransformHelper } from "../utils/helpers";
 /**
  * Global Error Handler Middleware
  *
- * NEW PATTERN: All errors return HTTP 200 with success: false
- * This provides consistent response structure for frontend handling
+ * PATTERN:
+ * - GET requests with NotFoundError: Return HTTP 200 with { success: true, found: false, data: null }
+ * - All other errors: Return proper HTTP status code (400, 401, 404, 500, etc.) with { success: false }
  */
 export const errorHandler = (
   error: Error | AppError,
@@ -15,8 +16,9 @@ export const errorHandler = (
   res: Response,
   next: NextFunction
 ): void => {
-  // Default error message
+  // Default error message and status code
   let message = "Internal server error";
+  let statusCode = 500;
   let errors: any[] | undefined;
 
   // Debug: Log error type and properties
@@ -27,11 +29,13 @@ export const errorHandler = (
     isValidationError: error instanceof ValidationError,
     hasErrorsProperty: "errors" in error,
     errorProperties: Object.keys(error),
+    method: req.method,
   });
 
   // Handle operational errors
   if (error instanceof AppError) {
     message = error.message;
+    statusCode = error.statusCode;
 
     // Handle ValidationError specifically
     if (error instanceof ValidationError) {
@@ -83,40 +87,63 @@ export const errorHandler = (
     }
   }
 
-  // Build response object - ALWAYS with success: false
-  const responseObj: any = {
-    success: false,
-    message,
-  };
+  // SPECIAL HANDLING for GET requests with NotFoundError
+  // Return 200 with found: false instead of 404 error
+  if (req.method === "GET" && error instanceof AppError && statusCode === 404) {
+    const responseObj: any = {
+      success: true,
+      found: false,
+      message: message || "Resource not found",
+      data: null,
+    };
 
-  // Add errors array if exists
-  if (errors && errors.length > 0) {
-    responseObj.errors = errors;
+    // Add requestId if exists
+    if (req.requestId) {
+      responseObj.requestId = req.requestId;
+    }
+
+    logger.info("GET request - Resource not found (returning 200 with found: false):", {
+      url: req.originalUrl,
+      method: req.method,
+    });
+
+    res.status(200).json(responseObj);
+  } else {
+    // Build error response object
+    const responseObj: any = {
+      success: false,
+      message,
+    };
+
+    // Add errors array if exists
+    if (errors && errors.length > 0) {
+      responseObj.errors = errors;
+    }
+
+    // Add requestId if exists
+    if (req.requestId) {
+      responseObj.requestId = req.requestId;
+    }
+
+    // Add stack trace in development
+    if (env.NODE_ENV === "development") {
+      responseObj.stack = error.stack;
+      responseObj.name = error.name;
+    }
+
+    // Return response with proper HTTP status code
+    res.status(statusCode).json(responseObj);
   }
-
-  // Add requestId if exists
-  if (req.requestId) {
-    responseObj.requestId = req.requestId;
-  }
-
-  // Add stack trace in development
-  if (env.NODE_ENV === "development") {
-    responseObj.stack = error.stack;
-    responseObj.name = error.name;
-  }
-
-  // IMPORTANT: Always return HTTP 200 with success: false
-  res.status(200).json(responseObj);
 };
 
 /**
- * Handle 404 Not Found
- * Returns HTTP 200 with success: false
+ * Handle 404 Not Found (for undefined routes)
+ * Returns proper HTTP 404 status
  */
 export const notFoundHandler = (req: Request, res: Response): void => {
   logger.warn(`Route not found: ${req.method} ${req.originalUrl}`);
 
-  res.status(200).json({
+  res.status(404).json({
     success: false,
     message: `Route ${req.method} ${req.originalUrl} not found`,
     ...(req.requestId && { requestId: req.requestId }),

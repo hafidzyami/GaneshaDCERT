@@ -3,6 +3,7 @@ import { validationResult } from "express-validator";
 import { PresentationService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler } from "../middlewares";
+import { ResponseHelper } from "../utils/helpers";
 
 /**
  * Request VP Controller
@@ -21,7 +22,7 @@ export const requestVP = asyncHandler(async (req: Request, res: Response) => {
     list_schema_id,
   });
 
-  res.status(201).json(result);
+  return ResponseHelper.created(res, result, "VP request created successfully");
 });
 
 /**
@@ -37,7 +38,7 @@ export const getVPRequestDetails = asyncHandler(async (req: Request, res: Respon
 
   const result = await PresentationService.getVPRequestDetails(vpReqId);
 
-  res.status(200).json(result);
+  return ResponseHelper.success(res, result, "VP request details retrieved successfully");
 });
 
 /**
@@ -56,7 +57,7 @@ export const storeVP = asyncHandler(async (req: Request, res: Response) => {
     vp,
   });
 
-  res.status(201).json(result);
+  return ResponseHelper.created(res, result, "VP stored successfully");
 });
 
 /**
@@ -72,5 +73,5 @@ export const getVP = asyncHandler(async (req: Request, res: Response) => {
 
   const result = await PresentationService.getVP(vpId);
 
-  res.status(200).json(result);
+  return ResponseHelper.success(res, result, "VP retrieved successfully");
 });
