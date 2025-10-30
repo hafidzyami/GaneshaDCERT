@@ -15,15 +15,13 @@ export interface RequestWithDID extends Request {
 }
 
 /**
- * Helper function to convert hex string to Uint8Array
+ * Decode JWT token (without verification)
  */
-function hexToBytes(hex: string): Uint8Array {
-  // Remove any spaces or prefixes
-  const cleanHex = hex.replace(/^0x/, '').replace(/\s/g, '');
-  
-  // Validate hex string
-  if (!/^[0-9a-fA-F]*$/.test(cleanHex)) {
-    throw new Error('Invalid hex string');
+function decodeJWT(token: string): { header: any; payload: any; signature: string } {
+  const parts = token.split('.');
+
+  if (parts.length !== 3) {
+    throw new Error('Invalid JWT format. Expected 3 parts separated by dots');
   }
 
   const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
@@ -67,127 +65,179 @@ function signatureToBuffer(signature: string): Buffer {
  * Helper function to convert raw public key (hex) to PEM format for ES256
  * ES256 uses P-256 curve (prime256v1)
  */
-function rawPublicKeyToPEM(publicKeyHex: string): string {
-  // Remove '0x' prefix if exists
+function publicKeyHexToPEM(publicKeyHex: string): string {
+  // Remove 0x prefix if present
   const cleanHex = publicKeyHex.startsWith('0x') ? publicKeyHex.substring(2) : publicKeyHex;
 
-  // For P-256, uncompressed public key is 65 bytes (130 hex chars): 04 + 32 bytes X + 32 bytes Y
-  // Compressed public key is 33 bytes (66 hex chars): 02/03 + 32 bytes X
+  // Public key should be 65 bytes (130 hex chars) for uncompressed format (04 + X + Y)
+  if (cleanHex.length !== 130) {
+    throw new Error(`Invalid public key length: expected 130 hex chars, got ${cleanHex.length}`);
+  }
+
+  // Verify it starts with 04 (uncompressed point indicator)
+  if (!cleanHex.startsWith('04')) {
+    throw new Error('Public key must be in uncompressed format (start with 04)');
+  }
+
+  // Create buffer from hex
   const publicKeyBuffer = Buffer.from(cleanHex, 'hex');
 
-  // Create EC public key in PEM format
-  const key = crypto.createPublicKey({
-    key: publicKeyBuffer,
-    format: 'der',
-    type: 'spki',
-  });
+  // Create ASN.1 DER structure for EC public key (P-256)
+  // This is the standard format for SPKI (SubjectPublicKeyInfo)
+  const asn1Header = Buffer.from([
+    0x30, 0x59, // SEQUENCE, length 89
+    0x30, 0x13, // SEQUENCE, length 19
+    0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, // OID: ecPublicKey
+    0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, // OID: prime256v1 (P-256)
+    0x03, 0x42, 0x00 // BIT STRING, length 66, 0 unused bits
+  ]);
 
-  return key.export({ type: 'spki', format: 'pem' }) as string;
+  const derKey = Buffer.concat([asn1Header, publicKeyBuffer]);
+  const base64Key = derKey.toString('base64');
+
+  // Format as PEM
+  return `-----BEGIN PUBLIC KEY-----\n${base64Key.match(/.{1,64}/g)?.join('\n')}\n-----END PUBLIC KEY-----`;
 }
 
 /**
- * Convert DER signature to raw signature (r,s) for ES256
- * JWT ES256 signatures are raw (r||s) format, not DER encoded
- */
-function derSignatureToRaw(signature: Buffer): Buffer {
-  // If signature is already 64 bytes (raw format), return as is
-  if (signature.length === 64) {
-    return signature;
-  }
-
-  // Otherwise, it might be DER encoded - parse it
-  // DER format: 0x30 [total-length] 0x02 [r-length] [r] 0x02 [s-length] [s]
-  let offset = 0;
-
-  if (signature[offset++] !== 0x30) {
-    throw new Error('Invalid DER signature format');
-  }
-
-  const totalLength = signature[offset++];
-
-  if (signature[offset++] !== 0x02) {
-    throw new Error('Invalid DER signature format - missing r marker');
-  }
-
-  const rLength = signature[offset++];
-  const r = signature.slice(offset, offset + rLength);
-  offset += rLength;
-
-  if (signature[offset++] !== 0x02) {
-    throw new Error('Invalid DER signature format - missing s marker');
-  }
-
-  const sLength = signature[offset++];
-  const s = signature.slice(offset, offset + sLength);
-
-  // Pad r and s to 32 bytes each if needed (for P-256)
-  const rPadded = r.length < 32 ? Buffer.concat([Buffer.alloc(32 - r.length), r]) : r.slice(-32);
-  const sPadded = s.length < 32 ? Buffer.concat([Buffer.alloc(32 - s.length), s]) : s.slice(-32);
-
-  return Buffer.concat([rPadded, sPadded]);
-}
-
-/**
- * Convert raw signature (r||s) to DER format for Node.js crypto verification
- * JWT ES256 signatures are 64 bytes: r (32 bytes) || s (32 bytes)
- * DER format: 0x30 [total-length] 0x02 [r-length] [r] 0x02 [s-length] [s]
+ * Convert raw ECDSA signature (r||s format, 64 bytes) to DER format
+ * ES256 signatures from JWT are typically in raw format (32 bytes r + 32 bytes s)
+ * Node.js crypto.verify expects DER format
  */
 function rawSignatureToDER(signature: Buffer): Buffer {
   if (signature.length !== 64) {
-    // If not 64 bytes, assume it's already DER
-    return signature;
+    throw new Error(`Invalid raw signature length: expected 64 bytes, got ${signature.length}`);
   }
 
+  // Split into r and s (each 32 bytes)
   let r = signature.slice(0, 32);
   let s = signature.slice(32, 64);
 
-  // Remove leading zeros from r, but keep at least one byte
-  let rIndex = 0;
-  while (rIndex < r.length - 1 && r[rIndex] === 0) {
-    rIndex++;
+  // Remove leading zeros but keep at least one byte
+  while (r.length > 1 && r[0] === 0 && (r[1] & 0x80) === 0) {
+    r = r.slice(1);
   }
-  r = r.slice(rIndex);
-
-  // Remove leading zeros from s, but keep at least one byte
-  let sIndex = 0;
-  while (sIndex < s.length - 1 && s[sIndex] === 0) {
-    sIndex++;
+  while (s.length > 1 && s[0] === 0 && (s[1] & 0x80) === 0) {
+    s = s.slice(1);
   }
-  s = s.slice(sIndex);
 
-  // Add 0x00 prefix if high bit is set (to make it a positive integer in DER)
-  if (r[0] & 0x80) {
+  // Add 0x00 prefix if high bit is set (to keep values positive in DER)
+  if ((r[0] & 0x80) !== 0) {
     r = Buffer.concat([Buffer.from([0x00]), r]);
   }
-  if (s[0] & 0x80) {
+  if ((s[0] & 0x80) !== 0) {
     s = Buffer.concat([Buffer.from([0x00]), s]);
   }
 
-  // Build DER sequence:
-  // 0x30 [total-length] 0x02 [r-length] [r] 0x02 [s-length] [s]
+  // Build DER: SEQUENCE { INTEGER r, INTEGER s }
   const totalLength = 2 + r.length + 2 + s.length;
 
   return Buffer.concat([
-    Buffer.from([0x30, totalLength]),  // SEQUENCE tag and length
-    Buffer.from([0x02, r.length]),     // INTEGER tag and length for r
-    r,                                  // r value
-    Buffer.from([0x02, s.length]),     // INTEGER tag and length for s
-    s                                   // s value
+    Buffer.from([0x30, totalLength]),          // SEQUENCE tag and length
+    Buffer.from([0x02, r.length]), r,          // INTEGER tag, length, value (r)
+    Buffer.from([0x02, s.length]), s           // INTEGER tag, length, value (s)
   ]);
 }
 
 /**
- * DID Authentication Middleware
- * Verifies JWT token signed with DID holder's private key
- * 
+ * Helper function to extract raw signature from DER format
+ */
+function derSignatureToRaw(derSignature: Buffer): Buffer {
+  if (derSignature[0] !== 0x30) {
+    throw new Error('Invalid DER signature: must start with SEQUENCE tag (0x30)');
+  }
+
+  let offset = 2; // Skip SEQUENCE tag and length
+
+  // Read r
+  if (derSignature[offset] !== 0x02) {
+    throw new Error('Invalid DER signature: expected INTEGER tag for r');
+  }
+  offset++; // Skip INTEGER tag
+  const rLength = derSignature[offset++];
+  let r = derSignature.slice(offset, offset + rLength);
+  offset += rLength;
+
+  // Read s
+  if (derSignature[offset] !== 0x02) {
+    throw new Error('Invalid DER signature: expected INTEGER tag for s');
+  }
+  offset++; // Skip INTEGER tag
+  const sLength = derSignature[offset++];
+  let s = derSignature.slice(offset, offset + sLength);
+
+  // Remove leading zero padding
+  if (r.length > 32 && r[0] === 0x00) {
+    r = r.slice(1);
+  }
+  if (s.length > 32 && s[0] === 0x00) {
+    s = s.slice(1);
+  }
+
+  // Pad to 32 bytes if needed
+  if (r.length < 32) {
+    r = Buffer.concat([Buffer.alloc(32 - r.length, 0), r]);
+  }
+  if (s.length < 32) {
+    s = Buffer.concat([Buffer.alloc(32 - s.length, 0), s]);
+  }
+
+  return Buffer.concat([r.slice(-32), s.slice(-32)]);
+}
+
+/**
+ * Validate JWT claims (expiration, not before, issued at)
+ */
+function validateJWTClaims(payload: any): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const currentTime = Math.floor(Date.now() / 1000);
+
+  // Check expiration (exp)
+  if (payload.exp !== undefined) {
+    if (typeof payload.exp !== 'number') {
+      errors.push('exp claim must be a number');
+    } else if (payload.exp < currentTime) {
+      errors.push(`Token expired at ${new Date(payload.exp * 1000).toISOString()}`);
+    }
+  }
+
+  // Check not before (nbf)
+  if (payload.nbf !== undefined) {
+    if (typeof payload.nbf !== 'number') {
+      errors.push('nbf claim must be a number');
+    } else if (payload.nbf > currentTime) {
+      errors.push(`Token not valid before ${new Date(payload.nbf * 1000).toISOString()}`);
+    }
+  }
+
+  // Check issued at (iat)
+  if (payload.iat !== undefined) {
+    if (typeof payload.iat !== 'number') {
+      errors.push('iat claim must be a number');
+    } else if (payload.iat > currentTime + 60) {
+      // Allow 60 seconds clock skew
+      errors.push('Token issued in the future');
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
+
+/**
+ * DID Authentication Middleware - ES256 Signature Verification
+ * Verifies JWT token signed with ES256 (ECDSA with P-256 curve and SHA-256)
+ *
  * Header format: Bearer <JWT_TOKEN>
  * JWT payload must contain: { iss: "did:dcert:...", sub: "did:dcert:...", ... }
- * 
+ *
  * Process:
  * 1. Extract and decode JWT token
  * 2. Get DID from 'iss' claim in payload
  * 3. Get public key from DID document on blockchain
- * 4. Verify JWT signature using public key
+ * 4. Verify JWT signature using ES256 algorithm
  * 5. Validate iss matches sub and token not expired
  */
 export const verifyDIDSignature = async (
@@ -198,8 +248,6 @@ export const verifyDIDSignature = async (
   try {
     // Get token from Authorization header
     const authHeader = req.headers.authorization;
-    logger.info("Starting DID signature verification middleware");
-    logger.info("Authorization header received", { authHeaderPresent: !!authHeader });
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
@@ -216,14 +264,7 @@ export const verifyDIDSignature = async (
     let decoded;
     try {
       decoded = decodeJWT(token);
-      logger.debug("JWT decoded successfully", {
-        header: decoded.header,
-        payload: decoded.payload
-      });
     } catch (error) {
-      logger.error("Failed to decode JWT", {
-        error: error instanceof Error ? error.message : String(error)
-      });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "Invalid JWT token format",
@@ -232,7 +273,7 @@ export const verifyDIDSignature = async (
       return;
     }
 
-    const { header, payload } = decoded;
+    const { header, payload, signature } = decoded;
 
     // Log decoded JWT for debugging
     logger.debug(`JWT Header: ${JSON.stringify(header)}`);
@@ -241,18 +282,15 @@ export const verifyDIDSignature = async (
 
     // Validate JWT header
     if (header.alg !== "ES256" || header.typ !== "JWT") {
-      logger.warn("Invalid JWT header", { header });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "Invalid JWT header. Expected alg: ES256, typ: JWT",
-        received: header
       });
       return;
     }
 
     // Validate required claims
     if (!payload.iss || !payload.sub) {
-      logger.warn("Missing required JWT claims", { payload });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "JWT payload must contain 'iss' and 'sub' claims",
@@ -264,18 +302,15 @@ export const verifyDIDSignature = async (
 
     // Validate DID format
     if (!holderDID.startsWith("did:dcert:")) {
-      logger.warn("Invalid DID format", { holderDID });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "Invalid DID format in 'iss' claim. Expected did:dcert:...",
-        received: holderDID
       });
       return;
     }
 
     // Validate iss matches sub
     if (payload.iss !== payload.sub) {
-      logger.warn("JWT claims mismatch", { iss: payload.iss, sub: payload.sub });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "JWT 'iss' and 'sub' claims must match",
@@ -286,10 +321,6 @@ export const verifyDIDSignature = async (
     // Step 2: Validate JWT claims (expiration, nbf, iat)
     const claimsValidation = validateJWTClaims(payload);
     if (!claimsValidation.valid) {
-      logger.warn("JWT claims validation failed", {
-        did: holderDID,
-        errors: claimsValidation.errors
-      });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "JWT claims validation failed",
@@ -305,7 +336,6 @@ export const verifyDIDSignature = async (
 
     // Check if DID exists
     if (!didDocument.found) {
-      logger.warn("DID not found on blockchain", { did: holderDID });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "DID not found on blockchain",
@@ -316,10 +346,6 @@ export const verifyDIDSignature = async (
 
     // Check if DID is active
     if (didDocument.status !== "Active") {
-      logger.warn("DID is not active", {
-        did: holderDID,
-        status: didDocument.status
-      });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: `DID is not active. Current status: ${didDocument.status}`,
@@ -329,15 +355,10 @@ export const verifyDIDSignature = async (
     }
 
     // Get public key from DID document
-    const keyId = didDocument.keyId; // e.g., "#key-1"
-    const publicKeyHex = didDocument[keyId]; // Get public key from the keyId field
+    const keyId = didDocument.keyId;
+    const publicKeyHex = didDocument[keyId];
 
     if (!publicKeyHex) {
-      logger.error("Public key not found in DID document", {
-        did: holderDID,
-        keyId,
-        availableKeys: Object.keys(didDocument)
-      });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "Public key not found in DID document",
@@ -346,15 +367,11 @@ export const verifyDIDSignature = async (
       return;
     }
 
-    logger.debug("Public key retrieved from DID document", {
-      did: holderDID,
-      publicKeyHex,
-      publicKeyLength: publicKeyHex.length
-    });
+    logger.debug(`Public key retrieved: ${publicKeyHex}`);
 
-    // Verify JWT signature using ES256 (ECDSA with P-256 and SHA-256)
+    // Step 4: Verify JWT signature using ES256
     try {
-      // Get the message to verify (header.payload) - standard JWT
+      // Get the message to verify: header.payload (as string, not bytes)
       const parts = token.split('.');
       const messageString = `${parts[0]}.${parts[1]}`;
       const messageBuffer = Buffer.from(messageString, 'utf8');
@@ -388,12 +405,10 @@ export const verifyDIDSignature = async (
       logger.debug(`Public key length: ${publicKeyBuffer.length} bytes`);
       logger.debug(`Public key (first byte): 0x${publicKeyBuffer[0].toString(16)}`);
 
-      // Check if public key is in correct format (uncompressed: 0x04 + 32 bytes X + 32 bytes Y)
-      if (publicKeyBuffer.length !== 65 || publicKeyBuffer[0] !== 0x04) {
+      if (publicKeyBuffer.length !== 65) {
         res.status(HTTP_STATUS.UNAUTHORIZED).json({
           success: false,
-          message: `Invalid public key format. Expected 65 bytes starting with 0x04, got ${publicKeyBuffer.length} bytes starting with 0x${publicKeyBuffer[0].toString(16)}`,
-          did: holderDID,
+          message: `Invalid public key length: expected 65 bytes, got ${publicKeyBuffer.length}`,
         });
         return;
       }
@@ -427,9 +442,7 @@ export const verifyDIDSignature = async (
         logger.error("Failed to create public key", conversionError);
         res.status(HTTP_STATUS.UNAUTHORIZED).json({
           success: false,
-          message: "Failed to create public key from coordinates",
-          did: holderDID,
-          error: conversionError instanceof Error ? conversionError.message : "Unknown error"
+          message: "Failed to create public key from DID document",
         });
         return;
       }
@@ -520,9 +533,9 @@ export const verifyDIDSignature = async (
         logger.error("Signature verification failed", {
           messageLength: messageString.length,
           messageFirst50: messageString.substring(0, 50),
-          signatureLength: signatureDER.length,
-          signatureHex: signatureDER.toString('hex'),
-          publicKeyHex: publicKeyHex.substring(0, 66) + "...",
+          signatureLength: signatureBuffer.length,
+          signatureHex: signatureBuffer.toString('hex').substring(0, 100) + '...',
+          publicKeyHex: publicKeyHex.substring(0, 100) + '...'
         });
 
         res.status(HTTP_STATUS.UNAUTHORIZED).json({
@@ -533,7 +546,7 @@ export const verifyDIDSignature = async (
         return;
       }
 
-      logger.success(`✅ JWT signature verified successfully for DID: ${holderDID} using ES256`);
+      logger.info(`✅ JWT signature verified successfully for DID: ${holderDID}`);
 
       // Attach DID data and payload to request
       req.holderDID = holderDID;
@@ -543,7 +556,7 @@ export const verifyDIDSignature = async (
 
       next();
     } catch (error) {
-      logger.error("Error verifying JWT signature with ES256", error);
+      logger.error("Error verifying JWT signature", error);
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "Failed to verify JWT signature",
@@ -552,10 +565,7 @@ export const verifyDIDSignature = async (
       return;
     }
   } catch (error) {
-    logger.error("Error in verifyDIDSignature middleware", {
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined
-    });
+    logger.error("Error in verifyDIDSignature middleware", error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: "Internal server error during JWT verification",
@@ -595,10 +605,7 @@ export const optionalVerifyDIDSignature = async (
     // Use the same verification logic
     await verifyDIDSignature(req, res, next);
   } catch (error) {
-    logger.error("Error in optionalVerifyDIDSignature middleware", {
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined
-    });
+    logger.error("Error in optionalVerifyDIDSignature middleware", error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: "Internal server error during optional JWT verification",
