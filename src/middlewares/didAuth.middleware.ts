@@ -15,12 +15,15 @@ export interface RequestWithDID extends Request {
 }
 
 /**
- * Helper function to decode JWT without verification
+ * Helper function to convert hex string to Uint8Array
  */
-function decodeJWT(token: string): { header: any; payload: any; signature: string } {
-  const parts = token.split('.');
-  if (parts.length !== 3) {
-    throw new Error('Invalid JWT format');
+function hexToBytes(hex: string): Uint8Array {
+  // Remove any spaces or prefixes
+  const cleanHex = hex.replace(/^0x/, '').replace(/\s/g, '');
+  
+  // Validate hex string
+  if (!/^[0-9a-fA-F]*$/.test(cleanHex)) {
+    throw new Error('Invalid hex string');
   }
 
   const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
@@ -184,7 +187,7 @@ function rawSignatureToDER(signature: Buffer): Buffer {
  * 1. Extract and decode JWT token
  * 2. Get DID from 'iss' claim in payload
  * 3. Get public key from DID document on blockchain
- * 4. Verify JWT signature (signs "header.payload") using public key
+ * 4. Verify JWT signature using public key
  * 5. Validate iss matches sub and token not expired
  */
 export const verifyDIDSignature = async (
@@ -195,6 +198,8 @@ export const verifyDIDSignature = async (
   try {
     // Get token from Authorization header
     const authHeader = req.headers.authorization;
+    logger.info("Starting DID signature verification middleware");
+    logger.info("Authorization header received", { authHeaderPresent: !!authHeader });
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
@@ -207,19 +212,27 @@ export const verifyDIDSignature = async (
     // Extract token (remove 'Bearer ' prefix)
     const token = authHeader.substring(7);
 
-    // Decode JWT without verification first
+    // Step 1: Decode JWT without verification first
     let decoded;
     try {
       decoded = decodeJWT(token);
+      logger.debug("JWT decoded successfully", {
+        header: decoded.header,
+        payload: decoded.payload
+      });
     } catch (error) {
+      logger.error("Failed to decode JWT", {
+        error: error instanceof Error ? error.message : String(error)
+      });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "Invalid JWT token format",
+        error: error instanceof Error ? error.message : "Unknown error"
       });
       return;
     }
 
-    const { header, payload, signature } = decoded;
+    const { header, payload } = decoded;
 
     // Log decoded JWT for debugging
     logger.debug(`JWT Header: ${JSON.stringify(header)}`);
@@ -228,15 +241,18 @@ export const verifyDIDSignature = async (
 
     // Validate JWT header
     if (header.alg !== "ES256" || header.typ !== "JWT") {
+      logger.warn("Invalid JWT header", { header });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "Invalid JWT header. Expected alg: ES256, typ: JWT",
+        received: header
       });
       return;
     }
 
     // Validate required claims
     if (!payload.iss || !payload.sub) {
+      logger.warn("Missing required JWT claims", { payload });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "JWT payload must contain 'iss' and 'sub' claims",
@@ -248,15 +264,18 @@ export const verifyDIDSignature = async (
 
     // Validate DID format
     if (!holderDID.startsWith("did:dcert:")) {
+      logger.warn("Invalid DID format", { holderDID });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
-        message: "Invalid DID format in 'iss' claim",
+        message: "Invalid DID format in 'iss' claim. Expected did:dcert:...",
+        received: holderDID
       });
       return;
     }
 
     // Validate iss matches sub
     if (payload.iss !== payload.sub) {
+      logger.warn("JWT claims mismatch", { iss: payload.iss, sub: payload.sub });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "JWT 'iss' and 'sub' claims must match",
@@ -264,25 +283,29 @@ export const verifyDIDSignature = async (
       return;
     }
 
-    // Check token expiration
-    if (payload.exp) {
-      const now = Math.floor(Date.now() / 1000);
-      if (now > payload.exp) {
-        res.status(HTTP_STATUS.UNAUTHORIZED).json({
-          success: false,
-          message: "JWT token has expired",
-        });
-        return;
-      }
+    // Step 2: Validate JWT claims (expiration, nbf, iat)
+    const claimsValidation = validateJWTClaims(payload);
+    if (!claimsValidation.valid) {
+      logger.warn("JWT claims validation failed", {
+        did: holderDID,
+        errors: claimsValidation.errors
+      });
+      res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        message: "JWT claims validation failed",
+        errors: claimsValidation.errors,
+      });
+      return;
     }
 
     logger.info(`Verifying JWT signature for DID: ${holderDID}`);
 
-    // Get DID document to retrieve public key
+    // Step 3: Get DID document to retrieve public key
     const didDocument = await DIDService.getDIDDocument(holderDID);
 
     // Check if DID exists
     if (!didDocument.found) {
+      logger.warn("DID not found on blockchain", { did: holderDID });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "DID not found on blockchain",
@@ -293,6 +316,10 @@ export const verifyDIDSignature = async (
 
     // Check if DID is active
     if (didDocument.status !== "Active") {
+      logger.warn("DID is not active", {
+        did: holderDID,
+        status: didDocument.status
+      });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: `DID is not active. Current status: ${didDocument.status}`,
@@ -306,6 +333,11 @@ export const verifyDIDSignature = async (
     const publicKeyHex = didDocument[keyId]; // Get public key from the keyId field
 
     if (!publicKeyHex) {
+      logger.error("Public key not found in DID document", {
+        did: holderDID,
+        keyId,
+        availableKeys: Object.keys(didDocument)
+      });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "Public key not found in DID document",
@@ -314,7 +346,11 @@ export const verifyDIDSignature = async (
       return;
     }
 
-    logger.debug(`Public key retrieved: ${publicKeyHex}`);
+    logger.debug("Public key retrieved from DID document", {
+      did: holderDID,
+      publicKeyHex,
+      publicKeyLength: publicKeyHex.length
+    });
 
     // Verify JWT signature using ES256 (ECDSA with P-256 and SHA-256)
     try {
@@ -516,7 +552,10 @@ export const verifyDIDSignature = async (
       return;
     }
   } catch (error) {
-    logger.error("Error in verifyDIDSignature middleware", error);
+    logger.error("Error in verifyDIDSignature middleware", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: "Internal server error during JWT verification",
@@ -556,7 +595,10 @@ export const optionalVerifyDIDSignature = async (
     // Use the same verification logic
     await verifyDIDSignature(req, res, next);
   } catch (error) {
-    logger.error("Error in optionalVerifyDIDSignature middleware", error);
+    logger.error("Error in optionalVerifyDIDSignature middleware", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: "Internal server error during optional JWT verification",
