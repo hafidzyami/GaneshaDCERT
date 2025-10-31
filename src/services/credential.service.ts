@@ -410,7 +410,7 @@ class CredentialService {
         try {
           await NotificationService.sendVCStatusNotification(
             holder_did,
-            "New Credential Issued! 🎉",
+            "New Credential Issued!",
             "Your verifiable credential has been successfully issued and is ready to claim.",
             {
               type: "VC_ISSUED",
