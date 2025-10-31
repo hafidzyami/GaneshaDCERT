@@ -537,3 +537,14 @@ export const confirmVCsBatchValidator = [
     .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder_did format"),
 ];
+
+/**
+ * Validator for Admin: Reset stuck PROCESSING VCs
+ * Validates optional timeout_minutes parameter for manual cleanup
+ */
+export const resetStuckVCsValidator = [
+  body("timeout_minutes")
+    .optional()
+    .isInt({ min: 1, max: 120 })
+    .withMessage("timeout_minutes must be an integer between 1 and 120"),
+];

@@ -370,3 +370,31 @@ export const confirmVCsBatch = asyncHandler(async (req: Request, res: Response) 
   // Send success response
   return ResponseHelper.success(res, result, result.message);
 });
+
+/**
+ * Admin: Manual cleanup of stuck PROCESSING VCs
+ * Resets VCs stuck in PROCESSING status back to PENDING
+ *
+ * Requires admin authentication
+ */
+export const resetStuckVCs = asyncHandler(async (req: Request, res: Response) => {
+  // Validate request
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Extract timeout_minutes from body (optional, defaults to 15)
+  const { timeout_minutes } = req.body;
+
+  // Call the service function
+  const result = await CredentialService.resetStuckProcessingVCs(timeout_minutes || 15);
+
+  // Prepare message
+  const message = result.reset_count > 0
+    ? `Successfully reset ${result.reset_count} stuck VCs back to PENDING`
+    : "No stuck VCs found to reset";
+
+  // Send success response
+  return ResponseHelper.success(res, result, message);
+});

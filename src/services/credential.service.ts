@@ -867,6 +867,9 @@ class CredentialService {
   /**
    * Phase 1 Batch: Claim multiple VCs atomically
    * Claims up to 'limit' VCs in a single atomic transaction
+   *
+   * Idempotent re-claim: Also allows claiming VCs stuck in PROCESSING
+   * for more than 5 minutes to handle network failures/crashes
    */
   async claimVCsBatch(holderDid: string, limit: number = 10) {
     logger.info(`Attempting to claim batch of VCs (limit: ${limit}) for holder DID: ${holderDid}`);
@@ -875,6 +878,7 @@ class CredentialService {
     const safeLimit = Math.min(Math.max(limit, 1), 50);
 
     // Use Prisma's raw query for atomic batch UPDATE...RETURNING
+    // Includes PENDING VCs AND stuck PROCESSING VCs (>5 min timeout)
     const result = await this.db.$queryRaw<any[]>`
       UPDATE "VCResponse"
       SET status = 'PROCESSING'::"VCResponseStatus",
@@ -884,8 +888,14 @@ class CredentialService {
         SELECT id
         FROM "VCResponse"
         WHERE holder_did = ${holderDid}
-          AND status = 'PENDING'::"VCResponseStatus"
           AND "deletedAt" IS NULL
+          AND (
+            status = 'PENDING'::"VCResponseStatus"
+            OR (
+              status = 'PROCESSING'::"VCResponseStatus"
+              AND processing_at < NOW() - INTERVAL '5 minutes'
+            )
+          )
         ORDER BY "createdAt" ASC
         LIMIT ${safeLimit}
         FOR UPDATE SKIP LOCKED
@@ -894,7 +904,7 @@ class CredentialService {
     `;
 
     if (!result || result.length === 0) {
-      logger.info(`No pending VCs found for holder DID: ${holderDid}`);
+      logger.info(`No claimable VCs found for holder DID: ${holderDid}`);
       return {
         claimed_vcs: [],
         claimed_count: 0,
@@ -903,16 +913,24 @@ class CredentialService {
       };
     }
 
-    // Check if there are more pending VCs
+    // Check if there are more claimable VCs (PENDING or stuck PROCESSING)
     const remainingCount = await this.db.vCResponse.count({
       where: {
         holder_did: holderDid,
-        status: "PENDING",
         deletedAt: null,
+        OR: [
+          { status: "PENDING" },
+          {
+            status: "PROCESSING",
+            processing_at: {
+              lt: new Date(Date.now() - 5 * 60 * 1000), // 5 minutes ago
+            },
+          },
+        ],
       },
     });
 
-    logger.success(`Batch claimed ${result.length} VCs for holder DID: ${holderDid}`);
+    logger.success(`Batch claimed ${result.length} VCs for holder DID: ${holderDid} (includes re-claims)`);
 
     return {
       claimed_vcs: result,
@@ -956,6 +974,49 @@ class CredentialService {
       message: `Successfully confirmed ${updatedVCs.count} VCs.`,
       confirmed_count: updatedVCs.count,
       requested_count: vcIds.length,
+    };
+  }
+
+  /**
+   * Background cleanup: Reset VCs stuck in PROCESSING for >15 minutes
+   * This should be called by a scheduled job (cron) periodically
+   *
+   * @param timeoutMinutes - Default 15 minutes timeout
+   * @returns Number of VCs reset from PROCESSING to PENDING
+   */
+  async resetStuckProcessingVCs(timeoutMinutes: number = 15) {
+    logger.info(`Running cleanup job: resetting VCs stuck in PROCESSING for >${timeoutMinutes} minutes`);
+
+    const cutoffTime = new Date(Date.now() - timeoutMinutes * 60 * 1000);
+
+    // Find and reset stuck PROCESSING VCs atomically
+    const result = await this.db.$queryRaw<any[]>`
+      UPDATE "VCResponse"
+      SET status = 'PENDING'::"VCResponseStatus",
+          processing_at = NULL,
+          "updatedAt" = NOW()
+      WHERE status = 'PROCESSING'::"VCResponseStatus"
+        AND processing_at < ${cutoffTime}
+        AND "deletedAt" IS NULL
+      RETURNING id, holder_did, processing_at;
+    `;
+
+    const resetCount = result?.length || 0;
+
+    if (resetCount > 0) {
+      logger.warn(`Cleanup job reset ${resetCount} stuck PROCESSING VCs back to PENDING`);
+      // Log the affected VCs for debugging
+      result.forEach((vc: any) => {
+        logger.debug(`Reset VC ${vc.id} for holder ${vc.holder_did}, stuck since ${vc.processing_at}`);
+      });
+    } else {
+      logger.info(`Cleanup job completed: no stuck PROCESSING VCs found`);
+    }
+
+    return {
+      reset_count: resetCount,
+      timeout_minutes: timeoutMinutes,
+      cutoff_time: cutoffTime,
     };
   }
 

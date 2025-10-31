@@ -29,6 +29,9 @@ import {
   institutionRoutes,
 } from "./routes";
 
+// Schedulers
+import { scheduleVCCleanup } from "./jobs/vcCleanupScheduler";
+
 const app: Application = express();
 const PORT: number = env.PORT;
 
@@ -263,6 +266,11 @@ const startServer = async () => {
     if (!vcBlockchainConnected) {
       logger.warn("VC Blockchain connection failed, but server will continue");
     }
+
+    // Initialize Background Jobs
+    logger.info("⏰ Initializing background jobs...");
+    scheduleVCCleanup();
+    logger.success("   ✓ VC cleanup scheduler started (runs every 5 minutes)");
 
     // Start Express Server
     app.listen(PORT, () => {

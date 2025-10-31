@@ -12,7 +12,11 @@
       "Bash(powershell -Command \"Remove-Item -Recurse -Force .\\node_modules\\.cache -ErrorAction SilentlyContinue; echo ''Cache cleared''\")",
       "Bash(powershell -Command \"(Get-Item src\\routes\\credential.routes.ts).LastWriteTime = Get-Date; echo ''File touched''\")",
       "Bash(node:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(npm install:*)",
+      "Bash(powershell -Command \"Get-Content ''C:\\GaneshaDCERT\\src\\controllers\\credential.controller.ts'' | Measure-Object -Line | Select-Object -ExpandProperty Lines\")",
+      "Bash(powershell -Command \"Get-Content ''C:\\GaneshaDCERT\\src\\routes\\credential.routes.ts'' | Measure-Object -Line | Select-Object -ExpandProperty Lines\")",
+      "Bash(powershell:*)"
     ],
     "deny": [],
     "ask": []

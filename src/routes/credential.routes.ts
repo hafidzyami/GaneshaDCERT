@@ -1,6 +1,6 @@
 import express, { Router } from "express";
 import * as credentialController from "../controllers/credential.controller";
-import { verifyDIDSignature } from "../middlewares";
+import { verifyDIDSignature, adminAuthMiddleware } from "../middlewares";
 import {
   requestCredentialValidator,
   getCredentialRequestsByTypeValidator,
@@ -14,7 +14,8 @@ import {
   claimVCValidator,
   confirmVCValidator,
   claimVCsBatchValidator,
-  confirmVCsBatchValidator
+  confirmVCsBatchValidator,
+  resetStuckVCsValidator
 } from "../validators/credential.validator";
 
 const router: Router = express.Router();
@@ -1212,6 +1213,81 @@ router.post(
   verifyDIDSignature,
   confirmVCsBatchValidator,
   credentialController.confirmVCsBatch
+);
+
+/**
+ * @swagger
+ * /credentials/admin/reset-stuck:
+ *   post:
+ *     summary: Admin - Reset stuck PROCESSING VCs
+ *     description: |
+ *       Admin endpoint to manually reset VCs stuck in PROCESSING status back to PENDING.
+ *       This is useful for cleaning up VCs that failed to complete the claim-confirm cycle.
+ *
+ *       The background scheduler automatically runs this every 5 minutes with a 15-minute timeout,
+ *       but admins can trigger it manually with custom timeout if needed.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *       - Admin
+ *     security:
+ *       - AdminBearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               timeout_minutes:
+ *                 type: integer
+ *                 description: Minutes threshold for stuck VCs (default 15, max 120)
+ *                 example: 15
+ *                 minimum: 1
+ *                 maximum: 120
+ *     responses:
+ *       200:
+ *         description: Cleanup job completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Successfully reset 5 stuck VCs back to PENDING"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     reset_count:
+ *                       type: integer
+ *                       example: 5
+ *                       description: Number of VCs reset from PROCESSING to PENDING
+ *                     timeout_minutes:
+ *                       type: integer
+ *                       example: 15
+ *                       description: Timeout threshold used for cleanup
+ *                     cutoff_time:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-10-31T10:15:00.000Z"
+ *                       description: VCs in PROCESSING before this time were reset
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized - Invalid or missing admin token
+ *       403:
+ *         description: Forbidden - User is not an admin
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  "/admin/reset-stuck",
+  adminAuthMiddleware,
+  resetStuckVCsValidator,
+  credentialController.resetStuckVCs
 );
 
 export default router;
