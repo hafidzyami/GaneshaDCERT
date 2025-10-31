@@ -211,16 +211,16 @@ router.get(
  *           schema:
  *             type: object
  *             required:
- *               - recipient_dids
+ *               - holder_dids
  *               - title
  *               - body
  *             properties:
- *               recipient_dids:
+ *               holder_dids:
  *                 type: array
  *                 items:
  *                   type: string
  *                 example: ["did:dcert:1234567890abcdef"]
- *                 description: Array of recipient DIDs
+ *                 description: Array of holder DIDs
  *               title:
  *                 type: string
  *                 example: New Credential Request

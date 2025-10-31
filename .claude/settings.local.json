@@ -11,7 +11,8 @@
       "Bash(taskkill:*)",
       "Bash(powershell -Command \"Remove-Item -Recurse -Force .\\node_modules\\.cache -ErrorAction SilentlyContinue; echo ''Cache cleared''\")",
       "Bash(powershell -Command \"(Get-Item src\\routes\\credential.routes.ts).LastWriteTime = Get-Date; echo ''File touched''\")",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(cd:*)"
     ],
     "deny": [],
     "ask": []

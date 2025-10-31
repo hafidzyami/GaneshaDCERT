@@ -4,6 +4,7 @@ import { BadRequestError, NotFoundError, BlockchainError } from "../utils/errors
 import logger from "../config/logger";
 import { ProcessUpdateVCDTO, ProcessUpdateVCResponseDTO, ProcessRenewalVCDTO, ProcessRenewalVCResponseDTO, VCStatusResponseDTO,CredentialRevocationRequestDTO, CredentialRevocationResponseDTO, ProcessIssuanceVCDTO, ProcessIssuanceVCResponseDTO, HolderCredentialDTO, RevokeVCDTO, RevokeVCResponseDTO } from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
+import NotificationService from "./notification.service";
 
 
 /**
@@ -404,6 +405,26 @@ class CredentialService {
           },
         });
         logger.success(`Database updated for approved request: ${request_id}. VCResponse created: ${newVCResponse.id}`);
+
+        // Send push notification to holder
+        try {
+          await NotificationService.sendVCStatusNotification(
+            holder_did,
+            "New Credential Issued! 🎉",
+            "Your verifiable credential has been successfully issued and is ready to claim.",
+            {
+              type: "VC_ISSUED",
+              vc_response_id: newVCResponse.id,
+              request_id: request_id,
+              request_type: RequestType.ISSUANCE,
+              transaction_hash: blockchainReceipt?.hash,
+            }
+          );
+          logger.success(`Push notification sent to holder: ${holder_did}`);
+        } catch (notifError: any) {
+          // Don't fail the issuance if notification fails
+          logger.error(`Failed to send push notification to ${holder_did}:`, notifError);
+        }
 
       } catch (dbError: any) {
           logger.error(`Database update failed for approved request ${request_id} after successful blockchain TX ${blockchainReceipt?.hash}:`, dbError);
