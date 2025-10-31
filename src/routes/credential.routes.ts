@@ -351,7 +351,7 @@ router.post(
  *         description: Internal server error.
  */
 router.post(
-  "/renew-requests",
+  "/renew-request",
   verifyDIDSignature,
   credentialRenewalRequestValidator,
   credentialController.requestCredentialRenewal
