@@ -986,60 +986,6 @@ router.post(
   credentialController.claimVC
 );
 
-/**
- * @swagger
- * /credentials/claim:
- *   get:
- *     summary: Claim a pending VC (Phase 1) - GET version
- *     description: Atomically claims a pending VC for the holder. Sets status to PROCESSING and returns the VC for the holder to save locally.
- *     tags:
- *       - Verifiable Credential (VC) Lifecycle
- *     security:
- *       - HolderBearerAuth: []
- *     parameters:
- *       - in: query
- *         name: holder_did
- *         required: true
- *         schema:
- *           type: string
- *         example: did:dcert:u1234567890abcdef1234567890abcdef12345678
- *         description: DID of the credential holder
- *     responses:
- *       200:
- *         description: VC claimed successfully or no pending VCs available
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: "VC claimed successfully. Please save it and confirm."
- *                 data:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: string
- *                       format: uuid
- *                     encrypted_body:
- *                       type: string
- *                     status:
- *                       type: string
- *                       example: PROCESSING
- *       400:
- *         description: Validation error
- *       500:
- *         description: Internal server error
- */
-router.get(
-  "/claim",
-  verifyDIDSignature,
-  claimVCValidator,
-  credentialController.claimVC
-);
 
 /**
  * @swagger
