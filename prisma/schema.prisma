@@ -27,6 +27,12 @@ enum PaymentStatus {
   CANCELED
 }
 
+enum VCResponseStatus {
+  PENDING
+  PROCESSING
+  CLAIMED
+}
+
 model VCIssuanceRequest {
   id             String        @id @default(uuid())
   encrypted_body String
@@ -85,6 +91,11 @@ model VCResponse {
   issuer_did     String
   holder_did     String
   encrypted_body String
+  status         VCResponseStatus @default(PENDING)
+  processing_at  DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @default(now()) @updatedAt
+  deletedAt      DateTime?
 }
 
 model Order {

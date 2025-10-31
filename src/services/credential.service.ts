@@ -435,9 +435,11 @@ class CredentialService {
     logger.info(`Fetching credentials from DB for holder DID: ${holderDid}`);
 
     // Query the VCResponse table, selecting all fields
+    // Filter out soft-deleted records (deletedAt is not null)
     const vcResponses = await this.db.vCResponse.findMany({
       where: {
         holder_did: holderDid,
+        deletedAt: null, // Only get non-deleted records
       },
       // No 'select' means all fields are returned by default
       orderBy: {
@@ -769,6 +771,171 @@ class CredentialService {
     } else {
       throw new BadRequestError(`Invalid action specified: ${action}.`);
     }
+  }
+
+  /**
+   * Phase 1: Claim VC - Atomically update status to PROCESSING
+   * This uses a raw SQL query to ensure atomicity
+   */
+  async claimVC(holderDid: string) {
+    logger.info(`Attempting to claim VC for holder DID: ${holderDid}`);
+
+    // Use Prisma's raw query for atomic UPDATE...RETURNING
+    // This ensures only one VC is claimed at a time and prevents race conditions
+    const result = await this.db.$queryRaw<any[]>`
+      UPDATE "VCResponse"
+      SET status = 'PROCESSING'::"VCResponseStatus",
+          processing_at = NOW(),
+          "updatedAt" = NOW()
+      WHERE id = (
+        SELECT id
+        FROM "VCResponse"
+        WHERE holder_did = ${holderDid}
+          AND status = 'PENDING'::"VCResponseStatus"
+          AND "deletedAt" IS NULL
+        ORDER BY "createdAt" ASC
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING *;
+    `;
+
+    if (!result || result.length === 0) {
+      logger.info(`No pending VCs found for holder DID: ${holderDid}`);
+      return null;
+    }
+
+    const vcResponse = result[0];
+    logger.success(`VC claimed successfully: ${vcResponse.id} for holder DID: ${holderDid}`);
+
+    return vcResponse;
+  }
+
+  /**
+   * Phase 2: Confirm VC - Update status to CLAIMED and set deletedAt (soft delete)
+   */
+  async confirmVC(vcId: string, holderDid: string) {
+    logger.info(`Confirming VC claim: ${vcId} for holder DID: ${holderDid}`);
+
+    // Update the VC to CLAIMED status and set deletedAt for soft delete
+    const updatedVC = await this.db.vCResponse.updateMany({
+      where: {
+        id: vcId,
+        holder_did: holderDid,
+        status: "PROCESSING", // Only confirm if currently in PROCESSING state
+      },
+      data: {
+        status: "CLAIMED",
+        deletedAt: new Date(),
+      },
+    });
+
+    if (updatedVC.count === 0) {
+      logger.warn(`VC confirmation failed: VC ${vcId} not found or not in PROCESSING state for holder ${holderDid}`);
+      throw new NotFoundError(`VC with ID ${vcId} not found or not in PROCESSING state.`);
+    }
+
+    logger.success(`VC confirmed and soft-deleted: ${vcId}`);
+
+    return {
+      message: "VC claimed and confirmed successfully.",
+      vc_id: vcId,
+    };
+  }
+
+  /**
+   * Phase 1 Batch: Claim multiple VCs atomically
+   * Claims up to 'limit' VCs in a single atomic transaction
+   */
+  async claimVCsBatch(holderDid: string, limit: number = 10) {
+    logger.info(`Attempting to claim batch of VCs (limit: ${limit}) for holder DID: ${holderDid}`);
+
+    // Validate limit (max 50 for safety)
+    const safeLimit = Math.min(Math.max(limit, 1), 50);
+
+    // Use Prisma's raw query for atomic batch UPDATE...RETURNING
+    const result = await this.db.$queryRaw<any[]>`
+      UPDATE "VCResponse"
+      SET status = 'PROCESSING'::"VCResponseStatus",
+          processing_at = NOW(),
+          "updatedAt" = NOW()
+      WHERE id IN (
+        SELECT id
+        FROM "VCResponse"
+        WHERE holder_did = ${holderDid}
+          AND status = 'PENDING'::"VCResponseStatus"
+          AND "deletedAt" IS NULL
+        ORDER BY "createdAt" ASC
+        LIMIT ${safeLimit}
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING *;
+    `;
+
+    if (!result || result.length === 0) {
+      logger.info(`No pending VCs found for holder DID: ${holderDid}`);
+      return {
+        claimed_vcs: [],
+        claimed_count: 0,
+        remaining_count: 0,
+        has_more: false,
+      };
+    }
+
+    // Check if there are more pending VCs
+    const remainingCount = await this.db.vCResponse.count({
+      where: {
+        holder_did: holderDid,
+        status: "PENDING",
+        deletedAt: null,
+      },
+    });
+
+    logger.success(`Batch claimed ${result.length} VCs for holder DID: ${holderDid}`);
+
+    return {
+      claimed_vcs: result,
+      claimed_count: result.length,
+      remaining_count: remainingCount,
+      has_more: remainingCount > 0,
+    };
+  }
+
+  /**
+   * Phase 2 Batch: Confirm multiple VCs and soft-delete them
+   */
+  async confirmVCsBatch(vcIds: string[], holderDid: string) {
+    logger.info(`Confirming batch of ${vcIds.length} VCs for holder DID: ${holderDid}`);
+
+    // Update multiple VCs to CLAIMED status and set deletedAt
+    const updatedVCs = await this.db.vCResponse.updateMany({
+      where: {
+        id: { in: vcIds },
+        holder_did: holderDid,
+        status: "PROCESSING", // Only confirm if currently in PROCESSING state
+      },
+      data: {
+        status: "CLAIMED",
+        deletedAt: new Date(),
+      },
+    });
+
+    if (updatedVCs.count === 0) {
+      logger.warn(`Batch VC confirmation failed: No VCs found in PROCESSING state for holder ${holderDid}`);
+      throw new NotFoundError(`No VCs found in PROCESSING state for confirmation.`);
+    }
+
+    if (updatedVCs.count < vcIds.length) {
+      logger.warn(`Partial batch confirmation: ${updatedVCs.count}/${vcIds.length} VCs confirmed for holder ${holderDid}`);
+    }
+
+    logger.success(`Batch confirmed and soft-deleted ${updatedVCs.count} VCs`);
+
+    return {
+      message: `Successfully confirmed ${updatedVCs.count} VCs.`,
+      confirmed_count: updatedVCs.count,
+      requested_count: vcIds.length,
+    };
   }
 
 }

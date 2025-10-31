@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(powershell -Command \"Get-Content ''C:\\GaneshaDCERT\\src\\validators\\credential.validator.ts'' | Measure-Object -Line | Select-Object -ExpandProperty Lines\")",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run dev:*)",
+      "Bash(timeout 5 bash:*)",
+      "Bash(curl:*)",
+      "Bash(taskkill:*)",
+      "Bash(powershell -Command \"Remove-Item -Recurse -Force .\\node_modules\\.cache -ErrorAction SilentlyContinue; echo ''Cache cleared''\")",
+      "Bash(powershell -Command \"(Get-Item src\\routes\\credential.routes.ts).LastWriteTime = Get-Date; echo ''File touched''\")",
+      "Bash(node:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

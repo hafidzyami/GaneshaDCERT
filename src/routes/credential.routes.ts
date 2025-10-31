@@ -10,7 +10,11 @@ import {
   credentialRevocationRequestValidator,
   getVCStatusValidator,
   processIssuanceVCValidator,
-  getHolderCredentialsValidator, revokeVCValidator, processRenewalVCValidator, processUpdateVCValidator
+  getHolderCredentialsValidator, revokeVCValidator, processRenewalVCValidator, processUpdateVCValidator,
+  claimVCValidator,
+  confirmVCValidator,
+  claimVCsBatchValidator,
+  confirmVCsBatchValidator
 } from "../validators/credential.validator";
 
 const router: Router = express.Router();
@@ -920,6 +924,348 @@ router.post(
   "/update-vc", // The new POST endpoint path
   processUpdateVCValidator, // Apply the validator
   credentialController.processUpdateVC // Use the specific controller function
+);
+
+/**
+ * @swagger
+ * /credentials/claim:
+ *   post:
+ *     summary: Claim a pending VC (Phase 1)
+ *     description: Atomically claims a pending VC for the holder. Sets status to PROCESSING and returns the VC for the holder to save locally.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - holder_did
+ *             properties:
+ *               holder_did:
+ *                 type: string
+ *                 example: did:dcert:u1234567890abcdef1234567890abcdef12345678
+ *                 description: DID of the credential holder
+ *     responses:
+ *       200:
+ *         description: VC claimed successfully or no pending VCs available
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC claimed successfully. Please save it and confirm."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     encrypted_body:
+ *                       type: string
+ *                     status:
+ *                       type: string
+ *                       example: PROCESSING
+ *       400:
+ *         description: Validation error
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  "/claim",
+  verifyDIDSignature,
+  claimVCValidator,
+  credentialController.claimVC
+);
+
+/**
+ * @swagger
+ * /credentials/claim:
+ *   get:
+ *     summary: Claim a pending VC (Phase 1) - GET version
+ *     description: Atomically claims a pending VC for the holder. Sets status to PROCESSING and returns the VC for the holder to save locally.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: holder_did
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: did:dcert:u1234567890abcdef1234567890abcdef12345678
+ *         description: DID of the credential holder
+ *     responses:
+ *       200:
+ *         description: VC claimed successfully or no pending VCs available
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC claimed successfully. Please save it and confirm."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     encrypted_body:
+ *                       type: string
+ *                     status:
+ *                       type: string
+ *                       example: PROCESSING
+ *       400:
+ *         description: Validation error
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/claim",
+  verifyDIDSignature,
+  claimVCValidator,
+  credentialController.claimVC
+);
+
+/**
+ * @swagger
+ * /credentials/confirm:
+ *   post:
+ *     summary: Confirm VC claim (Phase 2)
+ *     description: Confirms that the holder has saved the VC locally. Sets status to CLAIMED and soft-deletes the record.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - vc_id
+ *               - holder_did
+ *             properties:
+ *               vc_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the VC being confirmed
+ *               holder_did:
+ *                 type: string
+ *                 example: did:dcert:u1234567890abcdef1234567890abcdef12345678
+ *                 description: DID of the credential holder
+ *     responses:
+ *       200:
+ *         description: VC confirmed and soft-deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC claimed and confirmed successfully."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                     vc_id:
+ *                       type: string
+ *                       format: uuid
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: VC not found or not in PROCESSING state
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  "/confirm",
+  verifyDIDSignature,
+  confirmVCValidator,
+  credentialController.confirmVC
+);
+
+/**
+ * @swagger
+ * /credentials/claim-batch:
+ *   post:
+ *     summary: Claim multiple pending VCs in batch (Phase 1 - Batch)
+ *     description: Atomically claims up to N pending VCs for the holder in a single request. More efficient than claiming one-by-one. Default limit is 10, maximum is 50.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - holder_did
+ *             properties:
+ *               holder_did:
+ *                 type: string
+ *                 example: did:dcert:u1234567890abcdef1234567890abcdef12345678
+ *                 description: DID of the credential holder
+ *               limit:
+ *                 type: integer
+ *                 example: 10
+ *                 minimum: 1
+ *                 maximum: 50
+ *                 default: 10
+ *                 description: Maximum number of VCs to claim (default 10, max 50)
+ *     responses:
+ *       200:
+ *         description: VCs claimed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Successfully claimed 10 VCs. 5 more pending."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     claimed_vcs:
+ *                       type: array
+ *                       description: Array of claimed VCs
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           encrypted_body:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                             example: PROCESSING
+ *                           processing_at:
+ *                             type: string
+ *                             format: date-time
+ *                     claimed_count:
+ *                       type: integer
+ *                       example: 10
+ *                       description: Number of VCs successfully claimed
+ *                     remaining_count:
+ *                       type: integer
+ *                       example: 5
+ *                       description: Number of pending VCs still available
+ *                     has_more:
+ *                       type: boolean
+ *                       example: true
+ *                       description: Whether there are more pending VCs to claim
+ *       400:
+ *         description: Validation error
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  "/claim-batch",
+  verifyDIDSignature,
+  claimVCsBatchValidator,
+  credentialController.claimVCsBatch
+);
+
+/**
+ * @swagger
+ * /credentials/confirm-batch:
+ *   post:
+ *     summary: Confirm multiple VC claims in batch (Phase 2 - Batch)
+ *     description: Confirms that the holder has saved multiple VCs locally. Sets status to CLAIMED and soft-deletes the records. Use this after successfully claiming VCs with /claim-batch.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - vc_ids
+ *               - holder_did
+ *             properties:
+ *               vc_ids:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 50
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 example: ["550e8400-e29b-41d4-a716-446655440000", "6ba7b810-9dad-11d1-80b4-00c04fd430c8"]
+ *                 description: Array of VC IDs to confirm (max 50)
+ *               holder_did:
+ *                 type: string
+ *                 example: did:dcert:u1234567890abcdef1234567890abcdef12345678
+ *                 description: DID of the credential holder
+ *     responses:
+ *       200:
+ *         description: VCs confirmed and soft-deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Successfully confirmed 10 VCs."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Successfully confirmed 10 VCs."
+ *                     confirmed_count:
+ *                       type: integer
+ *                       example: 10
+ *                       description: Number of VCs successfully confirmed
+ *                     requested_count:
+ *                       type: integer
+ *                       example: 10
+ *                       description: Number of VCs requested for confirmation
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: No VCs found in PROCESSING state for confirmation
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  "/confirm-batch",
+  verifyDIDSignature,
+  confirmVCsBatchValidator,
+  credentialController.confirmVCsBatch
 );
 
 export default router;

@@ -455,3 +455,85 @@ export const processUpdateVCValidator = [
     .notEmpty()
     .withMessage("encrypted_body (new VC data) is required when action is APPROVED"),
 ];
+
+/**
+ * Validator for Phase 1: Claim VC
+ * Validates holder_did for claiming a pending VC
+ */
+export const claimVCValidator = [
+  // Accept holder_did from either query or body
+  query("holder_did")
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder_did format"),
+
+  body("holder_did")
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder_did format"),
+];
+
+/**
+ * Validator for Phase 2: Confirm VC
+ * Validates vc_id and holder_did for confirming a claimed VC
+ */
+export const confirmVCValidator = [
+  body("vc_id")
+    .trim()
+    .notEmpty()
+    .withMessage("vc_id is required")
+    .isUUID()
+    .withMessage("Invalid vc_id format (must be UUID)"),
+
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder_did format"),
+];
+
+/**
+ * Validator for Phase 1 Batch: Claim multiple VCs
+ * Validates holder_did and optional limit for claiming multiple pending VCs
+ */
+export const claimVCsBatchValidator = [
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder_did format"),
+
+  body("limit")
+    .optional()
+    .isInt({ min: 1, max: 50 })
+    .withMessage("limit must be an integer between 1 and 50"),
+];
+
+/**
+ * Validator for Phase 2 Batch: Confirm multiple VCs
+ * Validates vc_ids array and holder_did for confirming multiple claimed VCs
+ */
+export const confirmVCsBatchValidator = [
+  body("vc_ids")
+    .isArray({ min: 1, max: 50 })
+    .withMessage("vc_ids must be an array with 1 to 50 UUIDs"),
+
+  body("vc_ids.*")
+    .isUUID()
+    .withMessage("Each vc_id must be a valid UUID"),
+
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder_did format"),
+];

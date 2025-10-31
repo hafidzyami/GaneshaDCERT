@@ -275,3 +275,98 @@ export const processUpdateVC = asyncHandler(async (req: Request, res: Response) 
   // Send success response
   return ResponseHelper.success(res, result, result.message);
 });
+
+/**
+ * Phase 1: Claim VC Controller
+ * Atomically claims a pending VC for the holder
+ */
+export const claimVC = asyncHandler(async (req: Request, res: Response) => {
+  // Validate request
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Extract holder_did from query or body
+  const holderDid = (req.query.holder_did || req.body.holder_did) as string;
+
+  // Call the service function
+  const vcResponse = await CredentialService.claimVC(holderDid);
+
+  // If no VC found, return appropriate response
+  if (!vcResponse) {
+    return ResponseHelper.success(res, null, "No pending VCs available for claim.");
+  }
+
+  // Send success response with the claimed VC
+  return ResponseHelper.success(res, vcResponse, "VC claimed successfully. Please save it and confirm.");
+});
+
+/**
+ * Phase 2: Confirm VC Controller
+ * Confirms a claimed VC and soft-deletes it
+ */
+export const confirmVC = asyncHandler(async (req: Request, res: Response) => {
+  // Validate request
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Extract vc_id and holder_did from body
+  const { vc_id, holder_did } = req.body;
+
+  // Call the service function
+  const result = await CredentialService.confirmVC(vc_id, holder_did);
+
+  // Send success response
+  return ResponseHelper.success(res, result, result.message);
+});
+
+/**
+ * Phase 1 Batch: Claim multiple VCs Controller
+ * Atomically claims multiple pending VCs for the holder
+ */
+export const claimVCsBatch = asyncHandler(async (req: Request, res: Response) => {
+  // Validate request
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Extract holder_did and limit from body
+  const { holder_did, limit } = req.body;
+
+  // Call the service function
+  const result = await CredentialService.claimVCsBatch(holder_did, limit || 10);
+
+  // Determine message based on results
+  let message = "No pending VCs available for claim.";
+  if (result.claimed_count > 0) {
+    message = `Successfully claimed ${result.claimed_count} VCs. ${result.has_more ? `${result.remaining_count} more pending.` : 'No more pending VCs.'}`;
+  }
+
+  // Send success response
+  return ResponseHelper.success(res, result, message);
+});
+
+/**
+ * Phase 2 Batch: Confirm multiple VCs Controller
+ * Confirms multiple claimed VCs and soft-deletes them
+ */
+export const confirmVCsBatch = asyncHandler(async (req: Request, res: Response) => {
+  // Validate request
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Extract vc_ids and holder_did from body
+  const { vc_ids, holder_did } = req.body;
+
+  // Call the service function
+  const result = await CredentialService.confirmVCsBatch(vc_ids, holder_did);
+
+  // Send success response
+  return ResponseHelper.success(res, result, result.message);
+});
