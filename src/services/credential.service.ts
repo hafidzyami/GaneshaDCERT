@@ -874,8 +874,8 @@ class CredentialService {
   async claimVCsBatch(holderDid: string, limit: number = 10) {
     logger.info(`Attempting to claim batch of VCs (limit: ${limit}) for holder DID: ${holderDid}`);
 
-    // Validate limit (max 50 for safety)
-    const safeLimit = Math.min(Math.max(limit, 1), 50);
+    // Validate limit (max 100 for safety)
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
 
     // Use Prisma's raw query for atomic batch UPDATE...RETURNING
     // Includes PENDING VCs AND stuck PROCESSING VCs (>5 min timeout)
