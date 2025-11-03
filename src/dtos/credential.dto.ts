@@ -153,3 +153,19 @@ export interface ProcessUpdateVCResponseDTO {
   transaction_hash?: string; // Blockchain TX hash if approved & successful
   block_number?: number; // Blockchain block number if approved & successful
 }
+
+export interface AggregatedRequestDTO {
+  id: string;
+  request_type: RequestType; // ISSUANCE, RENEWAL, UPDATE, or REVOKE
+  issuer_did: string;
+  holder_did: string;
+  status: RequestStatus;
+  encrypted_body: string;
+  createdAt: Date;
+}
+
+// Response DTO for the new endpoint
+export interface AllIssuerRequestsResponseDTO {
+  count: number;
+  requests: AggregatedRequestDTO[];
+}

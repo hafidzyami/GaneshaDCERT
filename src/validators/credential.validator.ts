@@ -131,7 +131,21 @@ const requireAtLeastOneDid: CustomValidator = (value, { req }) => {
   }
   return true;
 };
+export const getAllIssuerRequestsValidator = [
+  query("issuer_did")
+    .trim()
+    .notEmpty()
+    .withMessage("issuer_did query parameter is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid issuer_did format in query parameter"),
 
+  query("status")
+    .optional()
+    // Tambahkan 'ALL' ke daftar nilai yang valid
+    .isIn([RequestStatus.PENDING, RequestStatus.APPROVED, RequestStatus.REJECTED, 'ALL'])
+    // Perbarui pesan error
+    .withMessage("Invalid status filter. Must be PENDING, APPROVED, REJECTED, or ALL"),
+];
 // MODIFIED Validator for GET /credentials/get-requests
 export const getCredentialRequestsByTypeValidator: ValidationChain[] = [
   // Explicitly type as array

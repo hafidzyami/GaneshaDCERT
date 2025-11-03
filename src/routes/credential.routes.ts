@@ -15,7 +15,7 @@ import {
   confirmVCValidator,
   claimVCsBatchValidator,
   confirmVCsBatchValidator,
-  resetStuckVCsValidator
+  resetStuckVCsValidator, getAllIssuerRequestsValidator
 } from "../validators/credential.validator";
 
 const router: Router = express.Router();
@@ -1290,4 +1290,85 @@ router.post(
   credentialController.resetStuckVCs
 );
 
+/**
+ * @swagger
+ * /credentials/issuer-history:
+ *   get:
+ *     summary: Get all requests for an issuer (Aggregated)
+ *     description: Retrieve all ISSUANCE, RENEWAL, UPDATE, and REVOKE requests associated with a specific issuer DID. This endpoint is protected and requires issuer authentication.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: issuer_did
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the issuer.
+ *         example: did:dcert:i...
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, APPROVED, REJECTED, ALL]
+ *         description: Filter requests by status (e.g., PENDING). Omitting this or using 'ALL' will return all statuses.
+ *     responses:
+ *       200:
+ *         description: A list of all requests for the issuer, sorted by date (newest first).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Successfully retrieved 25 requests for issuer."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     count:
+ *                       type: integer
+ *                       example: 25
+ *                     requests:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           request_type:
+ *                             type: string
+ *                             enum: [ISSUANCE, RENEWAL, UPDATE, REVOKE]
+ *                           issuer_did:
+ *                             type: string
+ *                           holder_did:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                             enum: [PENDING, APPROVED, REJECTED]
+ *                           encrypted_body:
+ *                             type: string
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *       400:
+ *         description: Validation error (e.g., missing issuer_did).
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token).
+ *       500:
+ *         description: Internal server error.
+ */
+router.get(
+  "/issuer-history",
+  verifyDIDSignature,
+  getAllIssuerRequestsValidator,
+  credentialController.getAllIssuerRequests
+);
 export default router;

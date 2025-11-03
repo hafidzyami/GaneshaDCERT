@@ -2,7 +2,8 @@ import { PrismaClient, RequestType, RequestStatus } from "@prisma/client"; // Re
 import { prisma } from "../config/database";
 import { BadRequestError, NotFoundError, BlockchainError } from "../utils/errors/AppError";
 import logger from "../config/logger";
-import { ProcessUpdateVCDTO, ProcessUpdateVCResponseDTO, ProcessRenewalVCDTO, ProcessRenewalVCResponseDTO, VCStatusResponseDTO,CredentialRevocationRequestDTO, CredentialRevocationResponseDTO, ProcessIssuanceVCDTO, ProcessIssuanceVCResponseDTO, HolderCredentialDTO, RevokeVCDTO, RevokeVCResponseDTO } from "../dtos";
+import { ProcessUpdateVCDTO, ProcessUpdateVCResponseDTO, ProcessRenewalVCDTO, ProcessRenewalVCResponseDTO, VCStatusResponseDTO,CredentialRevocationRequestDTO, CredentialRevocationResponseDTO, ProcessIssuanceVCDTO, ProcessIssuanceVCResponseDTO, HolderCredentialDTO, RevokeVCDTO, RevokeVCResponseDTO, AggregatedRequestDTO, 
+  AllIssuerRequestsResponseDTO } from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 import NotificationService from "./notification.service";
 
@@ -1017,6 +1018,64 @@ class CredentialService {
       reset_count: resetCount,
       timeout_minutes: timeoutMinutes,
       cutoff_time: cutoffTime,
+    };
+  }
+
+  async getAllIssuerRequests(
+    issuerDid: string,
+    status?: RequestStatus | 'ALL' // Perbarui tipe untuk menyertakan 'ALL'
+  ): Promise<AllIssuerRequestsResponseDTO> {
+    
+    logger.info(`Fetching all requests for issuer: ${issuerDid}, status: ${status || 'ALL'}`);
+
+    // Tentukan klausa 'where'
+    const whereClause: { issuer_did: string; status?: RequestStatus } = {
+      issuer_did: issuerDid,
+    };
+
+    // Hanya tambahkan filter status jika ada DAN bukan 'ALL'
+    if (status && status !== 'ALL') {
+      whereClause.status = status;
+    }
+
+    //
+    const selectFields = {
+      id: true,
+      issuer_did: true,
+      holder_did: true,
+      status: true,
+      encrypted_body: true,
+      createdAt: true,
+    };
+
+    // ... (sisa fungsi tetap sama: Promise.all, map, sort) ...
+    //
+    const [
+      issuanceRequests,
+      renewalRequests,
+      updateRequests,
+      revokeRequests,
+    ] = await Promise.all([
+      this.db.vCIssuanceRequest.findMany({ where: whereClause, select: selectFields }),
+      this.db.vCRenewalRequest.findMany({ where: whereClause, select: selectFields }),
+      this.db.vCUpdateRequest.findMany({ where: whereClause, select: selectFields }),
+      this.db.vCRevokeRequest.findMany({ where: whereClause, select: selectFields }),
+    ]);
+
+    const aggregatedRequests: AggregatedRequestDTO[] = [
+      ...issuanceRequests.map(req => ({ ...req, request_type: RequestType.ISSUANCE })),
+      ...renewalRequests.map(req => ({ ...req, request_type: RequestType.RENEWAL })),
+      ...updateRequests.map(req => ({ ...req, request_type: RequestType.UPDATE })),
+      ...revokeRequests.map(req => ({ ...req, request_type: RequestType.REVOKE })),
+    ];
+
+    aggregatedRequests.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    
+    logger.success(`Found ${aggregatedRequests.length} total requests for issuer: ${issuerDid}`);
+
+    return {
+      count: aggregatedRequests.length,
+      requests: aggregatedRequests,
     };
   }
 
