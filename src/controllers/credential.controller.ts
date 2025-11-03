@@ -398,3 +398,26 @@ export const resetStuckVCs = asyncHandler(async (req: Request, res: Response) =>
   // Send success response
   return ResponseHelper.success(res, result, message);
 });
+
+export const getAllIssuerRequests = asyncHandler(async (req: Request, res: Response) => {
+  //
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Ekstrak query params
+  const issuerDid = req.query.issuer_did as string;
+  // Perbarui tipe cast untuk menyertakan 'ALL'
+  const status = req.query.status as (RequestStatus | 'ALL') | undefined;
+
+  // Panggil metode service yang telah diperbarui
+  const result = await CredentialService.getAllIssuerRequests(issuerDid, status);
+
+  // Kirim respons sukses
+  return ResponseHelper.success(
+    res,
+    result,
+    `Successfully retrieved ${result.count} requests for issuer.`
+  );
+});
