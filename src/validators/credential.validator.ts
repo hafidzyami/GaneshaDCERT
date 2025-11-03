@@ -513,8 +513,8 @@ export const claimVCsBatchValidator = [
 
   body("limit")
     .optional()
-    .isInt({ min: 1, max: 50 })
-    .withMessage("limit must be an integer between 1 and 50"),
+    .isInt({ min: 1, max: 100 })
+    .withMessage("limit must be an integer between 1 and 100"),
 ];
 
 /**
@@ -523,8 +523,8 @@ export const claimVCsBatchValidator = [
  */
 export const confirmVCsBatchValidator = [
   body("vc_ids")
-    .isArray({ min: 1, max: 50 })
-    .withMessage("vc_ids must be an array with 1 to 50 UUIDs"),
+    .isArray({ min: 1, max: 100 })
+    .withMessage("vc_ids must be an array with 1 to 100 UUIDs"),
 
   body("vc_ids.*")
     .isUUID()

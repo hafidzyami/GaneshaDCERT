@@ -1057,7 +1057,7 @@ router.post(
  * /credentials/claim-batch:
  *   post:
  *     summary: Claim multiple pending VCs in batch (Phase 1 - Batch)
- *     description: Atomically claims up to N pending VCs for the holder in a single request. More efficient than claiming one-by-one. Default limit is 10, maximum is 50.
+ *     description: Atomically claims up to N pending VCs for the holder in a single request. More efficient than claiming one-by-one. Default limit is 10, maximum is 100.
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
  *     security:
@@ -1079,9 +1079,9 @@ router.post(
  *                 type: integer
  *                 example: 10
  *                 minimum: 1
- *                 maximum: 50
+ *                 maximum: 100
  *                 default: 10
- *                 description: Maximum number of VCs to claim (default 10, max 50)
+ *                 description: Maximum number of VCs to claim (default 10, max 100)
  *     responses:
  *       200:
  *         description: VCs claimed successfully
@@ -1163,12 +1163,12 @@ router.post(
  *               vc_ids:
  *                 type: array
  *                 minItems: 1
- *                 maxItems: 50
+ *                 maxItems: 100
  *                 items:
  *                   type: string
  *                   format: uuid
  *                 example: ["550e8400-e29b-41d4-a716-446655440000", "6ba7b810-9dad-11d1-80b4-00c04fd430c8"]
- *                 description: Array of VC IDs to confirm (max 50)
+ *                 description: Array of VC IDs to confirm (max 100)
  *               holder_did:
  *                 type: string
  *                 example: did:dcert:u1234567890abcdef1234567890abcdef12345678
