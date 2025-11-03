@@ -77,6 +77,7 @@ export interface ProcessIssuanceVCDTO {
   schema_version?: number; // Version of the schema used
   vc_hash?: string; // Hash of the credential data (before encryption)
   encrypted_body?: string; // Encrypted VC data
+  expired_in?: number; // Expiration time in years from now (Required only if action is APPROVED)
 }
 
 export interface ProcessIssuanceVCResponseDTO {
@@ -122,6 +123,7 @@ export interface ProcessRenewalVCDTO {
   action: "APPROVED" | "REJECTED";
   vc_id?: string; // VC ID to renew (Required only if action is APPROVED)
   encrypted_body?: string; // Newly issued/renewed encrypted VC body (Required only if action is APPROVED)
+  expired_in?: number; // Expiration time in years from now (Required only if action is APPROVED)
 }
 
 // Response body DTO for POST /credentials/renew-vc
@@ -140,8 +142,13 @@ export interface ProcessUpdateVCDTO {
   holder_did: string;
   action: "APPROVED" | "REJECTED";
   vc_id?: string; // Original VC ID to update on blockchain (Required if action is APPROVED)
+  new_vc_id?: string; // New VC ID (Required if action is APPROVED)
+  vc_type?: string; // VC type (Required if action is APPROVED)
+  schema_id?: string; // Schema ID (Required if action is APPROVED)
+  schema_version?: number; // Schema version (Required if action is APPROVED)
   new_vc_hash?: string; // New hash for the updated VC (Required if action is APPROVED)
   encrypted_body?: string; // New encrypted body for the updated VC (Required if action is APPROVED)
+  expired_in?: number; // Expiration time in years from now (Required only if action is APPROVED)
 }
 
 // Response body DTO for POST /credentials/update-vc

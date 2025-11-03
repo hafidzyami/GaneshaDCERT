@@ -26,6 +26,22 @@ class CredentialService {
   }
 
   /**
+   * Calculate expiredAt timestamp from expiredIn years
+   * @param expiredIn - Number of years from now (0 = lifetime/no expiration)
+   * @returns ISO 8601 timestamp string, or empty string for lifetime
+   */
+  private calculateExpiredAt(expiredIn: number): string {
+    // If expiredIn is 0, return empty string to indicate lifetime/no expiration
+    if (expiredIn === 0) {
+      return "";
+    }
+
+    const now = new Date();
+    now.setFullYear(now.getFullYear() + expiredIn);
+    return now.toISOString();
+  }
+
+  /**
    * Request credential issuance
    */
   async requestCredentialIssuance(data: {
@@ -318,7 +334,8 @@ class CredentialService {
         schema_id,
         schema_version,
         vc_hash,
-        encrypted_body
+        encrypted_body,
+        expired_in
     } = data;
 
     // 1. Find the original issuance request
@@ -359,11 +376,14 @@ class CredentialService {
       };
 
     } else if (action === RequestStatus.APPROVED) {
-      if (!encrypted_body || !vc_id || !vc_type || !schema_id || !schema_version || !vc_hash) {
+      if (!encrypted_body || !vc_id || !vc_type || !schema_id || !schema_version || !vc_hash || expired_in === undefined || expired_in === null) {
         throw new BadRequestError(
-          "When action is APPROVED, vc_id, vc_type, schema_id, schema_version, vc_hash, and encrypted_body are required."
+          "When action is APPROVED, vc_id, vc_type, schema_id, schema_version, vc_hash, expired_in, and encrypted_body are required."
         );
       }
+
+      // Calculate expiration date (expired_in = 0 means lifetime/no expiration)
+      const expiredAt = this.calculateExpiredAt(expired_in);
 
       // --- Blockchain Call (Directly, similar to did.service.ts) ---
       let blockchainReceipt: any;
@@ -375,6 +395,7 @@ class CredentialService {
               vc_type,
               schema_id,
               schema_version,
+              expiredAt,
               vc_hash
           );
            logger.info(`Blockchain issuance successful for ${vc_id}. TX: ${blockchainReceipt?.hash}`);
@@ -582,7 +603,7 @@ class CredentialService {
   }
 
   async processRenewalVC(data: ProcessRenewalVCDTO): Promise<ProcessRenewalVCResponseDTO> {
-    const { request_id, issuer_did, holder_did, action, vc_id, encrypted_body } = data;
+    const { request_id, issuer_did, holder_did, action, vc_id, encrypted_body, expired_in } = data;
 
     // 1. Find the original renewal request
     const renewalRequest = await this.db.vCRenewalRequest.findUnique({
@@ -621,17 +642,20 @@ class CredentialService {
 
     } else if (action === RequestStatus.APPROVED) {
       // Ensure required fields for approval are present
-      if (!vc_id || !encrypted_body) {
-        throw new BadRequestError("vc_id and encrypted_body are required when action is APPROVED.");
+      if (!vc_id || !encrypted_body || expired_in === undefined || expired_in === null) {
+        throw new BadRequestError("vc_id, encrypted_body, and expired_in are required when action is APPROVED.");
       }
 
       logger.info(`Processing approval for renewal request ${request_id} targeting VC ${vc_id}`);
+
+      // Calculate expiration date (expired_in = 0 means lifetime/no expiration)
+      const expiredAt = this.calculateExpiredAt(expired_in);
 
       // --- Blockchain Call ---
       let blockchainReceipt: any;
       try {
         // Call the renew function on the blockchain
-        blockchainReceipt = await VCBlockchainService.renewVCInBlockchain(vc_id);
+        blockchainReceipt = await VCBlockchainService.renewVCInBlockchain(vc_id, expiredAt);
         logger.success(`VC ${vc_id} renewed successfully on blockchain. TX: ${blockchainReceipt?.hash}`);
       } catch (blockchainError: any) {
         logger.error(`Blockchain renewal failed during approval for request ${request_id} (VC ${vc_id}):`, blockchainError);
@@ -682,7 +706,7 @@ class CredentialService {
   }
 
   async processUpdateVC(data: ProcessUpdateVCDTO): Promise<ProcessUpdateVCResponseDTO> {
-    const { request_id, issuer_did, holder_did, action, vc_id, new_vc_hash, encrypted_body } = data;
+    const { request_id, issuer_did, holder_did, action, vc_id, new_vc_id, vc_type, schema_id, schema_version, new_vc_hash, encrypted_body, expired_in } = data;
 
     // 1. Find the original update request
     const updateRequest = await this.db.vCUpdateRequest.findUnique({
@@ -721,8 +745,8 @@ class CredentialService {
 
     } else if (action === RequestStatus.APPROVED) {
       // Ensure required fields for approval are present
-      if (!vc_id || !new_vc_hash || !encrypted_body) {
-        throw new BadRequestError("vc_id, new_vc_hash, and encrypted_body are required when action is APPROVED.");
+      if (!vc_id || !new_vc_id || !vc_type || !schema_id || !schema_version || !new_vc_hash || !encrypted_body || expired_in === undefined || expired_in === null) {
+        throw new BadRequestError("vc_id, new_vc_id, vc_type, schema_id, schema_version, new_vc_hash, encrypted_body, and expired_in are required when action is APPROVED.");
       }
 
       logger.info(`Processing approval for update request ${request_id} targeting VC ${vc_id}`);
@@ -746,11 +770,24 @@ class CredentialService {
       }
       // ------------------------------------
 
+      // Calculate expiration date (expired_in = 0 means lifetime/no expiration)
+      const expiredAt = this.calculateExpiredAt(expired_in);
+
       // --- Blockchain Update Call ---
       let blockchainReceipt: any;
       try {
         // Call the update function on the blockchain
-        blockchainReceipt = await VCBlockchainService.updateVCInBlockchain(vc_id, new_vc_hash);
+        blockchainReceipt = await VCBlockchainService.updateVCInBlockchain(
+          vc_id,
+          new_vc_id,
+          issuer_did,
+          holder_did,
+          vc_type,
+          schema_id,
+          schema_version,
+          expiredAt,
+          new_vc_hash
+        );
         logger.success(`VC ${vc_id} updated successfully on blockchain with new hash. TX: ${blockchainReceipt?.hash}`);
       } catch (blockchainError: any) {
         logger.error(`Blockchain update failed during approval for request ${request_id} (VC ${vc_id}):`, blockchainError);

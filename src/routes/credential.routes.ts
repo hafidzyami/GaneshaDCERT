@@ -554,6 +554,10 @@ router.get(
  *               encrypted_body:
  *                 type: string
  *                 description: Encrypted VC data (Required if action is APPROVED)
+ *               expired_in:
+ *                 type: integer
+ *                 example: 5
+ *                 description: Expiration time in years from now. Use 0 for lifetime/no expiration (Required if action is APPROVED)
  *     responses:
  *       200:
  *         description: Request processed successfully (Approved or Rejected)
@@ -789,6 +793,10 @@ router.post(
  *               encrypted_body:
  *                 type: string
  *                 description: The new encrypted body of the renewed VC (Required only if action is APPROVED).
+ *               expired_in:
+ *                 type: integer
+ *                 example: 5
+ *                 description: Expiration time in years from now. Use 0 for lifetime/no expiration (Required only if action is APPROVED).
  *     responses:
  *       200:
  *         description: Renewal request processed successfully (Approved or Rejected).
@@ -874,6 +882,21 @@ router.post(
  *               vc_id:
  *                 type: string
  *                 description: The ID of the original VC to update on the blockchain (Required only if action is APPROVED).
+ *               new_vc_id:
+ *                 type: string
+ *                 description: The new ID for the updated VC (Required only if action is APPROVED).
+ *               vc_type:
+ *                 type: string
+ *                 example: UniversityDegreeCredential
+ *                 description: Type/Name of the VC (Required only if action is APPROVED).
+ *               schema_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the schema used (Required only if action is APPROVED).
+ *               schema_version:
+ *                 type: integer
+ *                 example: 1
+ *                 description: Version of the schema used (Required only if action is APPROVED).
  *               new_vc_hash:
  *                 type: string
  *                 example: "0x..."
@@ -881,6 +904,10 @@ router.post(
  *               encrypted_body:
  *                 type: string
  *                 description: The new encrypted body of the updated VC (Required only if action is APPROVED).
+ *               expired_in:
+ *                 type: integer
+ *                 example: 5
+ *                 description: Expiration time in years from now. Use 0 for lifetime/no expiration (Required only if action is APPROVED).
  *     responses:
  *       200:
  *         description: Update request processed successfully (Approved or Rejected).
