@@ -9,6 +9,7 @@ import logger from "./logger";
 class MinioConfig {
   private static instance: Minio.Client | null = null;
   private static bucketName: string = env.MINIO_BUCKET_NAME;
+  private static publicUrl: string | undefined = env.MINIO_PUBLIC_URL;
 
   /**
    * Get MinIO client instance (Singleton pattern)
@@ -16,12 +17,20 @@ class MinioConfig {
   public static getClient(): Minio.Client {
     if (!MinioConfig.instance) {
       try {
+        // Prioritize ACCESS_KEY/SECRET_KEY, fallback to ROOT_USER/PASSWORD
+        const accessKey = env.MINIO_ACCESS_KEY || env.MINIO_ROOT_USER;
+        const secretKey = env.MINIO_SECRET_KEY || env.MINIO_ROOT_PASSWORD;
+
+        if (!accessKey || !secretKey) {
+          throw new Error("MinIO credentials are required");
+        }
+
         MinioConfig.instance = new Minio.Client({
           endPoint: env.MINIO_ENDPOINT,
           port: env.MINIO_PORT,
           useSSL: env.MINIO_USE_SSL,
-          accessKey: env.MINIO_ACCESS_KEY,
-          secretKey: env.MINIO_SECRET_KEY,
+          accessKey: accessKey,
+          secretKey: secretKey,
         });
 
         logger.info("MinIO client initialized successfully", {
@@ -29,6 +38,7 @@ class MinioConfig {
           port: env.MINIO_PORT,
           useSSL: env.MINIO_USE_SSL,
           bucket: MinioConfig.bucketName,
+          publicUrl: MinioConfig.publicUrl || "not configured",
         });
       } catch (error) {
         logger.error("Failed to initialize MinIO client", { error });
@@ -48,6 +58,14 @@ class MinioConfig {
    */
   public static getBucketName(): string {
     return MinioConfig.bucketName;
+  }
+
+  /**
+   * Get public URL for MinIO (used for presigned URLs accessible from browser)
+   * If not set, falls back to constructing URL from endpoint
+   */
+  public static getPublicUrl(): string | undefined {
+    return MinioConfig.publicUrl;
   }
 
   /**
