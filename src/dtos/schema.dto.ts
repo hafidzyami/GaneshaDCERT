@@ -54,6 +54,7 @@ export interface VCSchemaDTO {
   schema: Prisma.JsonValue;
   issuer_did: string;
   version: number;
+  image_link?: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;

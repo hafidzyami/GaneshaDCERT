@@ -193,7 +193,12 @@ export const createVCSchema = asyncHandler(
       issuer_did: req.body.issuer_did,
     };
 
-    const result = await SchemaService.create(dto);
+    // Get optional image file from multer
+    const imageFile = req.file;
+    const imageBuffer = imageFile?.buffer;
+    const imageMimeType = imageFile?.mimetype;
+
+    const result = await SchemaService.create(dto, imageBuffer, imageMimeType);
 
     return ResponseHelper.created(
       res,
@@ -222,7 +227,12 @@ export const updateVCSchema = asyncHandler(
       schema: req.body.schema,
     };
 
-    const result = await SchemaService.update(id, dto);
+    // Get optional image file from multer
+    const imageFile = req.file;
+    const imageBuffer = imageFile?.buffer;
+    const imageMimeType = imageFile?.mimetype;
+
+    const result = await SchemaService.update(id, dto, imageBuffer, imageMimeType);
 
     return ResponseHelper.success(
       res,
