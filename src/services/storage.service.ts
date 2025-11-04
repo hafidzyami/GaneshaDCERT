@@ -346,39 +346,20 @@ class StorageService {
     try {
       const filePath = this.buildFilePath(directory, fileName);
 
-      // Generate presigned URL from MinIO SDK
-      let url = await this.minioClient.presignedGetObject(
+      // Use public client for generating presigned URLs
+      // This ensures the signature is generated with the correct public hostname
+      const publicClient = MinioConfig.getPublicClient();
+      const url = await publicClient.presignedGetObject(
         this.bucketName,
         filePath,
         expirySeconds
       );
 
-      // If MINIO_PUBLIC_URL is set, replace the hostname with public URL
-      // This allows presigned URLs to work through nginx reverse proxy with SSL
-      const publicUrl = MinioConfig.getPublicUrl();
-      if (publicUrl) {
-        try {
-          const urlObj = new URL(url);
-          const publicUrlObj = new URL(publicUrl);
-
-          // Replace protocol and host with public URL
-          urlObj.protocol = publicUrlObj.protocol;
-          urlObj.host = publicUrlObj.host;
-
-          url = urlObj.toString();
-
-          logger.debug("Presigned URL converted to public URL", {
-            filePath,
-            publicUrl: url,
-          });
-        } catch (parseError) {
-          logger.warn("Failed to parse URL for public URL replacement, using original", {
-            url,
-            publicUrl,
-            error: parseError,
-          });
-        }
-      }
+      logger.debug("Presigned URL generated", {
+        filePath,
+        url,
+        usingPublicClient: MinioConfig.getPublicUrl() ? true : false,
+      });
 
       return url;
     } catch (error) {
