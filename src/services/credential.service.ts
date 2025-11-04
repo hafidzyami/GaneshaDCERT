@@ -17,7 +17,17 @@ import { ProcessUpdateVCDTO,
   AggregatedRequestDTO, 
   AllIssuerRequestsResponseDTO, 
   IssuerIssueVCDTO, 
-  IssuerIssueVCResponseDTO } from "../dtos";
+  IssuerIssueVCResponseDTO,
+  IssuerUpdateVCDTO,
+  IssuerUpdateVCResponseDTO,
+  IssuerRevokeVCDTO,
+  IssuerRevokeVCResponseDTO,
+  IssuerRenewVCDTO,
+  IssuerRenewVCResponseDTO,
+  ClaimIssuerInitiatedVCsDTO,
+  ClaimIssuerInitiatedVCsResponseDTO,
+  ConfirmIssuerInitiatedVCsDTO,
+  ConfirmIssuerInitiatedVCsResponseDTO } from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 import NotificationService from "./notification.service";
 
@@ -1222,6 +1232,373 @@ class CredentialService {
       // --- MENGGUNAKAN InternalServerError YANG DIIMPOR ---
       throw new InternalServerError(`Blockchain succeeded (TX: ${blockchainReceipt.hash}), but database save failed. Please contact support. Error: ${dbError.message}`);
     }
+  }
+
+  async issuerUpdateVC(
+    data: IssuerUpdateVCDTO,
+    authenticatedDid: string
+  ): Promise<IssuerUpdateVCResponseDTO> {
+    
+    // 1. Validasi Keamanan
+    if (data.issuer_did !== authenticatedDid) {
+      logger.warn(`Auth mismatch: Token DID (${authenticatedDid}) != Issuer DID (${data.issuer_did})`);
+      throw new ForbiddenError("Authenticated DID does not match the issuer_did in the request body.");
+    }
+
+    const {
+      issuer_did,
+      holder_did,
+      old_vc_id,
+      new_vc_id,
+      vc_type,
+      schema_id,
+      schema_version,
+      new_vc_hash,
+      encrypted_body,
+      expiredAt
+    } = data;
+
+    logger.info(`Attempting direct update by issuer ${issuer_did} for old VC ${old_vc_id} -> new VC ${new_vc_id}`);
+
+    // 2. Pre-Check: Pastikan VC lama ada dan aktif
+    try {
+      const currentVcStatus = await VCBlockchainService.getVCStatusFromBlockchain(old_vc_id);
+      if (currentVcStatus && currentVcStatus.status === false) {
+         logger.warn(`Attempted to update an inactive/revoked VC: ${old_vc_id}`);
+         throw new BadRequestError(`Cannot update VC ${old_vc_id} because it is currently inactive/revoked on the blockchain.`);
+      }
+      logger.info(`VC ${old_vc_id} found and is active. Proceeding with blockchain update.`);
+    } catch (error: any) {
+        logger.error(`Pre-update check failed for VC ${old_vc_id}:`, error);
+        if (error instanceof NotFoundError) {
+             throw new NotFoundError(`Original VC with ID ${old_vc_id} not found on the blockchain. Cannot process update.`);
+        }
+        if (error instanceof BadRequestError) { throw error; }
+        throw new BadRequestError(`Failed to verify VC status before update: ${error.message}`);
+    }
+
+    // 3. Panggil Blockchain (UpdateVC)
+    let blockchainReceipt: any;
+    try {
+      blockchainReceipt = await VCBlockchainService.updateVCInBlockchain(
+        old_vc_id,
+        new_vc_id,
+        issuer_did,
+        holder_did,
+        vc_type,
+        schema_id,
+        schema_version,
+        expiredAt,
+        new_vc_hash
+      );
+      logger.info(`Blockchain update successful for ${new_vc_id}. TX: ${blockchainReceipt?.hash}`);
+    } catch (blockchainError: any)
+    {
+      logger.error(`Blockchain direct update failed for ${old_vc_id} -> ${new_vc_id}:`, blockchainError);
+      throw new BadRequestError(`Blockchain update failed: ${blockchainError.message}`);
+    }
+
+    // 4. Simpan VC BARU ke tabel VCinitiatedByIssuer
+    try {
+      const newRecord = await this.db.vCinitiatedByIssuer.create({
+        data: {
+          request_type: RequestType.UPDATE, // Hardcode sebagai UPDATE
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          encrypted_body: encrypted_body, // Menyimpan body VC yang BARU
+          status: VCResponseStatus.PENDING, // Status default PENDING
+        },
+      });
+
+      logger.success(`New VC record (from update) created in VCinitiatedByIssuer: ${newRecord.id}`);
+      
+      // (Opsional) Kirim notifikasi push ke holder
+      try {
+        await NotificationService.sendVCStatusNotification(
+          holder_did,
+          "Kredensial Anda Telah Diperbarui!",
+          "Sebuah kredensial Anda telah diperbarui oleh penerbit dan siap untuk diklaim.",
+          {
+            type: "VC_UPDATED_BY_ISSUER",
+            record_id: newRecord.id,
+            request_type: RequestType.UPDATE,
+          }
+        );
+        logger.success(`Push notification sent to holder (direct update): ${holder_did}`);
+      } catch (notifError: any) {
+        logger.error(`Failed to send push notification (direct update) to ${holder_did}:`, notifError);
+      }
+
+      return {
+        message: "VC updated directly on blockchain and new VC stored for holder claim.",
+        record_id: newRecord.id,
+        transaction_hash: blockchainReceipt.hash,
+        block_number: blockchainReceipt.blockNumber,
+      };
+
+    } catch (dbError: any) {
+      logger.error(`Database storage failed for VCinitiatedByIssuer (VC ${new_vc_id}) after successful TX ${blockchainReceipt?.hash}:`, dbError);
+      throw new InternalServerError(`Blockchain update succeeded (TX: ${blockchainReceipt.hash}), but database save failed. Please contact support. Error: ${dbError.message}`);
+    }
+  }
+
+  async issuerRevokeVC(
+    data: IssuerRevokeVCDTO,
+    authenticatedDid: string
+  ): Promise<IssuerRevokeVCResponseDTO> {
+    
+    // 1. Validasi Keamanan
+    if (data.issuer_did !== authenticatedDid) {
+      logger.warn(`Auth mismatch: Token DID (${authenticatedDid}) != Issuer DID (${data.issuer_did})`);
+      throw new ForbiddenError("Authenticated DID does not match the issuer_did in the request body.");
+    }
+
+    const { issuer_did, vc_id } = data;
+
+    logger.info(`Attempting direct revoke by issuer ${issuer_did} for VC ${vc_id}`);
+
+    // 2. Pre-Check: Pastikan VC ada dan aktif
+    try {
+      const currentVcStatus = await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
+      
+      // Periksa apakah issuer-nya cocok
+      if (currentVcStatus.issuerDID !== issuer_did) {
+         logger.warn(`Revoke attempt failed: VC ${vc_id} was not issued by ${issuer_did}.`);
+         throw new ForbiddenError(`Authenticated issuer (${issuer_did}) did not issue this VC.`);
+      }
+
+      if (currentVcStatus && currentVcStatus.status === false) {
+         logger.warn(`Attempted to revoke an already revoked VC: ${vc_id}`);
+         throw new BadRequestError(`VC with ID ${vc_id} is already revoked on the blockchain.`);
+      }
+      logger.info(`VC ${vc_id} found, is active, and matches issuer. Proceeding with blockchain revocation.`);
+    } catch (error: any) {
+        logger.error(`Pre-revocation check failed for VC ${vc_id}:`, error);
+        if (error instanceof NotFoundError) {
+             throw new NotFoundError(`VC with ID ${vc_id} not found on the blockchain.`);
+        }
+        if (error instanceof BadRequestError || error instanceof ForbiddenError) {
+          throw error; // Lemparkan kembali error yang sudah spesifik
+        }
+        throw new BadRequestError(`Failed to verify VC status before revocation: ${error.message}`);
+    }
+
+    // 3. Panggil Blockchain (RevokeVC)
+    let blockchainReceipt: any;
+    try {
+      blockchainReceipt = await VCBlockchainService.revokeVCInBlockchain(vc_id);
+      logger.success(`VC ${vc_id} revoked successfully on blockchain. TX: ${blockchainReceipt?.hash}`);
+    } catch (blockchainError: any) {
+      logger.error(`Blockchain direct revoke failed for ${vc_id}:`, blockchainError);
+      throw new BadRequestError(`Blockchain revocation failed: ${blockchainError.message}`);
+    }
+
+    // 4. Kirim respons
+    return {
+      message: "VC revoked directly on blockchain.",
+      vc_id: vc_id,
+      transaction_hash: blockchainReceipt.hash,
+      block_number: blockchainReceipt.blockNumber,
+    };
+  }
+
+  async issuerRenewVC(
+    data: IssuerRenewVCDTO,
+    authenticatedDid: string
+  ): Promise<IssuerRenewVCResponseDTO> {
+    
+    // 1. Validasi Keamanan
+    if (data.issuer_did !== authenticatedDid) {
+      logger.warn(`Auth mismatch: Token DID (${authenticatedDid}) != Issuer DID (${data.issuer_did})`);
+      throw new ForbiddenError("Authenticated DID does not match the issuer_did in the request body.");
+    }
+
+    // Destrukturisasi data, termasuk expiredAt
+    const { issuer_did, holder_did, vc_id, encrypted_body, expiredAt } = data; // <-- TAMBAHKAN expiredAt
+
+    logger.info(`Attempting direct renew by issuer ${issuer_did} for VC ${vc_id}`);
+
+    // 2. Pre-Check: Pastikan VC ada dan milik issuer
+    try {
+      // ... (Logika pre-check tetap sama) ...
+      const currentVcStatus = await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
+      if (currentVcStatus.issuerDID !== issuer_did) {
+         throw new ForbiddenError(`Authenticated issuer (${issuer_did}) did not issue this VC.`);
+      }
+      logger.info(`VC ${vc_id} found and matches issuer. Proceeding with blockchain renewal.`);
+    } catch (error: any) {
+      // ... (Error handling pre-check tetap sama) ...
+      if (error instanceof NotFoundError) {
+           throw new NotFoundError(`VC with ID ${vc_id} not found on the blockchain.`);
+      }
+      if (error instanceof ForbiddenError) { throw error; }
+      throw new BadRequestError(`Failed to verify VC status before renewal: ${error.message}`);
+    }
+
+    // 3. Panggil Blockchain (RenewVC)
+    let blockchainReceipt: any;
+    try {
+      // --- PERBAIKAN: Teruskan expiredAt ke fungsi blockchain ---
+      blockchainReceipt = await VCBlockchainService.renewVCInBlockchain(vc_id, expiredAt);
+      logger.success(`VC ${vc_id} renewed successfully on blockchain. TX: ${blockchainReceipt?.hash}`);
+    } catch (blockchainError: any) {
+      logger.error(`Blockchain direct renew failed for ${vc_id}:`, blockchainError);
+      throw new BadRequestError(`Blockchain renewal failed: ${blockchainError.message}`);
+    }
+
+    // 4. Simpan VC BARU ke tabel VCinitiatedByIssuer
+    try {
+      // ... (Logika penyimpanan DB tetap sama) ...
+      const newRecord = await this.db.vCinitiatedByIssuer.create({
+        data: {
+          request_type: RequestType.RENEWAL,
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          encrypted_body: encrypted_body,
+          status: VCResponseStatus.PENDING,
+        },
+      });
+
+      logger.success(`New VC record (from renew) created in VCinitiatedByIssuer: ${newRecord.id}`);
+      
+      // ... (Logika notifikasi push tetap sama) ...
+      try {
+        await NotificationService.sendVCStatusNotification(
+          holder_did,
+          "Kredensial Anda Telah Diperbarui!",
+          "Sebuah kredensial Anda telah diperbarui (renew) oleh penerbit dan siap untuk diklaim.",
+          {
+            type: "VC_RENEWED_BY_ISSUER",
+            record_id: newRecord.id,
+            request_type: RequestType.RENEWAL,
+          }
+        );
+      } catch (notifError: any) {
+         logger.error(`Failed to send push notification (direct renew) to ${holder_did}:`, notifError);
+      }
+
+      return {
+        message: "VC renewed directly on blockchain and new VC stored for holder claim.",
+        record_id: newRecord.id,
+        transaction_hash: blockchainReceipt.hash,
+        block_number: blockchainReceipt.blockNumber,
+      };
+
+    } catch (dbError: any) {
+      // ... (Error handling DB tetap sama) ...
+      throw new InternalServerError(`Blockchain renew succeeded (TX: ${blockchainReceipt.hash}), but database save failed. Please contact support. Error: ${dbError.message}`);
+    }
+  }
+
+  async claimIssuerInitiatedVCsBatch(
+    holderDid: string, 
+    limit: number = 10
+  ): Promise<ClaimIssuerInitiatedVCsResponseDTO> {
+    logger.info(`Attempting to claim batch of ISSUER-INITIATED VCs (limit: ${limit}) for holder DID: ${holderDid}`);
+
+    // Gunakan batas aman yang sama
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+
+    // Gunakan kueri raw, GANTI "VCResponse" menjadi "VCinitiatedByIssuer"
+    const result = await this.db.$queryRaw<any[]>`
+      UPDATE "VCinitiatedByIssuer"
+      SET status = 'PROCESSING'::"VCResponseStatus",
+          processing_at = NOW(),
+          "updatedAt" = NOW()
+      WHERE id IN (
+        SELECT id
+        FROM "VCinitiatedByIssuer"
+        WHERE holder_did = ${holderDid}
+          AND "deletedAt" IS NULL
+          AND (
+            status = 'PENDING'::"VCResponseStatus"
+            OR (
+              status = 'PROCESSING'::"VCResponseStatus"
+              AND processing_at < NOW() - INTERVAL '5 minutes'
+            )
+          )
+        ORDER BY "createdAt" ASC
+        LIMIT ${safeLimit}
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING *;
+    `;
+
+    if (!result || result.length === 0) {
+      logger.info(`No claimable ISSUER-INITIATED VCs found for holder DID: ${holderDid}`);
+      return {
+        claimed_vcs: [],
+        claimed_count: 0,
+        remaining_count: 0,
+        has_more: false,
+      };
+    }
+
+    // Periksa sisa VC, GANTI target ke vCinitiatedByIssuer
+    const remainingCount = await this.db.vCinitiatedByIssuer.count({
+      where: {
+        holder_did: holderDid,
+        deletedAt: null,
+        OR: [
+          { status: "PENDING" },
+          {
+            status: "PROCESSING",
+            processing_at: {
+              lt: new Date(Date.now() - 5 * 60 * 1000), // 5 menit lalu
+            },
+          },
+        ],
+      },
+    });
+
+    logger.success(`Batch claimed ${result.length} ISSUER-INITIATED VCs for holder DID: ${holderDid}`);
+
+    return {
+      claimed_vcs: result,
+      claimed_count: result.length,
+      remaining_count: remainingCount,
+      has_more: remainingCount > 0,
+    };
+  }
+
+  /**
+   * Phase 2 Batch (Issuer-Initiated): Confirm multiple VCs and soft-delete them
+   */
+  async confirmIssuerInitiatedVCsBatch(
+    vcIds: string[], 
+    holderDid: string
+  ): Promise<ConfirmIssuerInitiatedVCsResponseDTO> {
+    logger.info(`Confirming batch of ${vcIds.length} ISSUER-INITIATED VCs for holder DID: ${holderDid}`);
+
+    // Update multiple VCs, GANTI target ke vCinitiatedByIssuer
+    const updatedVCs = await this.db.vCinitiatedByIssuer.updateMany({
+      where: {
+        id: { in: vcIds },
+        holder_did: holderDid,
+        status: "PROCESSING", // Hanya konfirmasi jika statusnya PROCESSING
+      },
+      data: {
+        status: "CLAIMED",
+        deletedAt: new Date(),
+      },
+    });
+
+    if (updatedVCs.count === 0) {
+      logger.warn(`Batch VC confirmation failed (ISSUER-INITIATED): No VCs found in PROCESSING state for holder ${holderDid}`);
+      throw new NotFoundError(`No VCs (issuer-initiated) found in PROCESSING state for confirmation.`);
+    }
+
+    if (updatedVCs.count < vcIds.length) {
+      logger.warn(`Partial batch confirmation (ISSUER-INITIATED): ${updatedVCs.count}/${vcIds.length} VCs confirmed for holder ${holderDid}`);
+    }
+
+    logger.success(`Batch confirmed and soft-deleted ${updatedVCs.count} ISSUER-INITIATED VCs`);
+
+    return {
+      message: `Successfully confirmed ${updatedVCs.count} issuer-initiated VCs.`,
+      confirmed_count: updatedVCs.count,
+      requested_count: vcIds.length,
+    };
   }
 
 }
