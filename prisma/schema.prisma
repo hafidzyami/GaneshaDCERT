@@ -223,3 +223,16 @@ model Institution {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model VCinitiatedByIssuer {
+  id             String           @id @default(uuid())
+  request_type   RequestType
+  issuer_did     String
+  holder_did     String
+  encrypted_body String
+  status         VCResponseStatus @default(PENDING)
+  processing_at  DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+}
