@@ -650,3 +650,161 @@ export const issuerIssueVCValidator = [
     .isISO8601() // Memastikan format timestamp valid
     .withMessage("expiredAt must be a valid ISO 8601 date string (e.g., 2025-12-31T23:59:59.000Z)"),
 ];
+
+export const issuerUpdateVCValidator = [
+  body("issuer_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Issuer DID is required")
+    .matches(/^did:dcert:i(?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid issuer DID format (must be an institution DID)"),
+
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Holder DID is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder DID format")
+    .custom((value, { req }) => {
+      if (value === req.body.issuer_did) {
+        throw new Error("Issuer DID and Holder DID cannot be the same.");
+      }
+      return true;
+    }),
+
+  // Validasi ID VC Lama
+  body("old_vc_id")
+    .trim()
+    .notEmpty()
+    .withMessage("old_vc_id is required"),
+
+  // Validasi detail VC Baru
+  body("new_vc_id")
+    .trim()
+    .notEmpty()
+    .withMessage("new_vc_id is required"),
+
+  body("vc_type")
+    .trim()
+    .notEmpty()
+    .withMessage("vc_type is required"),
+
+  body("schema_id")
+    .trim()
+    .notEmpty()
+    .withMessage("schema_id is required")
+    .isUUID()
+    .withMessage("Invalid schema_id format (must be UUID)"),
+
+  body("schema_version")
+    .notEmpty()
+    .withMessage("schema_version is required")
+    .isInt({ min: 1 })
+    .withMessage("schema_version must be a positive integer"),
+
+  body("new_vc_hash")
+    .trim()
+    .notEmpty()
+    .withMessage("new_vc_hash is required")
+    .matches(/^0x[a-fA-F0-9]{64}$/)
+    .withMessage("Invalid new_vc_hash format (must be a 64-character hex string starting with 0x)"),
+
+  body("encrypted_body")
+    .trim()
+    .notEmpty()
+    .withMessage("Encrypted body (new VC data) is required"),
+
+  body("expiredAt")
+    .trim()
+    .notEmpty()
+    .withMessage("expiredAt is required")
+    .isISO8601()
+    .withMessage("expiredAt must be a valid ISO 8601 date string"),
+];
+
+export const issuerRevokeVCValidator = [
+  body("issuer_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Issuer DID is required")
+    .matches(/^did:dcert:i(?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/) // Harus 'i' (institution)
+    .withMessage("Invalid issuer DID format (must be an institution DID)"),
+
+  body("vc_id")
+    .trim()
+    .notEmpty()
+    .withMessage("vc_id is required"),
+];
+
+export const issuerRenewVCValidator = [
+  body("issuer_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Issuer DID is required")
+    .matches(/^did:dcert:i(?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/) // Harus 'i' (institution)
+    .withMessage("Invalid issuer DID format (must be an institution DID)"),
+
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Holder DID is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder DID format")
+    .custom((value, { req }) => {
+      if (value === req.body.issuer_did) {
+        throw new Error("Issuer DID and Holder DID cannot be the same.");
+      }
+      return true;
+    }),
+
+  body("vc_id")
+    .trim()
+    .notEmpty()
+    .withMessage("vc_id (the VC ID to renew) is required"),
+
+  body("encrypted_body")
+    .trim()
+    .notEmpty()
+    .withMessage("Encrypted body (new renewed VC data) is required"),
+
+  body("expiredAt")
+    .trim()
+    .notEmpty()
+    .withMessage("expiredAt is required")
+    .isISO8601()
+    .withMessage("expiredAt must be a valid ISO 8601 date string (e.g., 2025-12-31T23:59:59.000Z)"),
+];
+
+export const claimIssuerInitiatedVCsBatchValidator = [
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder_did format"),
+
+  body("limit")
+    .optional()
+    .isInt({ min: 1, max: 100 }) // Menggunakan batas 100
+    .withMessage("limit must be an integer between 1 and 100"),
+];
+
+/**
+ * Validator for Phase 2 Batch: Confirm VCs from VCinitiatedByIssuer
+ */
+export const confirmIssuerInitiatedVCsBatchValidator = [
+  body("vc_ids")
+    .isArray({ min: 1, max: 100 })
+    .withMessage("vc_ids must be an array with 1 to 100 UUIDs"),
+
+  body("vc_ids.*")
+    .isUUID()
+    .withMessage("Each vc_id must be a valid UUID"),
+
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder_did format"),
+];

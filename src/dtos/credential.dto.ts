@@ -189,10 +189,89 @@ export interface IssuerIssueVCDTO {
   expiredAt: string; // <-- TAMBAHKAN BARIS INI
 }
 
+export interface IssuerUpdateVCDTO {
+  issuer_did: string;
+  holder_did: string;
+  
+  old_vc_id: string; // ID VC lama yang akan diganti
+  
+  // Detail VC baru
+  new_vc_id: string; // ID unik untuk VC yang baru (diperbarui)
+  vc_type: string;
+  schema_id: string;
+  schema_version: number;
+  new_vc_hash: string; // Hash dari data VC yang baru
+  encrypted_body: string; // Body VC baru yang dienkripsi
+  expiredAt: string; // Tanggal kedaluwarsa baru
+}
+
+// Response body DTO for POST /credentials/issuer/update-vc
+export interface IssuerUpdateVCResponseDTO {
+  message: string;
+  record_id: string; // ID dari record baru di tabel VCinitiatedByIssuer
+  transaction_hash: string;
+  block_number: number;
+}
+
 // Response body DTO for POST /credentials/issuer/issue-vc
 export interface IssuerIssueVCResponseDTO {
   message: string;
   record_id: string; // ID dari record baru di tabel VCinitiatedByIssuer
   transaction_hash: string;
   block_number: number;
+}
+
+export interface IssuerRevokeVCDTO {
+  issuer_did: string; // DID Issuer yang diautentikasi
+  vc_id: string;      // ID VC yang akan dicabut
+}
+
+// Response body DTO for POST /credentials/issuer/revoke-vc
+export interface IssuerRevokeVCResponseDTO {
+  message: string;
+  vc_id: string;
+  transaction_hash: string;
+  block_number: number;
+}
+
+export interface IssuerRenewVCDTO {
+  issuer_did: string;
+  holder_did: string;
+  vc_id: string;          // ID dari VC on-chain yang akan diperbarui (renew)
+  encrypted_body: string; // Body VC BARU (sudah dienkripsi) yang akan disimpan di DB
+  expiredAt: string;      // <-- TAMBAHKAN BARIS INI
+}
+
+// Response body DTO for POST /credentials/issuer/renew-vc
+export interface IssuerRenewVCResponseDTO {
+  message: string;
+  record_id: string; // ID dari record baru di tabel VCinitiatedByIssuer
+  transaction_hash: string;
+  block_number: number;
+}
+
+export interface ClaimIssuerInitiatedVCsDTO {
+  holder_did: string;
+  limit?: number;
+}
+
+// Response body DTO for POST /claim-vc/issuer-init
+export interface ClaimIssuerInitiatedVCsResponseDTO {
+  claimed_vcs: any[]; // Data VC yang diklaim
+  claimed_count: number;
+  remaining_count: number;
+  has_more: boolean;
+}
+
+// Request body DTO for POST /confirm-vc/issuer-init
+export interface ConfirmIssuerInitiatedVCsDTO {
+  vc_ids: string[]; // Array of VCinitiatedByIssuer record IDs
+  holder_did: string;
+}
+
+// Response body DTO for POST /confirm-vc/issuer-init
+export interface ConfirmIssuerInitiatedVCsResponseDTO {
+  message: string;
+  confirmed_count: number;
+  requested_count: number;
 }

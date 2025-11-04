@@ -6,7 +6,7 @@ import { CredentialService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler, RequestWithDID } from "../middlewares";
 import { ResponseHelper } from "../utils/helpers";
-import { ProcessUpdateVCDTO, IssuerIssueVCDTO,ProcessIssuanceVCDTO, RevokeVCDTO, CredentialRevocationRequestDTO, ProcessRenewalVCDTO } from "../dtos";
+import { ClaimIssuerInitiatedVCsDTO, ConfirmIssuerInitiatedVCsDTO, IssuerRenewVCDTO, IssuerRevokeVCDTO, IssuerUpdateVCDTO, ProcessUpdateVCDTO, IssuerIssueVCDTO,ProcessIssuanceVCDTO, RevokeVCDTO, CredentialRevocationRequestDTO, ProcessRenewalVCDTO } from "../dtos";
 import { BadRequestError} from "../utils/errors/AppError";
 /**
  * Request Credential Issuance Controller
@@ -442,4 +442,106 @@ export const issuerIssueVC = asyncHandler(async (req: RequestWithDID, res: Respo
 
   // Kirim respons 'Created' (201)
   return ResponseHelper.created(res, result, result.message);
+});
+
+export const issuerUpdateVC = asyncHandler(async (req: RequestWithDID, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Dapatkan DID yang diautentikasi dari middleware
+  const authenticatedDid = req.holderDID;
+  if (!authenticatedDid) {
+    throw new BadRequestError("Authenticated issuer DID not found in request. Make sure JWT token is valid.");
+  }
+
+  const requestData: IssuerUpdateVCDTO = req.body;
+
+  // Panggil service
+  const result = await CredentialService.issuerUpdateVC(requestData, authenticatedDid);
+
+  // Kirim respons 'Created' (201) karena VC baru dibuat
+  return ResponseHelper.created(res, result, result.message);
+});
+
+export const issuerRevokeVC = asyncHandler(async (req: RequestWithDID, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Dapatkan DID yang diautentikasi dari middleware
+  const authenticatedDid = req.holderDID;
+  if (!authenticatedDid) {
+    throw new BadRequestError("Authenticated issuer DID not found in request. Make sure JWT token is valid.");
+  }
+
+  const requestData: IssuerRevokeVCDTO = req.body;
+
+  // Panggil service
+  const result = await CredentialService.issuerRevokeVC(requestData, authenticatedDid);
+
+  // Kirim respons 'OK' (200)
+  return ResponseHelper.success(res, result, result.message);
+});
+
+export const issuerRenewVC = asyncHandler(async (req: RequestWithDID, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  const authenticatedDid = req.holderDID;
+  if (!authenticatedDid) {
+    throw new BadRequestError("Authenticated issuer DID not found in request. Make sure JWT token is valid.");
+  }
+
+  const requestData: IssuerRenewVCDTO = req.body;
+
+  // Panggil service
+  const result = await CredentialService.issuerRenewVC(requestData, authenticatedDid);
+
+  // Kirim respons 'Created' (201) karena record baru dibuat di DB
+  return ResponseHelper.created(res, result, result.message);
+});
+
+export const claimIssuerInitiatedVCsBatch = asyncHandler(async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // --- PERBAIKAN: Gunakan DTO untuk type casting req.body ---
+  const requestData: ClaimIssuerInitiatedVCsDTO = req.body;
+  const { holder_did, limit } = requestData;
+
+  // Panggil service function yang baru
+  const result = await CredentialService.claimIssuerInitiatedVCsBatch(holder_did, limit || 10); //
+
+  let message = "No pending issuer-initiated VCs available for claim.";
+  if (result.claimed_count > 0) {
+    message = `Successfully claimed ${result.claimed_count} VCs. ${result.has_more ? `${result.remaining_count} more pending.` : 'No more pending VCs.'}`;
+  }
+
+  return ResponseHelper.success(res, result, message);
+});
+
+/**
+ * Phase 2 Batch (Issuer-Initiated): Confirm multiple VCs Controller
+ */
+export const confirmIssuerInitiatedVCsBatch = asyncHandler(async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // --- PERBAIKAN: Gunakan DTO untuk type casting req.body ---
+  const requestData: ConfirmIssuerInitiatedVCsDTO = req.body;
+  const { vc_ids, holder_did } = requestData;
+
+  // Panggil service function yang baru
+  const result = await CredentialService.confirmIssuerInitiatedVCsBatch(vc_ids, holder_did); //
+
+  return ResponseHelper.success(res, result, result.message);
 });
