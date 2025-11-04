@@ -78,9 +78,11 @@ model VCRevokeRequest {
 }
 
 model VPSharing {
-  id         String @id @default(uuid())
+  id         String    @id @default(uuid())
   holder_did String
   VP         String
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
 }
 
 model VCResponse {

@@ -314,8 +314,15 @@ router.get("/:vpId", getVPValidator, vp.getVP);
  * @swagger
  * /presentations/{vpId}/verify:
  *   get:
- *     summary: Verify Verifiable Presentation
- *     description: Verify the authenticity and integrity of a VP and its contained VCs (requires DID authentication)
+ *     summary: Verify Verifiable Presentation (One-Time Use)
+ *     description: |
+ *       Verify the authenticity and integrity of a VP and its contained VCs (requires DID authentication).
+ *
+ *       **One-Time Use**: After verification (regardless of valid or invalid result), the VP will be soft-deleted
+ *       to prevent reuse. This ensures that each VP can only be verified once.
+ *
+ *       **Idempotent**: Calling this endpoint multiple times on an already-verified VP will return 404
+ *       "VP not found or already verified".
  *     tags:
  *       - Verification & Presentation (VP) Flow
  *     security:
@@ -330,7 +337,7 @@ router.get("/:vpId", getVPValidator, vp.getVP);
  *         description: ID of the VP to verify
  *     responses:
  *       200:
- *         description: VP verification completed
+ *         description: VP verification completed (VP is now soft-deleted regardless of result)
  *         content:
  *           application/json:
  *             schema:
@@ -369,7 +376,7 @@ router.get("/:vpId", getVPValidator, vp.getVP);
  *       401:
  *         description: Unauthorized - invalid or missing JWT token
  *       404:
- *         description: VP not found
+ *         description: VP not found or already verified (one-time use)
  *       500:
  *         description: Internal server error
  */

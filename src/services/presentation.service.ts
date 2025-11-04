@@ -166,9 +166,12 @@ class PresentationService {
    * Get and delete VP (one-time retrieval)
    */
   async getVP(vpId: string): Promise<{ vp: any }> {
-    // Find VP in VPSharing
-    const sharedVp = await this.db.vPSharing.findUnique({
-      where: { id: vpId },
+    // Find VP in VPSharing (exclude soft-deleted)
+    const sharedVp = await this.db.vPSharing.findFirst({
+      where: {
+        id: vpId,
+        deletedAt: null
+      },
     });
 
     if (!sharedVp) {
@@ -177,12 +180,13 @@ class PresentationService {
       );
     }
 
-    // Delete VP after retrieval (one-time use)
-    await this.db.vPSharing.delete({
+    // Soft delete VP after retrieval (one-time use) - idempotent
+    await this.db.vPSharing.update({
       where: { id: vpId },
+      data: { deletedAt: new Date() }
     });
 
-    logger.success(`VP retrieved and deleted: ${vpId}`);
+    logger.success(`VP retrieved and soft deleted: ${vpId}`);
 
     // Parse VP string to JSON object
     const vpObject = JSON.parse(sharedVp.VP);
@@ -361,18 +365,22 @@ class PresentationService {
   }
 
   /**
-   * Verify Verifiable Presentation
+   * Verify Verifiable Presentation (One-Time Use)
    * 1. Verify VP signature with holder's public key
    * 2. Verify each VC's proof with issuer's public key
+   * 3. Soft delete VP after verification regardless of result (idempotent)
    */
   async verifyVP(vpId: string): Promise<VPVerificationResult> {
-    // Find VP in VPSharing (don't delete yet)
-    const sharedVp = await this.db.vPSharing.findUnique({
-      where: { id: vpId },
+    // Find VP in VPSharing (exclude soft-deleted for first verification)
+    const sharedVp = await this.db.vPSharing.findFirst({
+      where: {
+        id: vpId,
+        deletedAt: null
+      },
     });
 
     if (!sharedVp) {
-      throw new NotFoundError("VP not found");
+      throw new NotFoundError("VP not found or already verified");
     }
 
     // Parse VP string to JSON object
@@ -443,6 +451,25 @@ class PresentationService {
     logger.info(`VP valid: ${result.vp_valid}`);
     logger.info(`VCs verified: ${result.credentials_verification.length}`);
     logger.info(`VCs valid: ${result.credentials_verification.filter(r => r.valid).length}`);
+
+    // Step 3: Soft delete VP after verification (idempotent)
+    // Always soft delete regardless of verification result (one-time use)
+    try {
+      // Soft delete - idempotent operation
+      await this.db.vPSharing.updateMany({
+        where: {
+          id: vpId,
+          deletedAt: null // Only update if not already deleted
+        },
+        data: {
+          deletedAt: new Date()
+        }
+      });
+      logger.success(`VP ${vpId} soft deleted after verification (one-time use)`);
+    } catch (error) {
+      // Don't fail the verification if soft delete fails
+      logger.error(`Failed to soft delete VP ${vpId}:`, error);
+    }
 
     return result;
   }
