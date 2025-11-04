@@ -2,6 +2,7 @@ import { BadRequestError, NotFoundError } from "../utils/errors/AppError";
 import logger from "../config/logger";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 import DIDBlockchainService from "./blockchain/didBlockchain.service";
+import StorageService from "./storage.service";
 import { prisma } from "../config/database";
 import { VCSchema, Prisma } from "@prisma/client";
 import {
@@ -14,6 +15,7 @@ import {
   SchemaDeleteResponseDTO,
 } from "../dtos/schema.dto";
 import { SCHEMA_CONSTANTS } from "../constants/schema.constants";
+import { v4 as uuidv4 } from "uuid";
 
 /**
  * VC Schema Service
@@ -340,10 +342,16 @@ class SchemaService {
   /**
    * Create new VC schema (version 1)
    */
-  async create(data: CreateVCSchemaDTO): Promise<VCSchemaOperationResponseDTO> {
+  async create(
+    data: CreateVCSchemaDTO,
+    imageBuffer?: Buffer,
+    imageMimeType?: string
+  ): Promise<VCSchemaOperationResponseDTO> {
     this.logStart("Create schema", data.name);
 
     let createdSchema: VCSchema | null = null;
+    let uploadedImageUrl: string | null = null;
+    let uploadedImageFileName: string | null = null;
 
     try {
       // Get DID document from blockchain
@@ -354,6 +362,24 @@ class SchemaService {
       // Extract name from DID document
       const issuerName = didDocument.details?.name || null;
 
+      // Upload image to MinIO if provided
+      if (imageBuffer) {
+        try {
+          uploadedImageFileName = `${uuidv4()}`;
+          const uploadResult = await StorageService.uploadFile(
+            "background",
+            uploadedImageFileName,
+            imageBuffer,
+            imageMimeType
+          );
+          uploadedImageUrl = uploadResult.url;
+          this.logSuccess("Upload schema background image", uploadResult.filePath);
+        } catch (uploadError: any) {
+          logger.error("Failed to upload schema background image:", uploadError);
+          throw new BadRequestError(`Image upload failed: ${uploadError.message}`);
+        }
+      }
+
       // 1. Create in database
       createdSchema = await prisma.vCSchema.create({
         data: {
@@ -361,6 +387,7 @@ class SchemaService {
           schema: data.schema as Prisma.InputJsonValue,
           issuer_did: data.issuer_did,
           issuer_name: issuerName,
+          image_link: uploadedImageUrl,
           version: SCHEMA_CONSTANTS.INITIAL_VERSION,
           isActive: true,
         },
@@ -402,6 +429,14 @@ class SchemaService {
           .catch(() => {});
       }
 
+      // Rollback uploaded image if exists
+      if (uploadedImageFileName) {
+        logger.warn(
+          `[SchemaService] Rolling back uploaded image: ${uploadedImageFileName}`
+        );
+        await StorageService.deleteFile("background", uploadedImageFileName).catch(() => {});
+      }
+
       this.logError("Create schema", error);
       throw new BadRequestError(
         `${SCHEMA_CONSTANTS.MESSAGES.BLOCKCHAIN_FAILED}: ${error.message}`
@@ -414,15 +449,37 @@ class SchemaService {
    */
   async update(
     id: string,
-    data: UpdateVCSchemaDTO
+    data: UpdateVCSchemaDTO,
+    imageBuffer?: Buffer,
+    imageMimeType?: string
   ): Promise<VCSchemaOperationResponseDTO> {
     this.logStart("Update schema", id);
 
     let newVersionSchema: VCSchema | null = null;
+    let uploadedImageUrl: string | null = null;
+    let uploadedImageFileName: string | null = null;
 
     try {
       // 1. Get existing schema
       const existingSchema = await this.getLastSchemaById(id);
+
+      // Upload image to MinIO if provided
+      if (imageBuffer) {
+        try {
+          uploadedImageFileName = `${uuidv4()}`;
+          const uploadResult = await StorageService.uploadFile(
+            "background",
+            uploadedImageFileName,
+            imageBuffer,
+            imageMimeType
+          );
+          uploadedImageUrl = uploadResult.url;
+          this.logSuccess("Upload schema background image", uploadResult.filePath);
+        } catch (uploadError: any) {
+          logger.error("Failed to upload schema background image:", uploadError);
+          throw new BadRequestError(`Image upload failed: ${uploadError.message}`);
+        }
+      }
 
       // 2. Create new version in database
       const newVersion = existingSchema.version + 1;
@@ -433,6 +490,7 @@ class SchemaService {
           schema: data.schema as Prisma.InputJsonValue,
           issuer_did: existingSchema.issuer_did,
           issuer_name: existingSchema.issuer_name,
+          image_link: uploadedImageUrl || existingSchema.image_link,
           version: newVersion,
           isActive: true,
         },
@@ -473,6 +531,14 @@ class SchemaService {
             },
           })
           .catch(() => {});
+      }
+
+      // Rollback uploaded image if exists
+      if (uploadedImageFileName) {
+        logger.warn(
+          `[SchemaService] Rolling back uploaded image: ${uploadedImageFileName}`
+        );
+        await StorageService.deleteFile("background", uploadedImageFileName).catch(() => {});
       }
 
       this.logError("Update schema", error);

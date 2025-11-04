@@ -157,6 +157,7 @@ model VCSchema {
   schema      Json
   issuer_did  String
   issuer_name String?
+  image_link  String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

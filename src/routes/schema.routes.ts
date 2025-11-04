@@ -14,6 +14,7 @@ import {
   deleteVCSchemaValidator,
   isSchemaActiveValidator,
 } from "../validators/schema.validator";
+import { uploadOptionalImage } from "../middlewares/upload.middleware";
 
 const router: Router = express.Router();
 
@@ -64,6 +65,11 @@ const router: Router = express.Router();
  *           minimum: 1
  *           description: Schema version number
  *           example: 1
+ *         image_link:
+ *           type: string
+ *           format: uri
+ *           description: URL to the background image for the VC schema (optional)
+ *           example: "https://minio.example.com/bucket/background/uuid-filename?X-Amz-..."
  *         isActive:
  *           type: boolean
  *           description: Whether the schema is active
@@ -457,6 +463,46 @@ router.get("/:id/version/:version/active", isSchemaActiveValidator, vcSchema.isS
  *     requestBody:
  *       required: true
  *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - schema
+ *               - issuer_did
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 minLength: 3
+ *                 maxLength: 255
+ *                 description: Name of the credential schema
+ *                 example: "Diploma Certificate"
+ *               schema:
+ *                 type: string
+ *                 description: JSON schema defining credential structure (as stringified JSON)
+ *                 example: '{"type":"object","properties":{"studentName":{"type":"string"},"studentId":{"type":"string"},"major":{"type":"string"},"graduationYear":{"type":"number"}},"required":["studentName","studentId","major","graduationYear"]}'
+ *               image:
+ *                 type: string
+ *                 format: binary
+ *                 description: Optional background image for the VC schema (JPEG, PNG, GIF, WEBP, max 5MB)
+ *               issuer_did:
+ *                 type: string
+ *                 pattern: '^did:dcert:i[a-zA-Z0-9_-]{44}$'
+ *                 description: DID of institution issuer (must start with 'i' followed by 44 chars)
+ *                 example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
+ *           examples:
+ *             diplomaSchema:
+ *               summary: Diploma Certificate Schema
+ *               value:
+ *                 name: "Diploma Certificate"
+ *                 schema: '{"type":"object","properties":{"studentName":{"type":"string","description":"Full name of the student"},"studentId":{"type":"string","description":"Student ID number"},"major":{"type":"string","description":"Field of study"},"graduationYear":{"type":"number","description":"Year of graduation"},"gpa":{"type":"number","minimum":0,"maximum":4}},"required":["studentName","studentId","major","graduationYear"]}'
+ *                 issuer_did: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
+ *             employmentSchema:
+ *               summary: Employment Certificate Schema
+ *               value:
+ *                 name: "Employment Certificate"
+ *                 schema: '{"type":"object","properties":{"employeeName":{"type":"string"},"employeeId":{"type":"string"},"position":{"type":"string"},"department":{"type":"string"},"startDate":{"type":"string","format":"date"},"endDate":{"type":"string","format":"date"}},"required":["employeeName","employeeId","position","startDate"]}'
+ *                 issuer_did: "did:dcert:iXYZ9876543210-company_ABC123456789012345678"
  *         application/json:
  *           schema:
  *             type: object
@@ -605,7 +651,7 @@ router.get("/:id/version/:version/active", isSchemaActiveValidator, vcSchema.isS
  *       500:
  *         description: Internal server error
  */
-router.post("/", createVCSchemaValidator, vcSchema.createVCSchema);
+router.post("/", uploadOptionalImage, createVCSchemaValidator, vcSchema.createVCSchema);
 
 /**
  * @swagger
@@ -637,6 +683,25 @@ router.post("/", createVCSchemaValidator, vcSchema.createVCSchema);
  *     requestBody:
  *       required: true
  *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - schema
+ *             properties:
+ *               schema:
+ *                 type: string
+ *                 description: Updated JSON schema structure as stringified JSON (creates new version)
+ *                 example: '{"type":"object","properties":{"studentName":{"type":"string"},"studentId":{"type":"string"},"major":{"type":"string"},"graduationYear":{"type":"number"},"gpa":{"type":"number"},"honors":{"type":"string","enum":["Cum Laude","Magna Cum Laude","Summa Cum Laude"]}},"required":["studentName","studentId","major","graduationYear"]}'
+ *               image:
+ *                 type: string
+ *                 format: binary
+ *                 description: Optional new background image for the VC schema (JPEG, PNG, GIF, WEBP, max 5MB). If provided, replaces the existing image.
+ *           examples:
+ *             addHonorsField:
+ *               summary: Add honors field to diploma schema
+ *               value:
+ *                 schema: '{"type":"object","properties":{"studentName":{"type":"string"},"studentId":{"type":"string"},"major":{"type":"string"},"graduationYear":{"type":"number"},"gpa":{"type":"number"},"honors":{"type":"string","enum":["Cum Laude","Magna Cum Laude","Summa Cum Laude"]}},"required":["studentName","studentId","major","graduationYear"]}'
  *         application/json:
  *           schema:
  *             type: object
@@ -719,7 +784,7 @@ router.post("/", createVCSchemaValidator, vcSchema.createVCSchema);
  *       500:
  *         description: Internal server error
  */
-router.put("/:id", updateVCSchemaValidator, vcSchema.updateVCSchema);
+router.put("/:id", uploadOptionalImage, updateVCSchemaValidator, vcSchema.updateVCSchema);
 
 /**
  * @swagger
