@@ -4,6 +4,7 @@ import { PresentationService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler } from "../middlewares";
 import { ResponseHelper } from "../utils/helpers";
+import { RequestWithDID } from "../middlewares/didAuth.middleware";
 
 /**
  * Request VP Controller
@@ -44,20 +45,27 @@ export const getVPRequestDetails = asyncHandler(async (req: Request, res: Respon
 /**
  * Store VP Controller
  */
-export const storeVP = asyncHandler(async (req: Request, res: Response) => {
+export const storeVP = asyncHandler(async (req: RequestWithDID, res: Response) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     throw new ValidationError("Validation error", errors.array());
   }
 
-  const { holder_did, vp } = req.body;
+  // Get holder_did from JWT authentication middleware
+  const holder_did = req.holderDID;
+  if (!holder_did) {
+    throw new ValidationError("Holder DID not found in authentication token", []);
+  }
+
+  const { vp } = req.body;
 
   const result = await PresentationService.storeVP({
     holder_did,
     vp,
   });
 
-  return ResponseHelper.created(res, result, "VP stored successfully");
+  // Return only vp_id
+  return ResponseHelper.created(res, { vp_id: result.vp_id }, "VP stored successfully");
 });
 
 /**
@@ -74,4 +82,23 @@ export const getVP = asyncHandler(async (req: Request, res: Response) => {
   const result = await PresentationService.getVP(vpId);
 
   return ResponseHelper.success(res, result, "VP retrieved successfully");
+});
+
+/**
+ * Verify VP Controller
+ */
+export const verifyVP = asyncHandler(async (req: RequestWithDID, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  const { vpId } = req.params;
+
+  // Get verifier's public key from middleware (optional, for logging)
+  const verifierDID = req.holderDID;
+
+  const result = await PresentationService.verifyVP(vpId);
+
+  return ResponseHelper.success(res, result, "VP verification completed");
 });

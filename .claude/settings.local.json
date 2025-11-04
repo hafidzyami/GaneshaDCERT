@@ -16,7 +16,8 @@
       "Bash(npm install:*)",
       "Bash(powershell -Command \"Get-Content ''C:\\GaneshaDCERT\\src\\controllers\\credential.controller.ts'' | Measure-Object -Line | Select-Object -ExpandProperty Lines\")",
       "Bash(powershell -Command \"Get-Content ''C:\\GaneshaDCERT\\src\\routes\\credential.routes.ts'' | Measure-Object -Line | Select-Object -ExpandProperty Lines\")",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(git pull:*)"
     ],
     "deny": [],
     "ask": []
