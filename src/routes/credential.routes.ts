@@ -13,9 +13,10 @@ import {
   getHolderCredentialsValidator, revokeVCValidator, processRenewalVCValidator, processUpdateVCValidator,
   claimVCValidator,
   confirmVCValidator,
-  claimVCsBatchValidator,
-  confirmVCsBatchValidator,
-  resetStuckVCsValidator, getAllIssuerRequestsValidator, issuerIssueVCValidator
+  claimVCsBatchValidator, issuerRenewVCValidator,
+  confirmVCsBatchValidator,issuerRevokeVCValidator,
+  resetStuckVCsValidator, getAllIssuerRequestsValidator, issuerIssueVCValidator, issuerUpdateVCValidator,claimIssuerInitiatedVCsBatchValidator,
+  confirmIssuerInitiatedVCsBatchValidator
 } from "../validators/credential.validator";
 
 const router: Router = express.Router();
@@ -1501,5 +1502,421 @@ router.post(
   verifyDIDSignature,
   issuerIssueVCValidator,
   credentialController.issuerIssueVC
+);
+
+/**
+ * @swagger
+ * /credentials/issuer/update-vc:
+ *   post:
+ *     summary: (Issuer) Direct Update VC
+ *     description: Endpoint khusus Issuer untuk memperbarui VC secara langsung di blockchain. Ini akan menandai VC lama sebagai tidak aktif dan membuat VC baru, lalu menyimpannya di DB (VCinitiatedByIssuer) agar siap di-claim oleh holder.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - issuer_did
+ *               - holder_did
+ *               - old_vc_id
+ *               - new_vc_id
+ *               - vc_type
+ *               - schema_id
+ *               - schema_version
+ *               - new_vc_hash
+ *               - encrypted_body
+ *               - expiredAt
+ *             properties:
+ *               issuer_did:
+ *                 type: string
+ *                 example: "did:dcert:i..."
+ *                 description: DID Issuer (harus cocok dengan DID di token JWT)
+ *               holder_did:
+ *                 type: string
+ *                 example: "did:dcert:u..."
+ *                 description: DID Holder yang akan menerima
+ *               old_vc_id:
+ *                 type: string
+ *                 description: ID dari VC LAMA yang akan diganti/diperbarui
+ *               new_vc_id:
+ *                 type: string
+ *                 description: ID unik untuk VC BARU ini
+ *               vc_type:
+ *                 type: string
+ *                 example: "UniversityDegreeCredential"
+ *               schema_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID Schema yang divalidasi
+ *               schema_version:
+ *                 type: integer
+ *                 example: 1
+ *                 description: Versi Schema yang divalidasi
+ *               new_vc_hash:
+ *                 type: string
+ *                 example: "0x..."
+ *                 description: Hash (Keccak256) dari data VC yang BARU
+ *               encrypted_body:
+ *                 type: string
+ *                 description: Data VC yang BARU (sudah dienkripsi)
+ *               expiredAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Tanggal kadaluwarsa baru untuk VC (format ISO 8601)
+ *                 example: "2027-11-04T10:00:00.000Z"
+ *     responses:
+ *       201:
+ *         description: VC berhasil diperbarui di blockchain dan VC baru disimpan di DB.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC updated directly on blockchain and new VC stored for holder claim."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     record_id:
+ *                       type: string
+ *                       format: uuid
+ *                       description: ID dari record baru di tabel VCinitiatedByIssuer
+ *                     transaction_hash:
+ *                       type: string
+ *                     block_number:
+ *                       type: integer
+ *       400:
+ *         description: Validasi gagal (data tidak lengkap, VC lama sudah tidak aktif, atau error blockchain).
+ *       401:
+ *         description: Unauthorized (Token JWT Issuer tidak valid/hilang).
+ *       403:
+ *         description: Forbidden (Token JWT tidak cocok dengan issuer_did di body).
+ *       404:
+ *         description: Error (misal VC lama tidak ditemukan di blockchain).
+ *       500:
+ *         description: Internal Server Error.
+ */
+router.post(
+  "/issuer/update-vc",
+  verifyDIDSignature,
+  issuerUpdateVCValidator,
+  credentialController.issuerUpdateVC
+);
+
+/**
+ * @swagger
+ * /credentials/issuer/revoke-vc:
+ *   post:
+ *     summary: (Issuer) Direct Revoke VC
+ *     description: Endpoint khusus Issuer untuk mencabut (revoke) VC secara langsung di blockchain. Ini adalah aksi langsung dan tidak menggunakan tabel request.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - issuer_did
+ *               - vc_id
+ *             properties:
+ *               issuer_did:
+ *                 type: string
+ *                 example: "did:dcert:i..."
+ *                 description: DID Issuer (harus cocok dengan DID di token JWT)
+ *               vc_id:
+ *                 type: string
+ *                 description: ID dari VC yang akan dicabut
+ *     responses:
+ *       200:
+ *         description: VC berhasil dicabut di blockchain.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC revoked directly on blockchain."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vc_id:
+ *                       type: string
+ *                       description: ID dari VC yang dicabut
+ *                     transaction_hash:
+ *                       type: string
+ *                     block_number:
+ *                       type: integer
+ *       400:
+ *         description: Validasi gagal (data tidak lengkap, VC sudah dicabut, atau error blockchain).
+ *       401:
+ *         description: Unauthorized (Token JWT Issuer tidak valid/hilang).
+ *       403:
+ *         description: Forbidden (Token JWT tidak cocok dengan issuer_did di body, atau issuer bukan pemilik VC).
+ *       404:
+ *         description: Error (misal VC tidak ditemukan di blockchain).
+ *       500:
+ *         description: Internal Server Error.
+ */
+router.post(
+  "/issuer/revoke-vc",
+  verifyDIDSignature,
+  issuerRevokeVCValidator,
+  credentialController.issuerRevokeVC
+);
+
+/**
+ * @swagger
+ * /credentials/issuer/renew-vc:
+ *   post:
+ *     summary: (Issuer) Direct Renew VC
+ *     description: Endpoint khusus Issuer untuk memperbarui (renew) VC secara langsung di blockchain. Ini akan mengaktifkan kembali VC di blockchain dan menyimpan VC baru (dengan data/expiry baru) di DB (VCinitiatedByIssuer) agar siap di-claim oleh holder.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - issuer_did
+ *               - holder_did
+ *               - vc_id
+ *               - encrypted_body
+ *               - expiredAt
+ *             properties:
+ *               issuer_did:
+ *                 type: string
+ *                 example: "did:dcert:i..."
+ *                 description: DID Issuer (harus cocok dengan DID di token JWT)
+ *               holder_did:
+ *                 type: string
+ *                 example: "did:dcert:u..."
+ *                 description: DID Holder yang akan menerima
+ *               vc_id:
+ *                 type: string
+ *                 description: ID dari VC yang akan diperbarui (renew)
+ *               encrypted_body:
+ *                 type: string
+ *                 description: Data VC yang BARU (sudah dienkripsi)
+ *               expiredAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Tanggal kedaluwarsa BARU untuk VC (format ISO 8601)
+ *                 example: "2027-11-04T10:00:00.000Z"
+ *     responses:
+ *       201:
+ *         description: VC berhasil diperbarui di blockchain dan VC baru disimpan di DB.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC renewed directly on blockchain and new VC stored for holder claim."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     record_id:
+ *                       type: string
+ *                       format: uuid
+ *                       description: ID dari record baru di tabel VCinitiatedByIssuer
+ *                     transaction_hash:
+ *                       type: string
+ *                     block_number:
+ *                       type: integer
+ *       400:
+ *         description: Validasi gagal (data tidak lengkap, VC sudah tidak aktif, atau error blockchain).
+ *       401:
+ *         description: Unauthorized (Token JWT Issuer tidak valid/hilang).
+ *       403:
+ *         description: Forbidden (Token JWT tidak cocok dengan issuer_did di body).
+ *       404:
+ *         description: Error (misal VC tidak ditemukan di blockchain).
+ *       500:
+ *         description: Internal Server Error.
+ */
+router.post(
+  "/issuer/renew-vc",
+  verifyDIDSignature,
+  issuerRenewVCValidator,
+  credentialController.issuerRenewVC
+);
+
+/**
+ * @swagger
+ * /credentials/claim-vc/issuer-init:
+ *   post:
+ *     summary: Claim multiple VCs issued by Issuer (Phase 1 - Batch)
+ *     description: (Holder) Atomically claims a batch of pending VCs that were directly issued by an Issuer (from VCinitiatedByIssuer table).
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - holder_did
+ *             properties:
+ *               holder_did:
+ *                 type: string
+ *                 example: "did:dcert:u..."
+ *                 description: DID of the credential holder
+ *               limit:
+ *                 type: integer
+ *                 example: 10
+ *                 minimum: 1
+ *                 maximum: 100
+ *                 default: 10
+ *                 description: Maximum number of VCs to claim (default 10, max 100)
+ *     responses:
+ *       200:
+ *         description: VCs claimed successfully (status set to PROCESSING).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ClaimVCsBatchResponse'
+ *       400:
+ *         description: Validation error.
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token).
+ *       500:
+ *         description: Internal server error.
+ * 
+ * components:
+ *   schemas:
+ *     ClaimVCsBatchResponse:
+ *       type: object
+ *       properties:
+ *         success:
+ *           type: boolean
+ *           example: true
+ *         message:
+ *           type: string
+ *           example: "Successfully claimed 5 VCs. Processing..."
+ *         data:
+ *           type: object
+ *           properties:
+ *             claimed_count:
+ *               type: integer
+ *               example: 5
+ *             claimed_vc_ids:
+ *               type: array
+ *               items:
+ *                 type: string
+ *               example: ["vc:id:1", "vc:id:2", "vc:id:3"]
+ */
+router.post(
+  "/claim-vc/issuer-init",
+  verifyDIDSignature,
+  claimIssuerInitiatedVCsBatchValidator,
+  credentialController.claimIssuerInitiatedVCsBatch
+);
+
+/**
+ * @swagger
+ * /credentials/confirm-vc/issuer-init:
+ *   post:
+ *     summary: Confirm multiple VC claims from Issuer (Phase 2 - Batch)
+ *     description: (Holder) Confirms that the holder has saved VCs (from VCinitiatedByIssuer table). Sets status to CLAIMED and soft-deletes the records.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - vc_ids
+ *               - holder_did
+ *             properties:
+ *               vc_ids:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 100
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 example: ["550e8400-e29b-41d4-a716-446655440000"]
+ *                 description: Array of VCinitiatedByIssuer record IDs to confirm (max 100)
+ *               holder_did:
+ *                 type: string
+ *                 example: "did:dcert:u..."
+ *                 description: DID of the credential holder
+ *     responses:
+ *       200:
+ *         description: VCs confirmed and soft-deleted successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ConfirmVCsBatchResponse'
+ *       400:
+ *         description: Validation error.
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token).
+ *       404:
+ *         description: No VCs found in PROCESSING state for confirmation.
+ *       500:
+ *         description: Internal server error.
+ * 
+ * components:
+ *   schemas:
+ *     ConfirmVCsBatchResponse:
+ *       type: object
+ *       properties:
+ *         success:
+ *           type: boolean
+ *           example: true
+ *         message:
+ *           type: string
+ *           example: "Successfully confirmed 5 VCs."
+ *         data:
+ *           type: object
+ *           properties:
+ *             confirmed_count:
+ *               type: integer
+ *               example: 5
+ *             confirmed_vc_ids:
+ *               type: array
+ *               items:
+ *                 type: string
+ *                 format: uuid
+ *               example: ["550e8400-e29b-41d4-a716-446655440000"]
+ */
+router.post(
+  "/confirm-vc/issuer-init",
+  verifyDIDSignature,
+  confirmIssuerInitiatedVCsBatchValidator,
+  credentialController.confirmIssuerInitiatedVCsBatch
 );
 export default router;
