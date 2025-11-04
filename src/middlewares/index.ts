@@ -9,6 +9,7 @@ export * from './didAuth.middleware';
 export * from './errorHandler.middleware';
 export * from './requestLogger.middleware';
 export * from './rateLimit.middleware';
+export * from './upload.middleware';
 
 // Export asyncHandler separately for convenience
 export { asyncHandler } from './errorHandler.middleware';
