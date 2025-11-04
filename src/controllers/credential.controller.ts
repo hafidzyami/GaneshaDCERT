@@ -4,10 +4,10 @@ import { validationResult } from "express-validator";
 import { RequestType, RequestStatus } from "@prisma/client";
 import { CredentialService } from "../services";
 import { ValidationError } from "../utils";
-import { asyncHandler } from "../middlewares";
+import { asyncHandler, RequestWithDID } from "../middlewares";
 import { ResponseHelper } from "../utils/helpers";
-import { ProcessUpdateVCDTO, ProcessIssuanceVCDTO, RevokeVCDTO, CredentialRevocationRequestDTO, ProcessRenewalVCDTO } from "../dtos";
-
+import { ProcessUpdateVCDTO, IssuerIssueVCDTO,ProcessIssuanceVCDTO, RevokeVCDTO, CredentialRevocationRequestDTO, ProcessRenewalVCDTO } from "../dtos";
+import { BadRequestError} from "../utils/errors/AppError";
 /**
  * Request Credential Issuance Controller
  */
@@ -420,4 +420,26 @@ export const getAllIssuerRequests = asyncHandler(async (req: Request, res: Respo
     result,
     `Successfully retrieved ${result.count} requests for issuer.`
   );
+});
+
+export const issuerIssueVC = asyncHandler(async (req: RequestWithDID, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  // Dapatkan DID yang diautentikasi dari middleware
+  const authenticatedDid = req.holderDID; // Diambil dari token JWT issuer
+  if (!authenticatedDid) {
+    // Ini seharusnya tidak terjadi jika middleware auth berjalan
+    throw new BadRequestError("Authenticated issuer DID not found in request. Make sure JWT token is valid.");
+  }
+
+  const requestData: IssuerIssueVCDTO = req.body;
+
+  // Panggil service, teruskan data dan DID yang diautentikasi
+  const result = await CredentialService.issuerIssueVC(requestData, authenticatedDid);
+
+  // Kirim respons 'Created' (201)
+  return ResponseHelper.created(res, result, result.message);
 });

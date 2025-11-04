@@ -120,7 +120,13 @@ export const requestCredentialValidator = [
     .notEmpty()
     .withMessage("Holder DID is required")
     .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
-    .withMessage("Invalid holder DID format"),
+    .withMessage("Invalid holder DID format")
+    .custom((value, { req }) => {
+      if (value === req.body.issuer_did) {
+        throw new Error("Issuer DID and Holder DID cannot be the same.");
+      }
+      return true;
+    }),
 ];
 
 const requireAtLeastOneDid: CustomValidator = (value, { req }) => {
@@ -238,7 +244,13 @@ export const credentialUpdateRequestValidator = [
     .notEmpty()
     .withMessage("Holder DID is required")
     .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
-    .withMessage("Invalid holder DID format"),
+    .withMessage("Invalid holder DID format")
+    .custom((value, { req }) => {
+      if (value === req.body.issuer_did) {
+        throw new Error("Issuer DID and Holder DID cannot be the same.");
+      }
+      return true;
+    }),
 
   body("encrypted_body")
     .trim()
@@ -259,7 +271,13 @@ export const credentialRenewalRequestValidator = [
     .notEmpty()
     .withMessage("Holder DID is required")
     .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
-    .withMessage("Invalid holder DID format"),
+    .withMessage("Invalid holder DID format")
+    .custom((value, { req }) => {
+      if (value === req.body.issuer_did) {
+        throw new Error("Issuer DID and Holder DID cannot be the same.");
+      }
+      return true;
+    }),
 
   body("encrypted_body")
     .trim()
@@ -281,7 +299,13 @@ export const credentialRevocationRequestValidator = [
     .notEmpty()
     .withMessage("Holder DID is required")
     .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
-    .withMessage("Invalid holder DID format"),
+    .withMessage("Invalid holder DID format")
+    .custom((value, { req }) => {
+      if (value === req.body.issuer_did) {
+        throw new Error("Issuer DID and Holder DID cannot be the same.");
+      }
+      return true;
+    }),
 
   body("encrypted_body")
     .trim()
@@ -561,4 +585,68 @@ export const resetStuckVCsValidator = [
     .optional()
     .isInt({ min: 1, max: 120 })
     .withMessage("timeout_minutes must be an integer between 1 and 120"),
+];
+
+export const issuerIssueVCValidator = [
+  body("issuer_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Issuer DID is required")
+    .matches(/^did:dcert:i(?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/) // Harus 'i' (institution)
+    .withMessage("Invalid issuer DID format (must be an institution DID)"),
+
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Holder DID is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder DID format")
+    .custom((value, { req }) => {
+      if (value === req.body.issuer_did) {
+        throw new Error("Issuer DID and Holder DID cannot be the same.");
+      }
+      return true;
+    }),
+
+  body("vc_id")
+    .trim()
+    .notEmpty()
+    .withMessage("vc_id is required"),
+
+  body("vc_type")
+    .trim()
+    .notEmpty()
+    .withMessage("vc_type is required"),
+
+  body("schema_id")
+    .trim()
+    .notEmpty()
+    .withMessage("schema_id is required")
+    .isUUID()
+    .withMessage("Invalid schema_id format (must be UUID)"),
+
+  body("schema_version")
+    .notEmpty()
+    .withMessage("schema_version is required")
+    .isInt({ min: 1 })
+    .withMessage("schema_version must be a positive integer"),
+
+  body("vc_hash")
+    .trim()
+    .notEmpty()
+    .withMessage("vc_hash is required")
+    .matches(/^0x[a-fA-F0-9]{64}$/) // Asumsi hash 64 char hex
+    .withMessage("Invalid vc_hash format (must be a 64-character hex string starting with 0x)"),
+
+  body("encrypted_body")
+    .trim()
+    .notEmpty()
+    .withMessage("Encrypted body is required"),
+
+  body("expiredAt")
+    .trim()
+    .notEmpty()
+    .withMessage("expiredAt is required")
+    .isISO8601() // Memastikan format timestamp valid
+    .withMessage("expiredAt must be a valid ISO 8601 date string (e.g., 2025-12-31T23:59:59.000Z)"),
 ];
