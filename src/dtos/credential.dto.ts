@@ -176,3 +176,23 @@ export interface AllIssuerRequestsResponseDTO {
   count: number;
   requests: AggregatedRequestDTO[];
 }
+
+export interface IssuerIssueVCDTO {
+  issuer_did: string;
+  holder_did: string;
+  vc_id: string;
+  vc_type: string;
+  schema_id: string;
+  schema_version: number;
+  vc_hash: string;
+  encrypted_body: string;
+  expiredAt: string; // <-- TAMBAHKAN BARIS INI
+}
+
+// Response body DTO for POST /credentials/issuer/issue-vc
+export interface IssuerIssueVCResponseDTO {
+  message: string;
+  record_id: string; // ID dari record baru di tabel VCinitiatedByIssuer
+  transaction_hash: string;
+  block_number: number;
+}
