@@ -15,6 +15,7 @@ import {
   isSchemaActiveValidator,
 } from "../validators/schema.validator";
 import { uploadOptionalImage } from "../middlewares/upload.middleware";
+import { parseSchemaJson } from "../middlewares/parseMultipartJson.middleware";
 
 const router: Router = express.Router();
 
@@ -651,7 +652,7 @@ router.get("/:id/version/:version/active", isSchemaActiveValidator, vcSchema.isS
  *       500:
  *         description: Internal server error
  */
-router.post("/", uploadOptionalImage, createVCSchemaValidator, vcSchema.createVCSchema);
+router.post("/", uploadOptionalImage, parseSchemaJson, createVCSchemaValidator, vcSchema.createVCSchema);
 
 /**
  * @swagger
@@ -784,7 +785,7 @@ router.post("/", uploadOptionalImage, createVCSchemaValidator, vcSchema.createVC
  *       500:
  *         description: Internal server error
  */
-router.put("/:id", uploadOptionalImage, updateVCSchemaValidator, vcSchema.updateVCSchema);
+router.put("/:id", uploadOptionalImage, parseSchemaJson, updateVCSchemaValidator, vcSchema.updateVCSchema);
 
 /**
  * @swagger

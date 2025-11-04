@@ -1,3 +1,6 @@
+# Explicitly set project name to ensure consistent volume names across deployments
+name: ganeshadcert
+
 services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -53,8 +56,8 @@ services:
       - DID_CONTRACT_ADDRESS=${DID_CONTRACT_ADDRESS}
       - ACCOUNT_PRIVATE_KEY=${ACCOUNT_PRIVATE_KEY}
       - MINIO_ENDPOINT=${MINIO_ENDPOINT}
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       - MINIO_PORT=${MINIO_PORT}
       - MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME}
       - MINIO_USE_SSL=${MINIO_USE_SSL}
@@ -68,8 +71,8 @@ services:
       - "0.0.0.0:9000:9000" # MinIO server port
       - "127.0.0.1:9001:9001" # MinIO console port
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
     volumes:
       - minio-data:/data
     command: server /data --console-address ":9001"
