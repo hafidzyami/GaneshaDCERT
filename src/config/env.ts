@@ -45,6 +45,7 @@ const envSchema = z.object({
     .default("false")
     .transform((val) => val === "true"),
   MINIO_BUCKET_NAME: z.string().default("dcert-storage"),
+  MINIO_SERVER_URL: z.string().optional(), // Public URL for presigned URLs (e.g., https://minio.yourdomain.com)
 });
 
 type Env = z.infer<typeof envSchema>;
