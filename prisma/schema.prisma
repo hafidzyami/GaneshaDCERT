@@ -80,7 +80,7 @@ model VCRevokeRequest {
 model VPSharing {
   id         String @id @default(uuid())
   holder_did String
-  VP         Json
+  VP         String
 }
 
 model VCResponse {

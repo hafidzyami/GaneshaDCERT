@@ -5,7 +5,9 @@ import {
   getVPRequestDetailsValidator,
   storeVPValidator,
   getVPValidator,
+  verifyVPValidator,
 } from "../validators/presentation.validator";
+import { verifyDIDSignature } from "../middlewares/didAuth.middleware";
 
 const router: Router = express.Router();
 
@@ -183,9 +185,11 @@ router.get(
  * /presentations:
  *   post:
  *     summary: Store Verifiable Presentation
- *     description: Holder creates and stores a VP to share with the verifier
+ *     description: Holder creates and stores a VP to share with the verifier (requires DID authentication). VP must be a signed JSON string from frontend.
  *     tags:
  *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - HolderBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -193,31 +197,12 @@ router.get(
  *           schema:
  *             type: object
  *             required:
- *               - vp_request_id
- *               - credentials
+ *               - vp
  *             properties:
- *               vp_request_id:
+ *               vp:
  *                 type: string
- *                 format: uuid
- *                 description: ID of the VP request being fulfilled
- *               credentials:
- *                 type: array
- *                 items:
- *                   type: object
- *                   properties:
- *                     vc_id:
- *                       type: string
- *                       format: uuid
- *                       description: ID of the credential to include
- *                     disclosed_fields:
- *                       type: array
- *                       items:
- *                         type: string
- *                       description: Fields to disclose from this credential
- *                 description: Credentials to include in the VP
- *               holder_signature:
- *                 type: string
- *                 description: Digital signature from holder
+ *                 description: Signed Verifiable Presentation as JSON string
+ *                 example: '{"@context":["https://www.w3.org/2018/credentials/v1"],"type":["VerifiablePresentation"],"holder":"did:dcert:holder123","verifiableCredential":[...],"proof":{"type":"DataIntegrityProof","cryptosuite":"eddsa-rdfc-2022","created":"2024-01-01T00:00:00Z","verificationMethod":"did:dcert:holder123#key-1","proofPurpose":"authentication","proofValue":"z..."}}'
  *     responses:
  *       201:
  *         description: VP stored successfully
@@ -231,27 +216,22 @@ router.get(
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: VP berhasil dibuat dan disimpan
+ *                   example: VP stored successfully
  *                 data:
  *                   type: object
  *                   properties:
  *                     vp_id:
  *                       type: string
  *                       format: uuid
- *                     vp_request_id:
- *                       type: string
- *                       format: uuid
- *                     status:
- *                       type: string
- *                       example: SHARED
+ *                       description: ID of the stored VP for QR code generation
  *       400:
- *         description: Invalid request data or missing credentials
- *       404:
- *         description: VP request or credentials not found
+ *         description: Invalid request data or invalid JSON string
+ *       401:
+ *         description: Unauthorized - invalid or missing JWT token
  *       500:
  *         description: Internal server error
  */
-router.post("/", storeVPValidator, vp.storeVP);
+router.post("/", verifyDIDSignature, storeVPValidator, vp.storeVP);
 
 /**
  * @swagger
@@ -329,5 +309,70 @@ router.post("/", storeVPValidator, vp.storeVP);
  *         description: Internal server error
  */
 router.get("/:vpId", getVPValidator, vp.getVP);
+
+/**
+ * @swagger
+ * /presentations/{vpId}/verify:
+ *   get:
+ *     summary: Verify Verifiable Presentation
+ *     description: Verify the authenticity and integrity of a VP and its contained VCs (requires DID authentication)
+ *     tags:
+ *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - VerifierBearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: vpId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID of the VP to verify
+ *     responses:
+ *       200:
+ *         description: VP verification completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vp:
+ *                       type: object
+ *                       description: The Verifiable Presentation
+ *                     vp_valid:
+ *                       type: boolean
+ *                       description: Whether the VP signature is valid
+ *                     holder_did:
+ *                       type: string
+ *                       description: DID of the holder who signed the VP
+ *                     credentials_verification:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           vc_id:
+ *                             type: string
+ *                           issuer:
+ *                             type: string
+ *                           valid:
+ *                             type: boolean
+ *                           error:
+ *                             type: string
+ *       400:
+ *         description: Invalid VP ID
+ *       401:
+ *         description: Unauthorized - invalid or missing JWT token
+ *       404:
+ *         description: VP not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/:vpId/verify", verifyDIDSignature, verifyVPValidator, vp.verifyVP);
 
 export default router;
