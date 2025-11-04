@@ -15,7 +15,7 @@ import {
   confirmVCValidator,
   claimVCsBatchValidator,
   confirmVCsBatchValidator,
-  resetStuckVCsValidator, getAllIssuerRequestsValidator
+  resetStuckVCsValidator, getAllIssuerRequestsValidator, issuerIssueVCValidator
 } from "../validators/credential.validator";
 
 const router: Router = express.Router();
@@ -1397,5 +1397,109 @@ router.get(
   verifyDIDSignature,
   getAllIssuerRequestsValidator,
   credentialController.getAllIssuerRequests
+);
+
+/**
+ * @swagger
+ * /credentials/issuer/issue-vc:
+ *   post:
+ *     summary: (Issuer) Direct Issue VC
+ *     description: Endpoint khusus Issuer untuk menerbitkan VC secara langsung ke blockchain dan menyimpannya di DB (tabel VCinitiatedByIssuer) agar siap di-claim oleh holder. Ini melewati alur permintaan VCIssuanceRequest.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - issuer_did
+ *               - holder_did
+ *               - vc_id
+ *               - vc_type
+ *               - schema_id
+ *               - schema_version
+ *               - vc_hash
+ *               - encrypted_body
+ *               - expiredAt
+ *             properties:
+ *               issuer_did:
+ *                 type: string
+ *                 example: "did:dcert:i..."
+ *                 description: DID Issuer (harus cocok dengan DID di token JWT)
+ *               holder_did:
+ *                 type: string
+ *                 example: "did:dcert:u..."
+ *                 description: DID Holder yang akan menerima
+ *               vc_id:
+ *                 type: string
+ *                 description: ID unik untuk VC ini
+ *               vc_type:
+ *                 type: string
+ *                 example: "UniversityDegreeCredential"
+ *               schema_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID Schema yang divalidasi
+ *               schema_version:
+ *                 type: integer
+ *                 example: 1
+ *                 description: Versi Schema yang divalidasi
+ *               vc_hash:
+ *                 type: string
+ *                 example: "0x..."
+ *                 description: Hash (Keccak256) dari data VC
+ *               encrypted_body:
+ *                 type: string
+ *                 description: Data VC yang sudah dienkripsi untuk holder
+ *               expiredAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Tanggal kadaluwarsa VC (format ISO 8601)
+ *                 example: "2026-11-04T10:00:00.000Z"
+ *     responses:
+ *       201:
+ *         description: VC berhasil diterbitkan di blockchain dan disimpan di DB.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC successfully issued on blockchain and saved to database."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vc_id:
+ *                       type: string
+ *                     transaction_hash:
+ *                       type: string
+ *                       description: Blockchain transaction hash
+ *                     block_number:
+ *                       type: integer
+ *                       description: Blockchain block number
+ *                     db_record_id:
+ *                       type: string
+ *                       format: uuid
+ *                       description: ID record di tabel VCinitiatedByIssuer
+ *       400:
+ *         description: Validation error, schema validation failed, or blockchain error.
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token, or issuer_did mismatch).
+ *       500:
+ *         description: Internal server error.
+ */
+router.post(
+  "/issuer/issue-vc",
+  verifyDIDSignature,
+  issuerIssueVCValidator,
+  credentialController.issuerIssueVC
 );
 export default router;

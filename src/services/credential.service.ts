@@ -1,9 +1,23 @@
-import { PrismaClient, RequestType, RequestStatus } from "@prisma/client"; // Removed Prisma import
+import { PrismaClient, RequestType, RequestStatus, VCResponseStatus } from "@prisma/client"; // Removed Prisma import
 import { prisma } from "../config/database";
-import { BadRequestError, NotFoundError, BlockchainError } from "../utils/errors/AppError";
+import { BadRequestError, NotFoundError, BlockchainError, ForbiddenError, InternalServerError } from "../utils/errors/AppError";
 import logger from "../config/logger";
-import { ProcessUpdateVCDTO, ProcessUpdateVCResponseDTO, ProcessRenewalVCDTO, ProcessRenewalVCResponseDTO, VCStatusResponseDTO,CredentialRevocationRequestDTO, CredentialRevocationResponseDTO, ProcessIssuanceVCDTO, ProcessIssuanceVCResponseDTO, HolderCredentialDTO, RevokeVCDTO, RevokeVCResponseDTO, AggregatedRequestDTO, 
-  AllIssuerRequestsResponseDTO } from "../dtos";
+import { ProcessUpdateVCDTO, 
+  ProcessUpdateVCResponseDTO, 
+  ProcessRenewalVCDTO, 
+  ProcessRenewalVCResponseDTO, 
+  VCStatusResponseDTO,
+  CredentialRevocationRequestDTO, 
+  CredentialRevocationResponseDTO, 
+  ProcessIssuanceVCDTO, 
+  ProcessIssuanceVCResponseDTO, 
+  HolderCredentialDTO, 
+  RevokeVCDTO, 
+  RevokeVCResponseDTO, 
+  AggregatedRequestDTO, 
+  AllIssuerRequestsResponseDTO, 
+  IssuerIssueVCDTO, 
+  IssuerIssueVCResponseDTO } from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 import NotificationService from "./notification.service";
 
@@ -1114,6 +1128,100 @@ class CredentialService {
       count: aggregatedRequests.length,
       requests: aggregatedRequests,
     };
+  }
+
+  async issuerIssueVC(
+    data: IssuerIssueVCDTO,
+    authenticatedDid: string // DID dari token JWT
+  ): Promise<IssuerIssueVCResponseDTO> {
+    
+    // Validasi Keamanan: Pastikan DID yang diautentikasi adalah issuer yang sebenarnya
+    if (data.issuer_did !== authenticatedDid) {
+      logger.warn(`Auth mismatch: Token DID (${authenticatedDid}) != Issuer DID (${data.issuer_did})`);
+      // --- MENGGUNAKAN ForbiddenError YANG DIIMPOR ---
+      throw new ForbiddenError("Authenticated DID does not match the issuer_did in the request body.");
+    }
+
+    const {
+      issuer_did,
+      holder_did,
+      vc_id,
+      vc_type,
+      schema_id,
+      schema_version,
+      vc_hash,
+      encrypted_body,
+      expiredAt
+    } = data;
+
+    logger.info(`Attempting direct issue by issuer ${issuer_did} for VC ${vc_id}`);
+
+    // 1. Panggil Blockchain
+    let blockchainReceipt: any;
+    try {
+      blockchainReceipt = await VCBlockchainService.issueVCInBlockchain(
+        vc_id,
+        issuer_did,
+        holder_did,
+        vc_type,
+        schema_id,
+        schema_version,
+        expiredAt, // Menggunakan parameter expiredAt yang baru
+        vc_hash
+      );
+      logger.info(`Blockchain issue successful for ${vc_id}. TX: ${blockchainReceipt?.hash}`);
+    } catch (blockchainError: any) {
+      logger.error(`Blockchain direct issue failed for ${vc_id}:`, blockchainError);
+      throw new BadRequestError(`Blockchain issuance failed: ${blockchainError.message}`);
+    }
+
+    // 2. Simpan ke tabel VCinitiatedByIssuer
+    try {
+      const newRecord = await this.db.vCinitiatedByIssuer.create({
+        data: {
+          request_type: RequestType.ISSUANCE, // Hardcode sebagai ISSUANCE
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          encrypted_body: encrypted_body,
+          // --- MENGGUNAKAN VCResponseStatus YANG DIIMPOR ---
+          status: VCResponseStatus.PENDING, // Status default PENDING
+          // processing_at, createdAt, updatedAt, deletedAt akan di-handle oleh Prisma
+        },
+      });
+
+      logger.success(`New VC record created in VCinitiatedByIssuer: ${newRecord.id}`);
+      
+      // (Opsional) Kirim notifikasi push ke holder
+      try {
+        // --- PERBAIKAN 3: Menambahkan argumen yang diperlukan ---
+        await NotificationService.sendVCStatusNotification(
+          holder_did, // 1. holder_did
+          "Credential Baru Telah Diterbitkan!", // 2. title
+          "Sebuah kredensial baru telah diterbitkan untuk Anda dan siap untuk diklaim.", // 3. body
+          { // 4. data (opsional)
+            type: "VC_ISSUED_BY_ISSUER",
+            record_id: newRecord.id,
+            request_type: RequestType.ISSUANCE,
+          }
+        );
+        logger.success(`Push notification sent to holder (direct issue): ${holder_did}`);
+      } catch (notifError: any) {
+        logger.error(`Failed to send push notification (direct issue) to ${holder_did}:`, notifError);
+      }
+
+      return {
+        message: "VC issued directly to blockchain and stored for holder claim.",
+        record_id: newRecord.id,
+        transaction_hash: blockchainReceipt.hash,
+        block_number: blockchainReceipt.blockNumber,
+      };
+
+    } catch (dbError: any) {
+      logger.error(`Database storage failed for VCinitiatedByIssuer (VC ${vc_id}) after successful TX ${blockchainReceipt?.hash}:`, dbError);
+      // Ini adalah error kritis. Blockchain berhasil tapi DB gagal.
+      // --- MENGGUNAKAN InternalServerError YANG DIIMPOR ---
+      throw new InternalServerError(`Blockchain succeeded (TX: ${blockchainReceipt.hash}), but database save failed. Please contact support. Error: ${dbError.message}`);
+    }
   }
 
 }
