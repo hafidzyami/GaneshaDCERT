@@ -65,10 +65,10 @@ export interface VCStatusResponseDTO {
 
 export interface ProcessIssuanceVCDTO {
   request_id: string; // ID of the VCIssuanceRequest
-  issuer_did: string;
-  holder_did: string;
+  // issuer_did: string; DIHAPUS
+  // holder_did: string; DIHAPUS
   action: "APPROVED" | "REJECTED";
-  request_type: RequestType; // Should always be ISSUANCE
+  // request_type: RequestType; DIHAPUS (Selalu ISSUANCE untuk endpoint ini)
 
   // Fields required only when action is APPROVED
   vc_id?: string; // The unique ID for the new VC itself

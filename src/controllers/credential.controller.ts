@@ -41,9 +41,11 @@ export const processIssuanceVC = asyncHandler(async (req: Request, res: Response
   }
 
   // Cast req.body to the DTO for type safety
+  // DTO 'ProcessIssuanceVCDTO' sekarang sudah diperbarui (lebih ramping)
   const requestData: ProcessIssuanceVCDTO = req.body;
 
   // Call the service method with the validated data
+  // Service akan diubah di langkah berikutnya untuk menangani DTO baru
   const result = await CredentialService.processIssuanceVC(requestData);
 
   // Send a standardized success response
@@ -76,13 +78,18 @@ export const getCredentialRequestsByType = asyncHandler(async (req: Request, res
     throw new ValidationError("Validation error", errors.array());
   }
 
-  const { type, issuer_did } = req.query;
+  // --- PERBAIKAN DI SINI ---
+  // Ambil 'holder_did' dari query
+  const { type, issuer_did, holder_did } = req.query; 
 
   const result = await CredentialService.getCredentialRequestsByType(
     type as RequestType,
-    issuer_did as string | undefined
+    issuer_did as string | undefined,
+    holder_did as string | undefined // <-- Teruskan 'holder_did' ke service
   );
 
+  // --- PERBAIKAN DI SINI ---
+  // Gunakan 'result.data' dan 'result.message' dari service
   return ResponseHelper.success(res, result, "Credential requests retrieved successfully");
 });
 
