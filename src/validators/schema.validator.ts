@@ -81,6 +81,12 @@ const isActiveValidation = query("isActive")
   .withMessage(SCHEMA_ERRORS.QUERY.IS_ACTIVE_INVALID)
   .toBoolean();
 
+const expiredInValidation = body("expired_in")
+  .optional()
+  .isInt({ min: 0 })
+  .withMessage("expired_in must be a non-negative integer (0 for lifetime)")
+  .toInt();
+
 // ============================================
 // 🔹 QUERY PARAMETER VALIDATORS
 // ============================================
@@ -146,6 +152,7 @@ export const createVCSchemaValidator = [
   schemaNameValidation("body"),
   schemaObjectValidation,
   issuerDidValidation("body"),
+  expiredInValidation,
 ];
 
 /**
@@ -154,6 +161,7 @@ export const createVCSchemaValidator = [
 export const updateVCSchemaValidator = [
   schemaIdValidation,
   schemaObjectValidation,
+  expiredInValidation,
 ];
 
 /**
