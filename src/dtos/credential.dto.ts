@@ -72,12 +72,11 @@ export interface ProcessIssuanceVCDTO {
 
   // Fields required only when action is APPROVED
   vc_id?: string; // The unique ID for the new VC itself
-  vc_type?: string; // e.g., "VerifiableCredential", "UniversityDegreeCredential"
   schema_id?: string; // ID of the schema used
   schema_version?: number; // Version of the schema used
   vc_hash?: string; // Hash of the credential data (before encryption)
   encrypted_body?: string; // Encrypted VC data
-  expired_in?: number; // Expiration time in years from now (Required only if action is APPROVED)
+  expired_at?: string; // Expiration date and time (ISO 8601 format, Required only if action is APPROVED)
 }
 
 export interface ProcessIssuanceVCResponseDTO {
@@ -123,7 +122,7 @@ export interface ProcessRenewalVCDTO {
   action: "APPROVED" | "REJECTED";
   vc_id?: string; // VC ID to renew (Required only if action is APPROVED)
   encrypted_body?: string; // Newly issued/renewed encrypted VC body (Required only if action is APPROVED)
-  expired_in?: number; // Expiration time in years from now (Required only if action is APPROVED)
+  expired_at?: string; // Expiration date and time (ISO 8601 format, Required only if action is APPROVED)
 }
 
 // Response body DTO for POST /credentials/renew-vc
@@ -148,7 +147,7 @@ export interface ProcessUpdateVCDTO {
   schema_version?: number; // Schema version (Required if action is APPROVED)
   new_vc_hash?: string; // New hash for the updated VC (Required if action is APPROVED)
   encrypted_body?: string; // New encrypted body for the updated VC (Required if action is APPROVED)
-  expired_in?: number; // Expiration time in years from now (Required only if action is APPROVED)
+  expired_at?: string; // Expiration date and time (ISO 8601 format, Required only if action is APPROVED)
 }
 
 // Response body DTO for POST /credentials/update-vc

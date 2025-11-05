@@ -44,12 +44,6 @@ export const processIssuanceVCValidator = [
   // .isUUID() // Assuming VC ID is also UUID, adjust if needed
   // .withMessage("Invalid vc_id format (must be UUID)"),
 
-  body("vc_type")
-    .if(body("action").equals(RequestStatus.APPROVED))
-    .trim()
-    .notEmpty()
-    .withMessage("vc_type is required when action is APPROVED"),
-
   body("schema_id")
     .if(body("action").equals(RequestStatus.APPROVED))
     .trim()
@@ -78,6 +72,14 @@ export const processIssuanceVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("Encrypted body is required when action is APPROVED"),
+
+  body("expired_at")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("expired_at is required when action is APPROVED")
+    .isISO8601()
+    .withMessage("expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"),
 ];
 
 export const requestCredentialValidator = [
@@ -420,6 +422,14 @@ export const processRenewalVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("encrypted_body is required when action is APPROVED"),
+
+  body("expired_at")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("expired_at is required when action is APPROVED")
+    .isISO8601()
+    .withMessage("expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"),
 ];
 
 export const processUpdateVCValidator = [
@@ -457,6 +467,33 @@ export const processUpdateVCValidator = [
     .notEmpty()
     .withMessage("vc_id (original VC ID) is required when action is APPROVED"),
 
+  body("new_vc_id")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("new_vc_id is required when action is APPROVED"),
+
+  body("vc_type")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("vc_type is required when action is APPROVED"),
+
+  body("schema_id")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("schema_id is required when action is APPROVED")
+    .isUUID()
+    .withMessage("Invalid schema_id format (must be UUID)"),
+
+  body("schema_version")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .notEmpty()
+    .withMessage("schema_version is required when action is APPROVED")
+    .isInt({ min: 1 })
+    .withMessage("schema_version must be a positive integer"),
+
   body("new_vc_hash")
     .if(body("action").equals(RequestStatus.APPROVED))
     .trim()
@@ -470,6 +507,14 @@ export const processUpdateVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("encrypted_body (new VC data) is required when action is APPROVED"),
+
+  body("expired_at")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("expired_at is required when action is APPROVED")
+    .isISO8601()
+    .withMessage("expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"),
 ];
 
 /**

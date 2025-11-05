@@ -522,10 +522,6 @@ router.get(
  *               vc_id:
  *                 type: string
  *                 description: Unique ID for the new VC (Required if action is APPROVED)
- *               vc_type:
- *                 type: string
- *                 example: UniversityDegreeCredential
- *                 description: Type/Name of the VC (Required if action is APPROVED)
  *               schema_id:
  *                 type: string
  *                 format: uuid
@@ -541,10 +537,11 @@ router.get(
  *               encrypted_body:
  *                 type: string
  *                 description: Encrypted VC data (Required if action is APPROVED)
- *               expired_in:
- *                 type: integer
- *                 example: 5
- *                 description: Expiration time in years from now. Use 0 for lifetime/no expiration (Required only if action is APPROVED)
+ *               expired_at:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2030-11-04T10:00:00.000Z"
+ *                 description: Expiration date and time for the VC (ISO 8601 format, Required only if action is APPROVED)
  *     responses:
  *       200:
  *         description: Request processed successfully (Approved or Rejected)
@@ -782,10 +779,11 @@ router.post(
  *               encrypted_body:
  *                 type: string
  *                 description: The new encrypted body of the renewed VC (Required only if action is APPROVED).
- *               expired_in:
- *                 type: integer
- *                 example: 5
- *                 description: Expiration time in years from now. Use 0 for lifetime/no expiration (Required only if action is APPROVED).
+ *               expired_at:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2030-11-04T10:00:00.000Z"
+ *                 description: Expiration date and time for the renewed VC (ISO 8601 format, Required only if action is APPROVED).
  *     responses:
  *       200:
  *         description: Renewal request processed successfully (Approved or Rejected).
@@ -893,10 +891,11 @@ router.post(
  *               encrypted_body:
  *                 type: string
  *                 description: The new encrypted body of the updated VC (Required only if action is APPROVED).
- *               expired_in:
- *                 type: integer
- *                 example: 5
- *                 description: Expiration time in years from now. Use 0 for lifetime/no expiration (Required only if action is APPROVED).
+ *               expired_at:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2030-11-04T10:00:00.000Z"
+ *                 description: Expiration date and time for the updated VC (ISO 8601 format, Required only if action is APPROVED).
  *     responses:
  *       200:
  *         description: Update request processed successfully (Approved or Rejected).
