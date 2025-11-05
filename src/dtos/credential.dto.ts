@@ -101,8 +101,6 @@ export interface HolderCredentialDTO {
 
 export interface RevokeVCDTO {
   request_id: string; // ID of the VCRevokeRequest record
-  issuer_did: string; // Issuer DID from the request record
-  holder_did: string; // Holder DID from the request record
   action: "APPROVED" | "REJECTED"; // Action to perform
   vc_id?: string; // VC ID to revoke (Required only if action is APPROVED)
 }

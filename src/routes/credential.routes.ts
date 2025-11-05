@@ -676,20 +676,12 @@ router.get(
  *             type: object
  *             required:
  *               - request_id
- *               - issuer_did
- *               - holder_did
  *               - action
  *             properties:
  *               request_id:
  *                 type: string
  *                 format: uuid
  *                 description: The ID of the VCRevokeRequest record to process.
- *               issuer_did:
- *                 type: string
- *                 description: Issuer DID (must match the one in the VCRevokeRequest).
- *               holder_did:
- *                 type: string
- *                 description: Holder DID (must match the one in the VCRevokeRequest).
  *               action:
  *                 type: string
  *                 enum: [APPROVED, REJECTED]
@@ -727,16 +719,19 @@ router.get(
  *                       type: integer
  *                       description: Blockchain block number (Present only if action was APPROVED and blockchain call succeeded).
  *       400:
- *         description: Validation error, mismatched DIDs, request already processed, VC already revoked on chain, missing vc_id for approval, or blockchain error.
+ *         description: Validation error, request already processed, VC already revoked on chain, missing vc_id for approval, or blockchain error.
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token).
  *       404:
  *         description: Revocation request (request_id) not found in DB, or target VC (vc_id) not found on blockchain when approving.
  *       500:
  *         description: Internal server error.
  */
 router.post(
-  "/revoke-vc", // The new POST endpoint path
-  revokeVCValidator, // Apply the validator
-  credentialController.revokeVC // Use the specific controller function
+  "/revoke-vc",
+  verifyDIDSignature,
+  revokeVCValidator,
+  credentialController.revokeVC
 );
 
 
