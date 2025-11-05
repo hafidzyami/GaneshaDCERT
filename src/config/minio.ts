@@ -33,6 +33,7 @@ class MinioConfig {
           useSSL: env.MINIO_USE_SSL,
           accessKey: accessKey,
           secretKey: secretKey,
+          region: "us-east-1", // Set region explicitly to avoid auto-detection
         });
 
         logger.info("MinIO internal client initialized successfully", {
@@ -88,6 +89,7 @@ class MinioConfig {
           useSSL: useSSL,
           accessKey: accessKey,
           secretKey: secretKey,
+          region: "us-east-1", // Set region explicitly to avoid auto-detection via API call
         });
 
         logger.info("MinIO public client initialized successfully", {
