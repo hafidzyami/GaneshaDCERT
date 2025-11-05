@@ -17,15 +17,19 @@ export interface RequestWithDID extends Request {
 /**
  * Decode JWT token (without verification)
  */
-function decodeJWT(token: string): { header: any; payload: any; signature: string } {
-  const parts = token.split('.');
+function decodeJWT(token: string): {
+  header: any;
+  payload: any;
+  signature: string;
+} {
+  const parts = token.split(".");
 
   if (parts.length !== 3) {
-    throw new Error('Invalid JWT format. Expected 3 parts separated by dots');
+    throw new Error("Invalid JWT format. Expected 3 parts separated by dots");
   }
 
-  const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
-  const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+  const header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
+  const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
   const signature = parts[2];
 
   return { header, payload, signature };
@@ -42,23 +46,23 @@ function signatureToBuffer(signature: string): Buffer {
   if (isHex) {
     // Decode from hex
     logger.debug(`Detected HEX signature format`);
-    return Buffer.from(signature, 'hex');
+    return Buffer.from(signature, "hex");
   }
 
   // Otherwise, treat as base64url
   logger.debug(`Detected Base64URL signature format`);
 
   // Convert base64url to base64
-  let base64 = signature.replace(/-/g, '+').replace(/_/g, '/');
+  let base64 = signature.replace(/-/g, "+").replace(/_/g, "/");
 
   // Add padding if needed
   const padding = base64.length % 4;
   if (padding > 0) {
-    base64 += '='.repeat(4 - padding);
+    base64 += "=".repeat(4 - padding);
   }
 
   // Decode base64 to bytes
-  return Buffer.from(base64, 'base64');
+  return Buffer.from(base64, "base64");
 }
 
 /**
@@ -67,36 +71,65 @@ function signatureToBuffer(signature: string): Buffer {
  */
 function publicKeyHexToPEM(publicKeyHex: string): string {
   // Remove 0x prefix if present
-  const cleanHex = publicKeyHex.startsWith('0x') ? publicKeyHex.substring(2) : publicKeyHex;
+  const cleanHex = publicKeyHex.startsWith("0x")
+    ? publicKeyHex.substring(2)
+    : publicKeyHex;
 
   // Public key should be 65 bytes (130 hex chars) for uncompressed format (04 + X + Y)
   if (cleanHex.length !== 130) {
-    throw new Error(`Invalid public key length: expected 130 hex chars, got ${cleanHex.length}`);
+    throw new Error(
+      `Invalid public key length: expected 130 hex chars, got ${cleanHex.length}`
+    );
   }
 
   // Verify it starts with 04 (uncompressed point indicator)
-  if (!cleanHex.startsWith('04')) {
-    throw new Error('Public key must be in uncompressed format (start with 04)');
+  if (!cleanHex.startsWith("04")) {
+    throw new Error(
+      "Public key must be in uncompressed format (start with 04)"
+    );
   }
 
   // Create buffer from hex
-  const publicKeyBuffer = Buffer.from(cleanHex, 'hex');
+  const publicKeyBuffer = Buffer.from(cleanHex, "hex");
 
   // Create ASN.1 DER structure for EC public key (P-256)
   // This is the standard format for SPKI (SubjectPublicKeyInfo)
   const asn1Header = Buffer.from([
-    0x30, 0x59, // SEQUENCE, length 89
-    0x30, 0x13, // SEQUENCE, length 19
-    0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, // OID: ecPublicKey
-    0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, // OID: prime256v1 (P-256)
-    0x03, 0x42, 0x00 // BIT STRING, length 66, 0 unused bits
+    0x30,
+    0x59, // SEQUENCE, length 89
+    0x30,
+    0x13, // SEQUENCE, length 19
+    0x06,
+    0x07,
+    0x2a,
+    0x86,
+    0x48,
+    0xce,
+    0x3d,
+    0x02,
+    0x01, // OID: ecPublicKey
+    0x06,
+    0x08,
+    0x2a,
+    0x86,
+    0x48,
+    0xce,
+    0x3d,
+    0x03,
+    0x01,
+    0x07, // OID: prime256v1 (P-256)
+    0x03,
+    0x42,
+    0x00, // BIT STRING, length 66, 0 unused bits
   ]);
 
   const derKey = Buffer.concat([asn1Header, publicKeyBuffer]);
-  const base64Key = derKey.toString('base64');
+  const base64Key = derKey.toString("base64");
 
   // Format as PEM
-  return `-----BEGIN PUBLIC KEY-----\n${base64Key.match(/.{1,64}/g)?.join('\n')}\n-----END PUBLIC KEY-----`;
+  return `-----BEGIN PUBLIC KEY-----\n${base64Key
+    .match(/.{1,64}/g)
+    ?.join("\n")}\n-----END PUBLIC KEY-----`;
 }
 
 /**
@@ -106,7 +139,9 @@ function publicKeyHexToPEM(publicKeyHex: string): string {
  */
 function rawSignatureToDER(signature: Buffer): Buffer {
   if (signature.length !== 64) {
-    throw new Error(`Invalid raw signature length: expected 64 bytes, got ${signature.length}`);
+    throw new Error(
+      `Invalid raw signature length: expected 64 bytes, got ${signature.length}`
+    );
   }
 
   // Split into r and s (each 32 bytes)
@@ -133,9 +168,11 @@ function rawSignatureToDER(signature: Buffer): Buffer {
   const totalLength = 2 + r.length + 2 + s.length;
 
   return Buffer.concat([
-    Buffer.from([0x30, totalLength]),          // SEQUENCE tag and length
-    Buffer.from([0x02, r.length]), r,          // INTEGER tag, length, value (r)
-    Buffer.from([0x02, s.length]), s           // INTEGER tag, length, value (s)
+    Buffer.from([0x30, totalLength]), // SEQUENCE tag and length
+    Buffer.from([0x02, r.length]),
+    r, // INTEGER tag, length, value (r)
+    Buffer.from([0x02, s.length]),
+    s, // INTEGER tag, length, value (s)
   ]);
 }
 
@@ -144,14 +181,16 @@ function rawSignatureToDER(signature: Buffer): Buffer {
  */
 function derSignatureToRaw(derSignature: Buffer): Buffer {
   if (derSignature[0] !== 0x30) {
-    throw new Error('Invalid DER signature: must start with SEQUENCE tag (0x30)');
+    throw new Error(
+      "Invalid DER signature: must start with SEQUENCE tag (0x30)"
+    );
   }
 
   let offset = 2; // Skip SEQUENCE tag and length
 
   // Read r
   if (derSignature[offset] !== 0x02) {
-    throw new Error('Invalid DER signature: expected INTEGER tag for r');
+    throw new Error("Invalid DER signature: expected INTEGER tag for r");
   }
   offset++; // Skip INTEGER tag
   const rLength = derSignature[offset++];
@@ -160,7 +199,7 @@ function derSignatureToRaw(derSignature: Buffer): Buffer {
 
   // Read s
   if (derSignature[offset] !== 0x02) {
-    throw new Error('Invalid DER signature: expected INTEGER tag for s');
+    throw new Error("Invalid DER signature: expected INTEGER tag for s");
   }
   offset++; // Skip INTEGER tag
   const sLength = derSignature[offset++];
@@ -194,35 +233,39 @@ function validateJWTClaims(payload: any): { valid: boolean; errors: string[] } {
 
   // Check expiration (exp)
   if (payload.exp !== undefined) {
-    if (typeof payload.exp !== 'number') {
-      errors.push('exp claim must be a number');
+    if (typeof payload.exp !== "number") {
+      errors.push("exp claim must be a number");
     } else if (payload.exp < currentTime) {
-      errors.push(`Token expired at ${new Date(payload.exp * 1000).toISOString()}`);
+      errors.push(
+        `Token expired at ${new Date(payload.exp * 1000).toISOString()}`
+      );
     }
   }
 
   // Check not before (nbf)
   if (payload.nbf !== undefined) {
-    if (typeof payload.nbf !== 'number') {
-      errors.push('nbf claim must be a number');
+    if (typeof payload.nbf !== "number") {
+      errors.push("nbf claim must be a number");
     } else if (payload.nbf > currentTime) {
-      errors.push(`Token not valid before ${new Date(payload.nbf * 1000).toISOString()}`);
+      errors.push(
+        `Token not valid before ${new Date(payload.nbf * 1000).toISOString()}`
+      );
     }
   }
 
   // Check issued at (iat)
   if (payload.iat !== undefined) {
-    if (typeof payload.iat !== 'number') {
-      errors.push('iat claim must be a number');
+    if (typeof payload.iat !== "number") {
+      errors.push("iat claim must be a number");
     } else if (payload.iat > currentTime + 60) {
       // Allow 60 seconds clock skew
-      errors.push('Token issued in the future');
+      errors.push("Token issued in the future");
     }
   }
 
   return {
     valid: errors.length === 0,
-    errors
+    errors,
   };
 }
 
@@ -268,7 +311,7 @@ export const verifyDIDSignature = async (
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: "Invalid JWT token format",
-        error: error instanceof Error ? error.message : "Unknown error"
+        error: error instanceof Error ? error.message : "Unknown error",
       });
       return;
     }
@@ -372,9 +415,9 @@ export const verifyDIDSignature = async (
     // Step 4: Verify JWT signature using ES256
     try {
       // Get the message to verify: header.payload (as string, not bytes)
-      const parts = token.split('.');
+      const parts = token.split(".");
       const messageString = `${parts[0]}.${parts[1]}`;
-      const messageBuffer = Buffer.from(messageString, 'utf8');
+      const messageBuffer = Buffer.from(messageString, "utf8");
 
       logger.debug(`Message string: ${messageString.substring(0, 100)}...`);
       logger.debug(`Message length: ${messageString.length} characters`);
@@ -386,24 +429,40 @@ export const verifyDIDSignature = async (
       const signatureBuffer = signatureToBuffer(signature);
 
       logger.debug(`Signature buffer length: ${signatureBuffer.length} bytes`);
-      logger.debug(`Signature (full hex): ${signatureBuffer.toString('hex')}`);
+      logger.debug(`Signature (full hex): ${signatureBuffer.toString("hex")}`);
 
       if (signatureBuffer.length >= 32) {
-        logger.debug(`Signature (first 32 bytes): ${signatureBuffer.slice(0, 32).toString('hex')}`);
+        logger.debug(
+          `Signature (first 32 bytes): ${signatureBuffer
+            .slice(0, 32)
+            .toString("hex")}`
+        );
       }
       if (signatureBuffer.length >= 64) {
-        logger.debug(`Signature (bytes 32-64): ${signatureBuffer.slice(32, 64).toString('hex')}`);
+        logger.debug(
+          `Signature (bytes 32-64): ${signatureBuffer
+            .slice(32, 64)
+            .toString("hex")}`
+        );
       }
       if (signatureBuffer.length > 64) {
-        logger.debug(`Signature (remaining bytes): ${signatureBuffer.slice(64).toString('hex')}`);
+        logger.debug(
+          `Signature (remaining bytes): ${signatureBuffer
+            .slice(64)
+            .toString("hex")}`
+        );
       }
 
       // Convert public key hex to proper format
-      const cleanHex = publicKeyHex.startsWith('0x') ? publicKeyHex.substring(2) : publicKeyHex;
-      const publicKeyBuffer = Buffer.from(cleanHex, 'hex');
+      const cleanHex = publicKeyHex.startsWith("0x")
+        ? publicKeyHex.substring(2)
+        : publicKeyHex;
+      const publicKeyBuffer = Buffer.from(cleanHex, "hex");
 
       logger.debug(`Public key length: ${publicKeyBuffer.length} bytes`);
-      logger.debug(`Public key (first byte): 0x${publicKeyBuffer[0].toString(16)}`);
+      logger.debug(
+        `Public key (first byte): 0x${publicKeyBuffer[0].toString(16)}`
+      );
 
       if (publicKeyBuffer.length !== 65) {
         res.status(HTTP_STATUS.UNAUTHORIZED).json({
@@ -417,26 +476,29 @@ export const verifyDIDSignature = async (
       const x = publicKeyBuffer.slice(1, 33);
       const y = publicKeyBuffer.slice(33, 65);
 
-      logger.debug(`X coordinate: ${x.toString('hex')}`);
-      logger.debug(`Y coordinate: ${y.toString('hex')}`);
+      logger.debug(`X coordinate: ${x.toString("hex")}`);
+      logger.debug(`Y coordinate: ${y.toString("hex")}`);
 
       // Create public key using JWK format - ES256 uses P-256 (prime256v1) curve
       let publicKey: crypto.KeyObject;
       try {
         publicKey = crypto.createPublicKey({
           key: {
-            kty: 'EC',
-            crv: 'P-256',
-            x: x.toString('base64url'),
-            y: y.toString('base64url'),
+            kty: "EC",
+            crv: "P-256",
+            x: x.toString("base64url"),
+            y: y.toString("base64url"),
           },
-          format: 'jwk'
+          format: "jwk",
         });
 
         logger.debug(`Public key created successfully`);
 
         // Also try PEM format as alternative
-        const publicKeyPEM = publicKey.export({ type: 'spki', format: 'pem' }) as string;
+        const publicKeyPEM = publicKey.export({
+          type: "spki",
+          format: "pem",
+        }) as string;
         logger.debug(`Public key PEM:\n${publicKeyPEM}`);
       } catch (conversionError) {
         logger.error("Failed to create public key", conversionError);
@@ -455,13 +517,17 @@ export const verifyDIDSignature = async (
         // Raw format (r||s) - convert to DER
         signatureRaw = signatureBuffer;
         signatureDER = rawSignatureToDER(signatureBuffer);
-        logger.debug(`Signature is raw format (64 bytes), converted to DER (${signatureDER.length} bytes)`);
+        logger.debug(
+          `Signature is raw format (64 bytes), converted to DER (${signatureDER.length} bytes)`
+        );
       } else if (signatureBuffer.length >= 70 && signatureBuffer[0] === 0x30) {
         // Already DER format - try to extract raw
         signatureDER = signatureBuffer;
         try {
           signatureRaw = derSignatureToRaw(signatureBuffer);
-          logger.debug(`Signature is DER format (${signatureBuffer.length} bytes), extracted raw (${signatureRaw.length} bytes)`);
+          logger.debug(
+            `Signature is DER format (${signatureBuffer.length} bytes), extracted raw (${signatureRaw.length} bytes)`
+          );
         } catch (err) {
           logger.warn(`Could not extract raw signature from DER: ${err}`);
           signatureRaw = signatureBuffer; // Fallback
@@ -470,29 +536,31 @@ export const verifyDIDSignature = async (
         // Unknown format, use as-is
         signatureDER = signatureBuffer;
         signatureRaw = signatureBuffer;
-        logger.warn(`Signature has unexpected length: ${signatureBuffer.length} bytes`);
+        logger.warn(
+          `Signature has unexpected length: ${signatureBuffer.length} bytes`
+        );
       }
 
-      logger.debug(`DER signature (hex): ${signatureDER.toString('hex')}`);
+      logger.debug(`DER signature (hex): ${signatureDER.toString("hex")}`);
 
       // Verify signature using crypto.verify
       // For ES256: ECDSA with P-256 curve and SHA-256 hash
       let isValid = false;
-      let verificationMethod = '';
+      let verificationMethod = "";
 
       // Method 1: Try with DER signature and crypto.verify
       try {
         isValid = crypto.verify(
-          'sha256',
+          "sha256",
           messageBuffer,
           {
             key: publicKey,
-            dsaEncoding: 'der'
+            dsaEncoding: "der",
           },
           signatureDER
         );
 
-        verificationMethod = 'crypto.verify with DER';
+        verificationMethod = "crypto.verify with DER";
         logger.debug(`✓ Verification result (Method 1 - DER): ${isValid}`);
       } catch (verifyError) {
         logger.error(`✗ Verification error (Method 1 - DER):`, verifyError);
@@ -501,14 +569,19 @@ export const verifyDIDSignature = async (
       // Method 2: Try with createVerify and DER signature
       if (!isValid) {
         try {
-          const verifier = crypto.createVerify('sha256');
+          const verifier = crypto.createVerify("sha256");
           verifier.update(messageBuffer);
           isValid = verifier.verify(publicKey, signatureDER);
 
-          verificationMethod = 'createVerify with DER';
-          logger.debug(`✓ Verification result (Method 2 - createVerify DER): ${isValid}`);
+          verificationMethod = "createVerify with DER";
+          logger.debug(
+            `✓ Verification result (Method 2 - createVerify DER): ${isValid}`
+          );
         } catch (verifyError2) {
-          logger.error(`✗ Verification error (Method 2 - createVerify DER):`, verifyError2);
+          logger.error(
+            `✗ Verification error (Method 2 - createVerify DER):`,
+            verifyError2
+          );
         }
       }
 
@@ -516,26 +589,34 @@ export const verifyDIDSignature = async (
       if (!isValid && signatureRaw.length === 64) {
         try {
           const signatureDER2 = rawSignatureToDER(signatureRaw);
-          const verifier = crypto.createVerify('sha256');
+          const verifier = crypto.createVerify("sha256");
           verifier.update(messageBuffer);
           isValid = verifier.verify(publicKey, signatureDER2);
 
-          verificationMethod = 'createVerify with raw->DER conversion';
-          logger.debug(`✓ Verification result (Method 3 - raw->DER): ${isValid}`);
+          verificationMethod = "createVerify with raw->DER conversion";
+          logger.debug(
+            `✓ Verification result (Method 3 - raw->DER): ${isValid}`
+          );
         } catch (verifyError3) {
-          logger.error(`✗ Verification error (Method 3 - raw->DER):`, verifyError3);
+          logger.error(
+            `✗ Verification error (Method 3 - raw->DER):`,
+            verifyError3
+          );
         }
       }
 
-      logger.info(`Final verification result: ${isValid} (method: ${verificationMethod})`);
+      logger.info(
+        `Final verification result: ${isValid} (method: ${verificationMethod})`
+      );
 
       if (!isValid) {
         logger.error("Signature verification failed", {
           messageLength: messageString.length,
           messageFirst50: messageString.substring(0, 50),
           signatureLength: signatureBuffer.length,
-          signatureHex: signatureBuffer.toString('hex').substring(0, 100) + '...',
-          publicKeyHex: publicKeyHex.substring(0, 100) + '...'
+          signatureHex:
+            signatureBuffer.toString("hex").substring(0, 100) + "...",
+          publicKeyHex: publicKeyHex.substring(0, 100) + "...",
         });
 
         res.status(HTTP_STATUS.UNAUTHORIZED).json({
@@ -546,7 +627,9 @@ export const verifyDIDSignature = async (
         return;
       }
 
-      logger.info(`✅ JWT signature verified successfully for DID: ${holderDID}`);
+      logger.info(
+        `✅ JWT signature verified successfully for DID: ${holderDID}`
+      );
 
       // Attach DID data and payload to request
       req.holderDID = holderDID;
@@ -589,7 +672,9 @@ export const optionalVerifyDIDSignature = async (
 
     // If no header, continue without authentication
     if (!authHeader) {
-      logger.info("No Authorization header provided - continuing without JWT verification");
+      logger.info(
+        "No Authorization header provided - continuing without JWT verification"
+      );
       return next();
     }
 
@@ -597,7 +682,8 @@ export const optionalVerifyDIDSignature = async (
     if (!authHeader.startsWith("Bearer ")) {
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
-        message: "Invalid Authorization header format. Expected: Bearer <JWT_TOKEN>",
+        message:
+          "Invalid Authorization header format. Expected: Bearer <JWT_TOKEN>",
       });
       return;
     }

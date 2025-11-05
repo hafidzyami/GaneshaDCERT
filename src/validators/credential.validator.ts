@@ -75,8 +75,8 @@ export const processIssuanceVCValidator = [
 
   body("expired_at")
     .if(body("action").equals(RequestStatus.APPROVED))
+    .optional()
     .trim()
-    .withMessage("expired_at is required when action is APPROVED")
     .isISO8601()
     .withMessage("expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"),
 ];
@@ -424,8 +424,8 @@ export const processRenewalVCValidator = [
 
   body("expired_at")
     .if(body("action").equals(RequestStatus.APPROVED))
+    .optional()
     .trim()
-    .withMessage("expired_at is required when action is APPROVED")
     .isISO8601()
     .withMessage("expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"),
 ];
@@ -508,8 +508,8 @@ export const processUpdateVCValidator = [
 
   body("expired_at")
     .if(body("action").equals(RequestStatus.APPROVED))
+    .optional()
     .trim()
-    .withMessage("expired_at is required when action is APPROVED")
     .isISO8601()
     .withMessage("expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"),
 ];

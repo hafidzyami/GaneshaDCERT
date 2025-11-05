@@ -50,10 +50,18 @@ export const parseSchemaJson = (
       // Deep parse the schema to handle nested JSON strings
       req.body.schema = deepParseJson(req.body.schema);
 
-      // Remove expired_in from schema if it exists (it shouldn't be in schema object)
-      if (req.body.schema && typeof req.body.schema === "object" && "expired_in" in req.body.schema) {
-        delete req.body.schema.expired_in;
-        logger.debug("Removed expired_in from schema object (it should be a top-level field)");
+      // Extract expired_in from schema object if it exists
+      if (
+        req.body.schema &&
+        typeof req.body.schema === "object" &&
+        "expired_in" in req.body.schema
+      ) {
+        // Move expired_in to top-level body field
+        req.body.expired_in = req.body.schema.expired_in;
+        // Remove from schema object (it shouldn't be in schema, should be separate field)
+        logger.debug("Extracted expired_in from schema object to body field", {
+          expired_in: req.body.expired_in,
+        });
       }
 
       logger.debug("Schema field parsed (deep parse applied)", {
