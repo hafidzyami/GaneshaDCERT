@@ -1172,10 +1172,10 @@ router.post(
  *           schema:
  *             type: object
  *             required:
- *               - vc_ids
+ *               - request_ids
  *               - holder_did
  *             properties:
- *               vc_ids:
+ *               request_ids:
  *                 type: array
  *                 minItems: 1
  *                 maxItems: 100
@@ -1183,7 +1183,7 @@ router.post(
  *                   type: string
  *                   format: uuid
  *                 example: ["550e8400-e29b-41d4-a716-446655440000", "6ba7b810-9dad-11d1-80b4-00c04fd430c8"]
- *                 description: Array of VC IDs to confirm (max 100)
+ *                 description: Array of request IDs from VCResponse table to confirm (max 100)
  *               holder_did:
  *                 type: string
  *                 example: did:dcert:u1234567890abcdef1234567890abcdef12345678

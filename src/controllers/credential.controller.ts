@@ -368,11 +368,11 @@ export const confirmVCsBatch = asyncHandler(async (req: Request, res: Response) 
     throw new ValidationError("Validation error", errors.array());
   }
 
-  // Extract vc_ids and holder_did from body
-  const { vc_ids, holder_did } = req.body;
+  // Extract request_ids and holder_did from body
+  const { request_ids, holder_did } = req.body;
 
   // Call the service function
-  const result = await CredentialService.confirmVCsBatch(vc_ids, holder_did);
+  const result = await CredentialService.confirmVCsBatch(request_ids, holder_did);
 
   // Send success response
   return ResponseHelper.success(res, result, result.message);

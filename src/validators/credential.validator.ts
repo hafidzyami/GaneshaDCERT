@@ -580,16 +580,16 @@ export const claimVCsBatchValidator = [
 
 /**
  * Validator for Phase 2 Batch: Confirm multiple VCs
- * Validates vc_ids array and holder_did for confirming multiple claimed VCs
+ * Validates request_ids array and holder_did for confirming multiple claimed VCs
  */
 export const confirmVCsBatchValidator = [
-  body("vc_ids")
+  body("request_ids")
     .isArray({ min: 1, max: 100 })
-    .withMessage("vc_ids must be an array with 1 to 100 UUIDs"),
+    .withMessage("request_ids must be an array with 1 to 100 UUIDs"),
 
-  body("vc_ids.*")
+  body("request_ids.*")
     .isUUID()
-    .withMessage("Each vc_id must be a valid UUID"),
+    .withMessage("Each request_id must be a valid UUID"),
 
   body("holder_did")
     .trim()

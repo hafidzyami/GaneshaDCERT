@@ -1005,13 +1005,13 @@ class CredentialService {
   /**
    * Phase 2 Batch: Confirm multiple VCs and soft-delete them
    */
-  async confirmVCsBatch(vcIds: string[], holderDid: string) {
-    logger.info(`Confirming batch of ${vcIds.length} VCs for holder DID: ${holderDid}`);
+  async confirmVCsBatch(requestIds: string[], holderDid: string) {
+    logger.info(`Confirming batch of ${requestIds.length} VCs for holder DID: ${holderDid}`);
 
     // Update multiple VCs to CLAIMED status and set deletedAt
     const updatedVCs = await this.db.vCResponse.updateMany({
       where: {
-        id: { in: vcIds },
+        request_id: { in: requestIds },
         holder_did: holderDid,
         status: "PROCESSING", // Only confirm if currently in PROCESSING state
       },
@@ -1026,8 +1026,8 @@ class CredentialService {
       throw new NotFoundError(`No VCs found in PROCESSING state for confirmation.`);
     }
 
-    if (updatedVCs.count < vcIds.length) {
-      logger.warn(`Partial batch confirmation: ${updatedVCs.count}/${vcIds.length} VCs confirmed for holder ${holderDid}`);
+    if (updatedVCs.count < requestIds.length) {
+      logger.warn(`Partial batch confirmation: ${updatedVCs.count}/${requestIds.length} VCs confirmed for holder ${holderDid}`);
     }
 
     logger.success(`Batch confirmed and soft-deleted ${updatedVCs.count} VCs`);
@@ -1035,7 +1035,7 @@ class CredentialService {
     return {
       message: `Successfully confirmed ${updatedVCs.count} VCs.`,
       confirmed_count: updatedVCs.count,
-      requested_count: vcIds.length,
+      requested_count: requestIds.length,
     };
   }
 
