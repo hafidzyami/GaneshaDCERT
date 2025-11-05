@@ -33,7 +33,7 @@ class MinioConfig {
           useSSL: env.MINIO_USE_SSL,
           accessKey: accessKey,
           secretKey: secretKey,
-          region: "us-east-1", // Set region explicitly to avoid auto-detection
+          region: "ap-southeast-3", // Set region explicitly to avoid auto-detection
         });
 
         logger.info("MinIO internal client initialized successfully", {
@@ -89,7 +89,7 @@ class MinioConfig {
           useSSL: useSSL,
           accessKey: accessKey,
           secretKey: secretKey,
-          region: "us-east-1", // Set region explicitly to avoid auto-detection via API call
+          region: "ap-southeast-3", // Set region explicitly to avoid auto-detection via API call
         });
 
         logger.info("MinIO public client initialized successfully", {
@@ -140,7 +140,7 @@ class MinioConfig {
       const bucketExists = await client.bucketExists(bucketName);
 
       if (!bucketExists) {
-        await client.makeBucket(bucketName, "us-east-1");
+        await client.makeBucket(bucketName, "ap-southeast-3");
         logger.info(`Bucket '${bucketName}' created successfully`);
       } else {
         logger.info(`Bucket '${bucketName}' already exists`);
