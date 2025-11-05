@@ -346,22 +346,44 @@ class StorageService {
     try {
       const filePath = this.buildFilePath(directory, fileName);
 
-      // Generate presigned URL
-      const url = await this.minioClient.presignedGetObject(
+      // Use public client for generating presigned URLs
+      // This ensures the signature is generated with the correct public hostname
+      const publicClient = MinioConfig.getPublicClient();
+      const url = await publicClient.presignedGetObject(
         this.bucketName,
         filePath,
         expirySeconds
       );
 
+      logger.debug("Presigned URL generated", {
+        filePath,
+        url,
+        usingPublicClient: MinioConfig.getPublicUrl() ? true : false,
+      });
+
       return url;
-    } catch (error) {
-      logger.error("Failed to generate presigned URL", {
+    } catch (error: any) {
+      // Detailed error logging for S3Error debugging
+      const errorInfo = {
         directory,
         fileName,
-        error,
-      });
+        errorType: error?.constructor?.name,
+        errorName: error?.name,
+        errorMessage: error?.message || "No message",
+        errorCode: error?.code,
+        errorStatusCode: error?.statusCode,
+        errorRegion: error?.region,
+        errorResource: error?.resource,
+        errorHostId: error?.hostId,
+        errorRequestId: error?.requestId,
+        errorStack: error?.stack,
+        fullError: JSON.stringify(error, Object.getOwnPropertyNames(error)),
+      };
+
+      logger.error("Failed to generate presigned URL", errorInfo);
+
       throw new Error(
-        `URL generation failed: ${error instanceof Error ? error.message : "Unknown error"}`
+        `URL generation failed: ${error?.message || error?.code || "Unknown S3 error"}`
       );
     }
   }

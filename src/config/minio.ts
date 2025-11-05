@@ -8,23 +8,35 @@ import logger from "./logger";
  */
 class MinioConfig {
   private static instance: Minio.Client | null = null;
+  private static publicClient: Minio.Client | null = null;
   private static bucketName: string = env.MINIO_BUCKET_NAME;
+  private static publicUrl: string | undefined = env.MINIO_PUBLIC_URL;
 
   /**
-   * Get MinIO client instance (Singleton pattern)
+   * Get MinIO client instance for internal operations (upload/download)
+   * Uses MINIO_ENDPOINT (localhost or minio service name)
    */
   public static getClient(): Minio.Client {
     if (!MinioConfig.instance) {
       try {
+        // Prioritize ACCESS_KEY/SECRET_KEY, fallback to ROOT_USER/PASSWORD
+        const accessKey = env.MINIO_ACCESS_KEY || env.MINIO_ROOT_USER;
+        const secretKey = env.MINIO_SECRET_KEY || env.MINIO_ROOT_PASSWORD;
+
+        if (!accessKey || !secretKey) {
+          throw new Error("MinIO credentials are required");
+        }
+
         MinioConfig.instance = new Minio.Client({
           endPoint: env.MINIO_ENDPOINT,
           port: env.MINIO_PORT,
           useSSL: env.MINIO_USE_SSL,
-          accessKey: env.MINIO_ACCESS_KEY,
-          secretKey: env.MINIO_SECRET_KEY,
+          accessKey: accessKey,
+          secretKey: secretKey,
+          region: "ap-southeast-3", // Set region explicitly to avoid auto-detection
         });
 
-        logger.info("MinIO client initialized successfully", {
+        logger.info("MinIO internal client initialized successfully", {
           endpoint: env.MINIO_ENDPOINT,
           port: env.MINIO_PORT,
           useSSL: env.MINIO_USE_SSL,
@@ -44,10 +56,74 @@ class MinioConfig {
   }
 
   /**
+   * Get MinIO client instance for generating presigned URLs
+   * Uses MINIO_PUBLIC_URL if available, otherwise falls back to internal client
+   */
+  public static getPublicClient(): Minio.Client {
+    // If no public URL configured, use internal client
+    if (!MinioConfig.publicUrl) {
+      return MinioConfig.getClient();
+    }
+
+    if (!MinioConfig.publicClient) {
+      try {
+        const accessKey = env.MINIO_ACCESS_KEY || env.MINIO_ROOT_USER;
+        const secretKey = env.MINIO_SECRET_KEY || env.MINIO_ROOT_PASSWORD;
+
+        if (!accessKey || !secretKey) {
+          throw new Error("MinIO credentials are required");
+        }
+
+        // Parse public URL to get endpoint and SSL settings
+        const publicUrlObj = new URL(MinioConfig.publicUrl);
+        const useSSL = publicUrlObj.protocol === "https:";
+        const port = publicUrlObj.port
+          ? parseInt(publicUrlObj.port)
+          : useSSL
+            ? 443
+            : 80;
+
+        MinioConfig.publicClient = new Minio.Client({
+          endPoint: publicUrlObj.hostname,
+          port: port,
+          useSSL: useSSL,
+          accessKey: accessKey,
+          secretKey: secretKey,
+          region: "ap-southeast-3", // Set region explicitly to avoid auto-detection via API call
+        });
+
+        logger.info("MinIO public client initialized successfully", {
+          endpoint: publicUrlObj.hostname,
+          port: port,
+          useSSL: useSSL,
+          publicUrl: MinioConfig.publicUrl,
+        });
+      } catch (error) {
+        logger.error("Failed to initialize MinIO public client", { error });
+        throw new Error(
+          `MinIO public client initialization failed: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
+        );
+      }
+    }
+
+    return MinioConfig.publicClient;
+  }
+
+  /**
    * Get default bucket name
    */
   public static getBucketName(): string {
     return MinioConfig.bucketName;
+  }
+
+  /**
+   * Get public URL for MinIO (used for presigned URLs accessible from browser)
+   * If not set, falls back to constructing URL from endpoint
+   */
+  public static getPublicUrl(): string | undefined {
+    return MinioConfig.publicUrl;
   }
 
   /**
@@ -64,7 +140,7 @@ class MinioConfig {
       const bucketExists = await client.bucketExists(bucketName);
 
       if (!bucketExists) {
-        await client.makeBucket(bucketName, "us-east-1");
+        await client.makeBucket(bucketName, "ap-southeast-3");
         logger.info(`Bucket '${bucketName}' created successfully`);
       } else {
         logger.info(`Bucket '${bucketName}' already exists`);
