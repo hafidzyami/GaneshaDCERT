@@ -962,7 +962,7 @@ class CredentialService {
         LIMIT ${safeLimit}
         FOR UPDATE SKIP LOCKED
       )
-      RETURNING *;
+      RETURNING request_id, encrypted_body, status, processing_at;
     `;
 
     if (!result || result.length === 0) {

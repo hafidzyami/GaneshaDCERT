@@ -1120,7 +1120,7 @@ router.post(
  *                       items:
  *                         type: object
  *                         properties:
- *                           id:
+ *                           request_id:
  *                             type: string
  *                             format: uuid
  *                           encrypted_body:
