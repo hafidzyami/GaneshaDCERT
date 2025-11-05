@@ -26,20 +26,6 @@ export const processIssuanceVCValidator = [
     .isUUID()
     .withMessage("Invalid request ID format (must be UUID)"),
 
-  body("issuer_did")
-    .trim()
-    .notEmpty()
-    .withMessage("Issuer DID is required")
-    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
-    .withMessage("Invalid issuer DID format"),
-
-  body("holder_did")
-    .trim()
-    .notEmpty()
-    .withMessage("Holder DID is required")
-    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
-    .withMessage("Invalid holder DID format"),
-
   body("action")
     .trim()
     .notEmpty()
@@ -47,14 +33,6 @@ export const processIssuanceVCValidator = [
     .isIn([RequestStatus.APPROVED, RequestStatus.REJECTED])
     .withMessage(
       `Action must be ${RequestStatus.APPROVED} or ${RequestStatus.REJECTED}`
-    ),
-
-  body("request_type")
-    .notEmpty()
-    .withMessage("Request type is required")
-    .isIn([RequestType.ISSUANCE])
-    .withMessage(
-      `Invalid request type for this endpoint. Must be ${RequestType.ISSUANCE}`
     ),
 
   // Conditional validation for fields required on APPROVAL

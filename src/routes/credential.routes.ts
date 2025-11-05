@@ -500,6 +500,7 @@ router.get(
  *     description: Issuer approves or rejects a specific credential issuance request, issuing it on the blockchain if approved.
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
+ *     
  *     requestBody:
  *       required: true
  *       content:
@@ -508,31 +509,16 @@ router.get(
  *             type: object
  *             required:
  *               - request_id
- *               - issuer_did
- *               - holder_did
  *               - action
- *               - request_type
  *             properties:
  *               request_id:
  *                 type: string
  *                 format: uuid
  *                 description: ID of the VCIssuanceRequest to process
- *               issuer_did:
- *                 type: string
- *                 example: did:dcert:string_hash0
- *                 description: DID of the issuer (must match original request)
- *               holder_did:
- *                 type: string
- *                 example: did:dcert:string_hashf
- *                 description: DID of the holder (must match original request)
  *               action:
  *                 type: string
  *                 enum: [APPROVED, REJECTED]
  *                 description: Action to take (APPROVED or REJECTED)
- *               request_type:
- *                 type: string
- *                 enum: [ISSUANCE]
- *                 description: Must be ISSUANCE for this endpoint
  *               vc_id:
  *                 type: string
  *                 description: Unique ID for the new VC (Required if action is APPROVED)
@@ -558,7 +544,7 @@ router.get(
  *               expired_in:
  *                 type: integer
  *                 example: 5
- *                 description: Expiration time in years from now. Use 0 for lifetime/no expiration (Required if action is APPROVED)
+ *                 description: Expiration time in years from now. Use 0 for lifetime/no expiration (Required only if action is APPROVED)
  *     responses:
  *       200:
  *         description: Request processed successfully (Approved or Rejected)
@@ -594,15 +580,17 @@ router.get(
  *                       description: Blockchain block number (Present only if action was APPROVED)
  *       400:
  *         description: Validation error, mismatched DIDs, request already processed, missing required fields for approval, or blockchain error.
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token).
  *       404:
  *         description: Issuance request not found.
  *       500:
  *         description: Internal server error.
  */
 router.post(
-  "/issue-vc", // The new endpoint path
-  processIssuanceVCValidator, // Apply the specific validator
-  credentialController.processIssuanceVC // Use the specific controller function
+  "/issue-vc",
+  processIssuanceVCValidator,
+  credentialController.processIssuanceVC
 );
 
 /**

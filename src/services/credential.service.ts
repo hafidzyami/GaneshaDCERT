@@ -154,7 +154,7 @@ class CredentialService {
   }
 
   /**
-   * Process credential response
+   * Process credential response TIDAK KEPAKAI
    */
   async processCredentialResponse(data: {
     request_id: string;
@@ -348,10 +348,7 @@ class CredentialService {
   async processIssuanceVC(data: ProcessIssuanceVCDTO): Promise<ProcessIssuanceVCResponseDTO> {
     const {
         request_id,
-        issuer_did,
-        holder_did,
         action,
-        request_type,
         // Fields for approval
         vc_id,
         vc_type,
@@ -375,13 +372,9 @@ class CredentialService {
       throw new BadRequestError(`Issuance request ${request_id} has already been processed (Status: ${issuanceRequest.status}).`);
     }
 
-    if (issuanceRequest.issuer_did !== issuer_did || issuanceRequest.holder_did !== holder_did) {
-      throw new BadRequestError(`Issuer DID or Holder DID does not match the original request.`);
-    }
-
-    if (request_type !== RequestType.ISSUANCE) {
-        throw new BadRequestError(`Invalid request_type for this endpoint. Expected ISSUANCE, got ${request_type}.`);
-    }
+    const issuer_did = issuanceRequest.issuer_did;
+    const holder_did = issuanceRequest.holder_did;
+    const request_type = RequestType.ISSUANCE;
 
     // 2. Process based on action
     if (action === RequestStatus.REJECTED) {
