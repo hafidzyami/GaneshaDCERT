@@ -188,7 +188,7 @@ class VCBlockchainService {
     vcType: string,
     schemaID: string,
     schemaVersion: number,
-    expiredAt: string,
+    expiredAt: string | undefined,
     hash: string
   ): Promise<TransactionReceipt> {
     try {
@@ -199,7 +199,7 @@ class VCBlockchainService {
         vcType,
         schemaID,
         schemaVersion,
-        expiredAt,
+        expiredAt || "", // Use empty string if undefined
         hash
       );
       const receipt = await tx.wait();
@@ -228,9 +228,9 @@ class VCBlockchainService {
    * Renew VC on Blockchain
    * Reactivates VC with new expiration date
    */
-  async renewVCInBlockchain(id: string, expiredAt: string): Promise<TransactionReceipt> {
+  async renewVCInBlockchain(id: string, expiredAt: string | undefined): Promise<TransactionReceipt> {
     try {
-      const tx = await this.contract.renewVC(id, expiredAt);
+      const tx = await this.contract.renewVC(id, expiredAt || "");
       const receipt = await tx.wait();
 
       if (receipt.status !== 1) {
@@ -262,7 +262,7 @@ class VCBlockchainService {
     vcType: string,
     schemaID: string,
     schemaVersion: number,
-    expiredAt: string,
+    expiredAt: string | undefined,
     hash: string
   ): Promise<TransactionReceipt> {
     try {
@@ -274,7 +274,7 @@ class VCBlockchainService {
         vcType,
         schemaID,
         schemaVersion,
-        expiredAt,
+        expiredAt || "", // Use empty string if undefined
         hash
       );
       const receipt = await tx.wait();
