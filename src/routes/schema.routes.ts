@@ -466,6 +466,8 @@ router.get(
  *       - Example: `did:dcert:iABCD1234567890-xyz_12345678901234567890abcd`
  *     tags:
  *       - VC Schema Management
+ *     security:
+ *       - HolderBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -684,6 +686,8 @@ router.post(
  *       - Object schemas must have 'properties'
  *     tags:
  *       - VC Schema Management
+ *     security:
+ *       - HolderBearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -820,6 +824,8 @@ router.put(
  *       - Other versions are not affected
  *     tags:
  *       - VC Schema Management
+ *     security:
+ *       - HolderBearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -891,6 +897,8 @@ router.patch(
  *       - Other versions are not affected
  *     tags:
  *       - VC Schema Management
+ *     security:
+ *       - HolderBearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
