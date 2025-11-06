@@ -373,10 +373,18 @@ class SchemaService {
             imageMimeType
           );
           uploadedImageUrl = uploadResult.url;
-          this.logSuccess("Upload schema background image", uploadResult.filePath);
+          this.logSuccess(
+            "Upload schema background image",
+            uploadResult.filePath
+          );
         } catch (uploadError: any) {
-          logger.error("Failed to upload schema background image:", uploadError);
-          throw new BadRequestError(`Image upload failed: ${uploadError.message}`);
+          logger.error(
+            "Failed to upload schema background image:",
+            uploadError
+          );
+          throw new BadRequestError(
+            `Image upload failed: ${uploadError.message}`
+          );
         }
       }
 
@@ -388,6 +396,7 @@ class SchemaService {
           issuer_did: data.issuer_did,
           issuer_name: issuerName,
           image_link: uploadedImageUrl,
+          expired_in: data.expired_in ?? null, // Use provided value or null if not provided
           version: SCHEMA_CONSTANTS.INITIAL_VERSION,
           isActive: true,
         },
@@ -396,7 +405,10 @@ class SchemaService {
       this.logSuccess("Create schema in DB", `${createdSchema.id} v1`);
 
       // 2. Create in blockchain
+      logger.info("Data :", data);
+      logger.info("Schema :", data.schema);
       const schemaString = this.toBlockchainFormat(data.schema);
+      logger.info("Schema String:", schemaString);
       const receipt = await this.vcBlockchainService.createVCSchemaInBlockchain(
         createdSchema.id,
         data.name,
@@ -434,7 +446,10 @@ class SchemaService {
         logger.warn(
           `[SchemaService] Rolling back uploaded image: ${uploadedImageFileName}`
         );
-        await StorageService.deleteFile("background", uploadedImageFileName).catch(() => {});
+        await StorageService.deleteFile(
+          "background",
+          uploadedImageFileName
+        ).catch(() => {});
       }
 
       this.logError("Create schema", error);
@@ -474,12 +489,33 @@ class SchemaService {
             imageMimeType
           );
           uploadedImageUrl = uploadResult.url;
-          this.logSuccess("Upload schema background image", uploadResult.filePath);
+          this.logSuccess(
+            "Upload schema background image",
+            uploadResult.filePath
+          );
         } catch (uploadError: any) {
-          logger.error("Failed to upload schema background image:", uploadError);
-          throw new BadRequestError(`Image upload failed: ${uploadError.message}`);
+          logger.error(
+            "Failed to upload schema background image:",
+            uploadError
+          );
+          throw new BadRequestError(
+            `Image upload failed: ${uploadError.message}`
+          );
         }
       }
+
+      // Determine image_link for new version:
+      // - If new image uploaded: use new image URL
+      // - If no new image: set to null (don't keep old image_link)
+      const finalImageLink = uploadedImageUrl || null;
+
+      // Determine expired_in for new version:
+      // - If provided in data: use new value (even if 0 or null)
+      // - If not provided: keep existing value
+      const finalExpiredIn =
+        data.expired_in !== undefined
+          ? data.expired_in
+          : existingSchema.expired_in;
 
       // 2. Create new version in database
       const newVersion = existingSchema.version + 1;
@@ -490,7 +526,8 @@ class SchemaService {
           schema: data.schema as Prisma.InputJsonValue,
           issuer_did: existingSchema.issuer_did,
           issuer_name: existingSchema.issuer_name,
-          image_link: uploadedImageUrl || existingSchema.image_link,
+          image_link: finalImageLink,
+          expired_in: finalExpiredIn, // Use new value if provided, otherwise keep old value
           version: newVersion,
           isActive: true,
         },
@@ -502,7 +539,9 @@ class SchemaService {
       );
 
       // 3. Update in blockchain
+      logger.info("Schema: ", data.schema);
       const schemaString = this.toBlockchainFormat(data.schema);
+      logger.info("Schema String: ", schemaString);
       const receipt = await this.vcBlockchainService.updateVCSchemaInBlockchain(
         existingSchema.id,
         schemaString
@@ -538,7 +577,10 @@ class SchemaService {
         logger.warn(
           `[SchemaService] Rolling back uploaded image: ${uploadedImageFileName}`
         );
-        await StorageService.deleteFile("background", uploadedImageFileName).catch(() => {});
+        await StorageService.deleteFile(
+          "background",
+          uploadedImageFileName
+        ).catch(() => {});
       }
 
       this.logError("Update schema", error);

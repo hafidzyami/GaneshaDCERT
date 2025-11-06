@@ -16,6 +16,7 @@ export interface CreateVCSchemaDTO {
   name: string;
   schema: Prisma.JsonValue;
   issuer_did: string;
+  expired_in?: number; // Expiration in years (0 = lifetime, null/undefined = not set)
 }
 
 /**
@@ -23,6 +24,7 @@ export interface CreateVCSchemaDTO {
  */
 export interface UpdateVCSchemaDTO {
   schema: Prisma.JsonValue;
+  expired_in?: number; // Expiration in years (0 = lifetime, null/undefined = not set)
 }
 
 /**
@@ -55,6 +57,7 @@ export interface VCSchemaDTO {
   issuer_did: string;
   version: number;
   image_link?: string | null;
+  expired_in?: number | null; // Expiration in years (0 = lifetime, null = not set)
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;

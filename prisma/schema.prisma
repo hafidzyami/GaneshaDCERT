@@ -160,6 +160,7 @@ model VCSchema {
   issuer_did  String
   issuer_name String?
   image_link  String?
+  expired_in  Int?     // Expiration in years (0 = lifetime, null = not set)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

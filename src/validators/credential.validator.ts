@@ -75,9 +75,8 @@ export const processIssuanceVCValidator = [
 
   body("expired_at")
     .if(body("action").equals(RequestStatus.APPROVED))
+    .optional()
     .trim()
-    .notEmpty()
-    .withMessage("expired_at is required when action is APPROVED")
     .isISO8601()
     .withMessage("expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"),
 ];
@@ -411,9 +410,8 @@ export const processRenewalVCValidator = [
 
   body("expired_at")
     .if(body("action").equals(RequestStatus.APPROVED))
+    .optional()
     .trim()
-    .notEmpty()
-    .withMessage("expired_at is required when action is APPROVED")
     .isISO8601()
     .withMessage("expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"),
 ];
@@ -496,9 +494,8 @@ export const processUpdateVCValidator = [
 
   body("expired_at")
     .if(body("action").equals(RequestStatus.APPROVED))
+    .optional()
     .trim()
-    .notEmpty()
-    .withMessage("expired_at is required when action is APPROVED")
     .isISO8601()
     .withMessage("expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"),
 ];
@@ -566,16 +563,16 @@ export const claimVCsBatchValidator = [
 
 /**
  * Validator for Phase 2 Batch: Confirm multiple VCs
- * Validates vc_ids array and holder_did for confirming multiple claimed VCs
+ * Validates request_ids array and holder_did for confirming multiple claimed VCs
  */
 export const confirmVCsBatchValidator = [
-  body("vc_ids")
+  body("request_ids")
     .isArray({ min: 1, max: 100 })
-    .withMessage("vc_ids must be an array with 1 to 100 UUIDs"),
+    .withMessage("request_ids must be an array with 1 to 100 UUIDs"),
 
-  body("vc_ids.*")
+  body("request_ids.*")
     .isUUID()
-    .withMessage("Each vc_id must be a valid UUID"),
+    .withMessage("Each request_id must be a valid UUID"),
 
   body("holder_did")
     .trim()
