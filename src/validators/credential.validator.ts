@@ -322,19 +322,19 @@ export const addVCStatusBlockValidator = [
 export const getVCStatusValidator = [
   param("vcId").trim().notEmpty().withMessage("VC ID is required"),
 
-  query("issuerDid")
-    .trim()
-    .notEmpty()
-    .withMessage("Issuer DID is required")
-    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
-    .withMessage("Invalid issuer DID format"),
+  // query("issuerDid")
+  //   .trim()
+  //   .notEmpty()
+  //   .withMessage("Issuer DID is required")
+  //   .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+  //   .withMessage("Invalid issuer DID format"),
 
-  query("holderDid")
-    .trim()
-    .notEmpty()
-    .withMessage("Holder DID is required")
-    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
-    .withMessage("Invalid holder DID format"),
+  // query("holderDid")
+  //   .trim()
+  //   .notEmpty()
+  //   .withMessage("Holder DID is required")
+  //   .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+  //   .withMessage("Invalid holder DID format"),
 ];
 export const revokeVCValidator = [
   body("request_id")
