@@ -75,10 +75,12 @@ export const processIssuanceVCValidator = [
 
   body("expired_at")
     .if(body("action").equals(RequestStatus.APPROVED))
-    .optional()
+    .optional({ nullable: true, checkFalsy: true })
     .trim()
     .isISO8601()
-    .withMessage("expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"),
+    .withMessage(
+      "expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"
+    ),
 ];
 
 export const requestCredentialValidator = [
@@ -127,9 +129,16 @@ export const getAllIssuerRequestsValidator = [
   query("status")
     .optional()
     // Tambahkan 'ALL' ke daftar nilai yang valid
-    .isIn([RequestStatus.PENDING, RequestStatus.APPROVED, RequestStatus.REJECTED, 'ALL'])
+    .isIn([
+      RequestStatus.PENDING,
+      RequestStatus.APPROVED,
+      RequestStatus.REJECTED,
+      "ALL",
+    ])
     // Perbarui pesan error
-    .withMessage("Invalid status filter. Must be PENDING, APPROVED, REJECTED, or ALL"),
+    .withMessage(
+      "Invalid status filter. Must be PENDING, APPROVED, REJECTED, or ALL"
+    ),
 ];
 // MODIFIED Validator for GET /credentials/get-requests
 export const getCredentialRequestsByTypeValidator: ValidationChain[] = [
@@ -321,20 +330,6 @@ export const addVCStatusBlockValidator = [
 
 export const getVCStatusValidator = [
   param("vcId").trim().notEmpty().withMessage("VC ID is required"),
-
-  // query("issuerDid")
-  //   .trim()
-  //   .notEmpty()
-  //   .withMessage("Issuer DID is required")
-  //   .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
-  //   .withMessage("Invalid issuer DID format"),
-
-  // query("holderDid")
-  //   .trim()
-  //   .notEmpty()
-  //   .withMessage("Holder DID is required")
-  //   .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
-  //   .withMessage("Invalid holder DID format"),
 ];
 export const revokeVCValidator = [
   body("request_id")
@@ -359,10 +354,9 @@ export const revokeVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("vc_id is required when action is APPROVED"),
-    // .isUUID() // Add format check if needed
-    // .withMessage("Invalid vc_id format"),
+  // .isUUID() // Add format check if needed
+  // .withMessage("Invalid vc_id format"),
 ];
-
 
 export const processRenewalVCValidator = [
   body("request_id")
@@ -372,26 +366,14 @@ export const processRenewalVCValidator = [
     .isUUID()
     .withMessage("Invalid request ID format (must be UUID)"),
 
-  body("issuer_did")
-    .trim()
-    .notEmpty()
-    .withMessage("Issuer DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid issuer DID format"),
-
-  body("holder_did")
-    .trim()
-    .notEmpty()
-    .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid holder DID format"),
-
   body("action")
     .trim()
     .notEmpty()
     .withMessage("Action is required")
     .isIn([RequestStatus.APPROVED, RequestStatus.REJECTED])
-    .withMessage(`Action must be ${RequestStatus.APPROVED} or ${RequestStatus.REJECTED}`),
+    .withMessage(
+      `Action must be ${RequestStatus.APPROVED} or ${RequestStatus.REJECTED}`
+    ),
 
   // vc_id is required only if action is APPROVED
   body("vc_id")
@@ -399,7 +381,7 @@ export const processRenewalVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("vc_id is required when action is APPROVED"),
-    // .isUUID() // Add format check if needed
+  // .isUUID() // Add format check if needed
 
   // encrypted_body is required only if action is APPROVED
   body("encrypted_body")
@@ -410,10 +392,12 @@ export const processRenewalVCValidator = [
 
   body("expired_at")
     .if(body("action").equals(RequestStatus.APPROVED))
-    .optional()
+    .optional({ nullable: true, checkFalsy: true })
     .trim()
     .isISO8601()
-    .withMessage("expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"),
+    .withMessage(
+      "expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"
+    ),
 ];
 
 export const processUpdateVCValidator = [
@@ -424,26 +408,14 @@ export const processUpdateVCValidator = [
     .isUUID()
     .withMessage("Invalid request ID format (must be UUID)"),
 
-  body("issuer_did")
-    .trim()
-    .notEmpty()
-    .withMessage("Issuer DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid issuer DID format"),
-
-  body("holder_did")
-    .trim()
-    .notEmpty()
-    .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid holder DID format"),
-
   body("action")
     .trim()
     .notEmpty()
     .withMessage("Action is required")
     .isIn([RequestStatus.APPROVED, RequestStatus.REJECTED])
-    .withMessage(`Action must be ${RequestStatus.APPROVED} or ${RequestStatus.REJECTED}`),
+    .withMessage(
+      `Action must be ${RequestStatus.APPROVED} or ${RequestStatus.REJECTED}`
+    ),
 
   body("vc_id")
     .if(body("action").equals(RequestStatus.APPROVED))
@@ -484,20 +456,26 @@ export const processUpdateVCValidator = [
     .notEmpty()
     .withMessage("new_vc_hash is required when action is APPROVED")
     .matches(/^0x[a-fA-F0-9]{64}$/)
-    .withMessage("Invalid new_vc_hash format (must be a 64-character hex string starting with 0x)"),
+    .withMessage(
+      "Invalid new_vc_hash format (must be a 64-character hex string starting with 0x)"
+    ),
 
   body("encrypted_body")
     .if(body("action").equals(RequestStatus.APPROVED))
     .trim()
     .notEmpty()
-    .withMessage("encrypted_body (new VC data) is required when action is APPROVED"),
+    .withMessage(
+      "encrypted_body (new VC data) is required when action is APPROVED"
+    ),
 
   body("expired_at")
     .if(body("action").equals(RequestStatus.APPROVED))
-    .optional()
+    .optional({ nullable: true, checkFalsy: true })
     .trim()
     .isISO8601()
-    .withMessage("expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"),
+    .withMessage(
+      "expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"
+    ),
 ];
 
 /**
@@ -614,15 +592,9 @@ export const issuerIssueVCValidator = [
       return true;
     }),
 
-  body("vc_id")
-    .trim()
-    .notEmpty()
-    .withMessage("vc_id is required"),
+  body("vc_id").trim().notEmpty().withMessage("vc_id is required"),
 
-  body("vc_type")
-    .trim()
-    .notEmpty()
-    .withMessage("vc_type is required"),
+  body("vc_type").trim().notEmpty().withMessage("vc_type is required"),
 
   body("schema_id")
     .trim()
@@ -642,7 +614,9 @@ export const issuerIssueVCValidator = [
     .notEmpty()
     .withMessage("vc_hash is required")
     .matches(/^0x[a-fA-F0-9]{64}$/) // Asumsi hash 64 char hex
-    .withMessage("Invalid vc_hash format (must be a 64-character hex string starting with 0x)"),
+    .withMessage(
+      "Invalid vc_hash format (must be a 64-character hex string starting with 0x)"
+    ),
 
   body("encrypted_body")
     .trim()
@@ -654,7 +628,9 @@ export const issuerIssueVCValidator = [
     .notEmpty()
     .withMessage("expiredAt is required")
     .isISO8601() // Memastikan format timestamp valid
-    .withMessage("expiredAt must be a valid ISO 8601 date string (e.g., 2025-12-31T23:59:59.000Z)"),
+    .withMessage(
+      "expiredAt must be a valid ISO 8601 date string (e.g., 2025-12-31T23:59:59.000Z)"
+    ),
 ];
 
 export const issuerUpdateVCValidator = [
@@ -679,21 +655,12 @@ export const issuerUpdateVCValidator = [
     }),
 
   // Validasi ID VC Lama
-  body("old_vc_id")
-    .trim()
-    .notEmpty()
-    .withMessage("old_vc_id is required"),
+  body("old_vc_id").trim().notEmpty().withMessage("old_vc_id is required"),
 
   // Validasi detail VC Baru
-  body("new_vc_id")
-    .trim()
-    .notEmpty()
-    .withMessage("new_vc_id is required"),
+  body("new_vc_id").trim().notEmpty().withMessage("new_vc_id is required"),
 
-  body("vc_type")
-    .trim()
-    .notEmpty()
-    .withMessage("vc_type is required"),
+  body("vc_type").trim().notEmpty().withMessage("vc_type is required"),
 
   body("schema_id")
     .trim()
@@ -713,7 +680,9 @@ export const issuerUpdateVCValidator = [
     .notEmpty()
     .withMessage("new_vc_hash is required")
     .matches(/^0x[a-fA-F0-9]{64}$/)
-    .withMessage("Invalid new_vc_hash format (must be a 64-character hex string starting with 0x)"),
+    .withMessage(
+      "Invalid new_vc_hash format (must be a 64-character hex string starting with 0x)"
+    ),
 
   body("encrypted_body")
     .trim()
@@ -736,10 +705,7 @@ export const issuerRevokeVCValidator = [
     .matches(/^did:dcert:i(?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/) // Harus 'i' (institution)
     .withMessage("Invalid issuer DID format (must be an institution DID)"),
 
-  body("vc_id")
-    .trim()
-    .notEmpty()
-    .withMessage("vc_id is required"),
+  body("vc_id").trim().notEmpty().withMessage("vc_id is required"),
 ];
 
 export const issuerRenewVCValidator = [
@@ -778,7 +744,9 @@ export const issuerRenewVCValidator = [
     .notEmpty()
     .withMessage("expiredAt is required")
     .isISO8601()
-    .withMessage("expiredAt must be a valid ISO 8601 date string (e.g., 2025-12-31T23:59:59.000Z)"),
+    .withMessage(
+      "expiredAt must be a valid ISO 8601 date string (e.g., 2025-12-31T23:59:59.000Z)"
+    ),
 ];
 
 export const claimIssuerInitiatedVCsBatchValidator = [
@@ -803,9 +771,40 @@ export const confirmIssuerInitiatedVCsBatchValidator = [
     .isArray({ min: 1, max: 100 })
     .withMessage("vc_ids must be an array with 1 to 100 UUIDs"),
 
-  body("vc_ids.*")
-    .isUUID()
-    .withMessage("Each vc_id must be a valid UUID"),
+  body("vc_ids.*").isUUID().withMessage("Each vc_id must be a valid UUID"),
+
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder_did format"),
+];
+
+/**
+ * Validator for VC Validation Endpoint
+ * Validates the uploaded VC JSON and hash for ownership verification
+ */
+export const validateVCValidator = [
+  body("vc_json")
+    .notEmpty()
+    .withMessage("vc_json is required")
+    .isObject()
+    .withMessage("vc_json must be a valid JSON object"),
+
+  body("vc_json.id").notEmpty().withMessage("vc_json.id is required"),
+
+  body("vc_json.expiredAt")
+    .optional({ nullable: true })
+    .isISO8601()
+    .withMessage("expiredAt must be a valid ISO 8601 date string if provided"),
+
+  body("vc_hash")
+    .trim()
+    .notEmpty()
+    .withMessage("vc_hash is required")
+    .matches(/^[a-fA-F0-9]{64}$/)
+    .withMessage("Invalid vc_hash format (must be 64-character hex string)"),
 
   body("holder_did")
     .trim()

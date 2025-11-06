@@ -6,7 +6,7 @@ import { CredentialService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler, RequestWithDID } from "../middlewares";
 import { ResponseHelper } from "../utils/helpers";
-import { ClaimIssuerInitiatedVCsDTO, ConfirmIssuerInitiatedVCsDTO, IssuerRenewVCDTO, IssuerRevokeVCDTO, IssuerUpdateVCDTO, ProcessUpdateVCDTO, IssuerIssueVCDTO,ProcessIssuanceVCDTO, RevokeVCDTO, CredentialRevocationRequestDTO, ProcessRenewalVCDTO } from "../dtos";
+import { ClaimIssuerInitiatedVCsDTO, ConfirmIssuerInitiatedVCsDTO, IssuerRenewVCDTO, IssuerRevokeVCDTO, IssuerUpdateVCDTO, ProcessUpdateVCDTO, IssuerIssueVCDTO,ProcessIssuanceVCDTO, RevokeVCDTO, CredentialRevocationRequestDTO, ProcessRenewalVCDTO, ValidateVCDTO } from "../dtos";
 import { BadRequestError} from "../utils/errors/AppError";
 /**
  * Request Credential Issuance Controller
@@ -551,4 +551,27 @@ export const confirmIssuerInitiatedVCsBatch = asyncHandler(async (req: Request, 
   const result = await CredentialService.confirmIssuerInitiatedVCsBatch(vc_ids, holder_did); //
 
   return ResponseHelper.success(res, result, result.message);
+});
+
+/**
+ * Validate VC JSON Controller
+ * Validates uploaded VC JSON for DID ownership, expiration, and hash
+ */
+export const validateVC = asyncHandler(async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  const requestData: ValidateVCDTO = req.body;
+
+  // Call service validation
+  const result = await CredentialService.validateVC(requestData);
+
+  // Return appropriate message based on validation result
+  const message = result.is_valid
+    ? "VC validation successful. The credential is valid and belongs to you."
+    : `VC validation failed: ${result.errors.join(', ')}`;
+
+  return ResponseHelper.success(res, result, message);
 });

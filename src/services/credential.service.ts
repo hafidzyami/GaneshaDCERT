@@ -1,22 +1,34 @@
-import { PrismaClient, RequestType, RequestStatus, VCResponseStatus } from "@prisma/client"; // Removed Prisma import
+import {
+  PrismaClient,
+  RequestType,
+  RequestStatus,
+  VCResponseStatus,
+} from "@prisma/client"; // Removed Prisma import
 import { prisma } from "../config/database";
-import { BadRequestError, NotFoundError, BlockchainError, ForbiddenError, InternalServerError } from "../utils/errors/AppError";
+import {
+  BadRequestError,
+  NotFoundError,
+  BlockchainError,
+  ForbiddenError,
+  InternalServerError,
+} from "../utils/errors/AppError";
 import logger from "../config/logger";
-import { ProcessUpdateVCDTO, 
-  ProcessUpdateVCResponseDTO, 
-  ProcessRenewalVCDTO, 
-  ProcessRenewalVCResponseDTO, 
+import {
+  ProcessUpdateVCDTO,
+  ProcessUpdateVCResponseDTO,
+  ProcessRenewalVCDTO,
+  ProcessRenewalVCResponseDTO,
   VCStatusResponseDTO,
-  CredentialRevocationRequestDTO, 
-  CredentialRevocationResponseDTO, 
-  ProcessIssuanceVCDTO, 
-  ProcessIssuanceVCResponseDTO, 
-  HolderCredentialDTO, 
-  RevokeVCDTO, 
-  RevokeVCResponseDTO, 
-  AggregatedRequestDTO, 
-  AllIssuerRequestsResponseDTO, 
-  IssuerIssueVCDTO, 
+  CredentialRevocationRequestDTO,
+  CredentialRevocationResponseDTO,
+  ProcessIssuanceVCDTO,
+  ProcessIssuanceVCResponseDTO,
+  HolderCredentialDTO,
+  RevokeVCDTO,
+  RevokeVCResponseDTO,
+  AggregatedRequestDTO,
+  AllIssuerRequestsResponseDTO,
+  IssuerIssueVCDTO,
   IssuerIssueVCResponseDTO,
   IssuerUpdateVCDTO,
   IssuerUpdateVCResponseDTO,
@@ -27,10 +39,12 @@ import { ProcessUpdateVCDTO,
   ClaimIssuerInitiatedVCsDTO,
   ClaimIssuerInitiatedVCsResponseDTO,
   ConfirmIssuerInitiatedVCsDTO,
-  ConfirmIssuerInitiatedVCsResponseDTO } from "../dtos";
+  ConfirmIssuerInitiatedVCsResponseDTO,
+  ValidateVCDTO,
+  VCValidationResult,
+} from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 import NotificationService from "./notification.service";
-
 
 /**
  * Credential Service with Dependency Injection
@@ -43,9 +57,7 @@ class CredentialService {
    * Constructor with dependency injection
    * @param dependencies - Optional dependencies for testing
    */
-  constructor(dependencies?: {
-    db?: PrismaClient;
-  }) {
+  constructor(dependencies?: { db?: PrismaClient }) {
     this.db = dependencies?.db || prisma;
   }
 
@@ -92,18 +104,24 @@ class CredentialService {
   /**
    * Get credential requests by type
    */
-  async getCredentialRequestsByType(type: RequestType, issuerDid?: string, holderDid?: string) { // Added holderDid parameter
-    
+  async getCredentialRequestsByType(
+    type: RequestType,
+    issuerDid?: string,
+    holderDid?: string
+  ) {
+    // Added holderDid parameter
+
     interface WhereClause {
-        issuer_did?: string;
-        holder_did?: string;
+      issuer_did?: string;
+      holder_did?: string;
     }
 
     const whereClause: WhereClause = {};
     if (issuerDid) {
       whereClause.issuer_did = issuerDid;
     }
-    if (holderDid) { // Add holderDid to the where clause if present
+    if (holderDid) {
+      // Add holderDid to the where clause if present
       whereClause.holder_did = holderDid;
     }
 
@@ -114,28 +132,28 @@ class CredentialService {
     switch (type) {
       case RequestType.ISSUANCE:
         requests = await this.db.vCIssuanceRequest.findMany({
-          where: whereClause, 
+          where: whereClause,
           orderBy: { createdAt: "desc" },
         });
         break;
 
       case RequestType.RENEWAL:
         requests = await this.db.vCRenewalRequest.findMany({
-          where: whereClause, 
+          where: whereClause,
           orderBy: { createdAt: "desc" },
         });
         break;
 
       case RequestType.UPDATE:
         requests = await this.db.vCUpdateRequest.findMany({
-          where: whereClause, 
+          where: whereClause,
           orderBy: { createdAt: "desc" },
         });
         break;
 
       case RequestType.REVOKE:
         requests = await this.db.vCRevokeRequest.findMany({
-          where: whereClause, 
+          where: whereClause,
           orderBy: { createdAt: "desc" },
         });
         break;
@@ -144,7 +162,7 @@ class CredentialService {
         throw new BadRequestError("Invalid request type specified.");
     }
 
-     logger.info(`Found ${requests.length} ${type} requests matching criteria.`);
+    logger.info(`Found ${requests.length} ${type} requests matching criteria.`);
 
     return {
       message: `Successfully retrieved ${type} requests.`,
@@ -266,7 +284,9 @@ class CredentialService {
   /**
    * Request credential revocation
    */
-  async requestCredentialRevocation(data: CredentialRevocationRequestDTO): Promise<CredentialRevocationResponseDTO> {
+  async requestCredentialRevocation(
+    data: CredentialRevocationRequestDTO
+  ): Promise<CredentialRevocationResponseDTO> {
     // Logic to create a new VCRevokeRequest record
     const newRevokeRequest = await this.db.vCRevokeRequest.create({
       data: {
@@ -282,7 +302,8 @@ class CredentialService {
     // TODO: Optionally, notify the issuer via RabbitMQ or another mechanism
 
     return {
-      message: "Verifiable Credential revocation request submitted successfully.",
+      message:
+        "Verifiable Credential revocation request submitted successfully.",
       request_id: newRevokeRequest.id, // Return the ID of the new request record
     };
   }
@@ -314,7 +335,8 @@ class CredentialService {
 
     try {
       // Call the blockchain service to get the status struct
-      const blockchainStatus = await VCBlockchainService.getVCStatusFromBlockchain(vcId);
+      const blockchainStatus =
+        await VCBlockchainService.getVCStatusFromBlockchain(vcId);
 
       // Map the blockchain response (which is likely an array/tuple or object from ethers)
       // to our DTO. Adjust indexing/property names based on the actual return structure
@@ -334,28 +356,36 @@ class CredentialService {
 
       logger.info(`Successfully retrieved status for VC: ${vcId}`);
       return response;
-
     } catch (error: any) {
-      logger.error(`Failed to get VC status from blockchain for ${vcId}:`, error);
+      logger.error(
+        `Failed to get VC status from blockchain for ${vcId}:`,
+        error
+      );
       // Rethrow specific errors or wrap them
       if (error instanceof NotFoundError) {
-        throw new NotFoundError(`VC with ID ${vcId} not found on the blockchain.`);
+        throw new NotFoundError(
+          `VC with ID ${vcId} not found on the blockchain.`
+        );
       }
-      throw new BlockchainError(`Failed to retrieve VC status from blockchain: ${error.message}`);
+      throw new BlockchainError(
+        `Failed to retrieve VC status from blockchain: ${error.message}`
+      );
     }
   }
 
-  async processIssuanceVC(data: ProcessIssuanceVCDTO): Promise<ProcessIssuanceVCResponseDTO> {
+  async processIssuanceVC(
+    data: ProcessIssuanceVCDTO
+  ): Promise<ProcessIssuanceVCResponseDTO> {
     const {
-        request_id,
-        action,
-        // Fields for approval
-        vc_id,
-        schema_id,
-        schema_version,
-        vc_hash,
-        encrypted_body,
-        expired_at
+      request_id,
+      action,
+      // Fields for approval
+      vc_id,
+      schema_id,
+      schema_version,
+      vc_hash,
+      encrypted_body,
+      expired_at,
     } = data;
 
     // 1. Find the original issuance request
@@ -364,11 +394,15 @@ class CredentialService {
     });
 
     if (!issuanceRequest) {
-      throw new NotFoundError(`Issuance request with ID ${request_id} not found.`);
+      throw new NotFoundError(
+        `Issuance request with ID ${request_id} not found.`
+      );
     }
 
     if (issuanceRequest.status !== RequestStatus.PENDING) {
-      throw new BadRequestError(`Issuance request ${request_id} has already been processed (Status: ${issuanceRequest.status}).`);
+      throw new BadRequestError(
+        `Issuance request ${request_id} has already been processed (Status: ${issuanceRequest.status}).`
+      );
     }
 
     const issuer_did = issuanceRequest.issuer_did;
@@ -390,11 +424,16 @@ class CredentialService {
         request_id: updatedRequest.id,
         status: updatedRequest.status,
       };
-
     } else if (action === RequestStatus.APPROVED) {
-      if (!encrypted_body || !vc_id || !schema_id || !schema_version || !vc_hash || !expired_at) {
+      if (
+        !encrypted_body ||
+        !vc_id ||
+        !schema_id ||
+        !schema_version ||
+        !vc_hash
+      ) {
         throw new BadRequestError(
-          "When action is APPROVED, vc_id, schema_id, schema_version, vc_hash, expired_at, and encrypted_body are required."
+          "When action is APPROVED, vc_id, schema_id, schema_version, vc_hash, and encrypted_body are required."
         );
       }
 
@@ -403,14 +442,16 @@ class CredentialService {
         where: {
           id_version: {
             id: schema_id,
-            version: schema_version
-          }
+            version: schema_version,
+          },
         },
-        select: { name: true }
+        select: { name: true },
       });
 
       if (!vcSchema) {
-        throw new NotFoundError(`VCSchema with ID ${schema_id} and version ${schema_version} not found.`);
+        throw new NotFoundError(
+          `VCSchema with ID ${schema_id} and version ${schema_version} not found.`
+        );
       }
 
       const vc_type = vcSchema.name;
@@ -418,22 +459,26 @@ class CredentialService {
       // --- Blockchain Call (Directly, similar to did.service.ts) ---
       let blockchainReceipt: any;
       try {
-          blockchainReceipt = await VCBlockchainService.issueVCInBlockchain(
-              vc_id,
-              issuer_did,
-              holder_did,
-              vc_type,
-              schema_id,
-              schema_version,
-              expired_at,
-              vc_hash
-          );
-           logger.info(`Blockchain issuance successful for ${vc_id}. TX: ${blockchainReceipt?.hash}`);
+        blockchainReceipt = await VCBlockchainService.issueVCInBlockchain(
+          vc_id,
+          issuer_did,
+          holder_did,
+          vc_type,
+          schema_id,
+          schema_version,
+          expired_at,
+          vc_hash
+        );
+        logger.info(
+          `Blockchain issuance successful for ${vc_id}. TX: ${blockchainReceipt?.hash}`
+        );
       } catch (blockchainError: any) {
-          logger.error("Blockchain issuance failed:", blockchainError);
-          // Decide how to handle this: rethrow or just log and potentially skip DB updates?
-          // Rethrowing is safer to indicate the overall operation failed.
-          throw new BadRequestError(`Blockchain issuance failed: ${blockchainError.message}`);
+        logger.error("Blockchain issuance failed:", blockchainError);
+        // Decide how to handle this: rethrow or just log and potentially skip DB updates?
+        // Rethrowing is safer to indicate the overall operation failed.
+        throw new BadRequestError(
+          `Blockchain issuance failed: ${blockchainError.message}`
+        );
       }
       // ----------------------------------------------------------------
 
@@ -456,7 +501,9 @@ class CredentialService {
             encrypted_body: encrypted_body,
           },
         });
-        logger.success(`Database updated for approved request: ${request_id}. VCResponse created: ${newVCResponse.id}`);
+        logger.success(
+          `Database updated for approved request: ${request_id}. VCResponse created: ${newVCResponse.id}`
+        );
 
         // Send push notification to holder
         try {
@@ -475,24 +522,31 @@ class CredentialService {
           logger.success(`Push notification sent to holder: ${holder_did}`);
         } catch (notifError: any) {
           // Don't fail the issuance if notification fails
-          logger.error(`Failed to send push notification to ${holder_did}:`, notifError);
+          logger.error(
+            `Failed to send push notification to ${holder_did}:`,
+            notifError
+          );
         }
-
       } catch (dbError: any) {
-          logger.error(`Database update failed for approved request ${request_id} after successful blockchain TX ${blockchainReceipt?.hash}:`, dbError);
-          return {
-              message: "Blockchain issuance succeeded, but database update failed. Please check logs.",
-              request_id: request_id, // Return original request ID
-              status: RequestStatus.APPROVED, // Reflect intended status
-              vc_response_id: undefined, // Indicate DB write failure
-              transaction_hash: blockchainReceipt?.hash,
-              block_number: blockchainReceipt?.blockNumber,
-          };
+        logger.error(
+          `Database update failed for approved request ${request_id} after successful blockchain TX ${blockchainReceipt?.hash}:`,
+          dbError
+        );
+        return {
+          message:
+            "Blockchain issuance succeeded, but database update failed. Please check logs.",
+          request_id: request_id, // Return original request ID
+          status: RequestStatus.APPROVED, // Reflect intended status
+          vc_response_id: undefined, // Indicate DB write failure
+          transaction_hash: blockchainReceipt?.hash,
+          block_number: blockchainReceipt?.blockNumber,
+        };
       }
       // ------------------------------------------------------------------
 
       return {
-        message: "Verifiable Credential issued successfully on blockchain and database.",
+        message:
+          "Verifiable Credential issued successfully on blockchain and database.",
         request_id: updatedRequest.id,
         status: updatedRequest.status,
         vc_response_id: newVCResponse.id,
@@ -500,11 +554,15 @@ class CredentialService {
         block_number: blockchainReceipt?.blockNumber,
       };
     } else {
-        throw new BadRequestError(`Invalid action: ${action}. Must be APPROVED or REJECTED.`);
+      throw new BadRequestError(
+        `Invalid action: ${action}. Must be APPROVED or REJECTED.`
+      );
     }
   }
 
-  async getHolderCredentialsFromDB(holderDid: string): Promise<HolderCredentialDTO[]> {
+  async getHolderCredentialsFromDB(
+    holderDid: string
+  ): Promise<HolderCredentialDTO[]> {
     logger.info(`Fetching credentials from DB for holder DID: ${holderDid}`);
 
     // Query the VCResponse table, selecting all fields
@@ -516,14 +574,16 @@ class CredentialService {
       },
       // No 'select' means all fields are returned by default
       orderBy: {
-        request_id: 'desc', // Example sort, consider adding createdAt
-      }
+        request_id: "desc", // Example sort, consider adding createdAt
+      },
     });
 
     if (vcResponses.length === 0) {
       logger.info(`No credentials found in DB for holder DID: ${holderDid}`);
     } else {
-       logger.info(`Found ${vcResponses.length} credential responses in DB for holder DID: ${holderDid}`);
+      logger.info(
+        `Found ${vcResponses.length} credential responses in DB for holder DID: ${holderDid}`
+      );
     }
 
     // Map the Prisma results directly (DTO now matches the model)
@@ -534,7 +594,6 @@ class CredentialService {
   }
 
   async revokeVC(data: RevokeVCDTO): Promise<RevokeVCResponseDTO> {
-    // Ambil field dari DTO yang sudah ramping
     const { request_id, action, vc_id } = data;
 
     // 1. Find the original revocation request in the database
@@ -543,17 +602,21 @@ class CredentialService {
     });
 
     if (!revokeRequest) {
-      throw new NotFoundError(`Revocation request with ID ${request_id} not found.`);
+      throw new NotFoundError(
+        `Revocation request with ID ${request_id} not found.`
+      );
     }
 
-    // 2. Check if already processed
-    if (revokeRequest.status !== RequestStatus.PENDING) {
-      throw new BadRequestError(`Revocation request ${request_id} has already been processed (Status: ${revokeRequest.status}).`);
-    }
-
-    // *** PERUBAHAN UTAMA: Ambil DIDs dari record DB ***
+    // 2. Get issuer_did and holder_did from database
     const issuer_did = revokeRequest.issuer_did;
     const holder_did = revokeRequest.holder_did;
+
+    // 3. Check if already processed
+    if (revokeRequest.status !== RequestStatus.PENDING) {
+      throw new BadRequestError(
+        `Revocation request ${request_id} has already been processed (Status: ${revokeRequest.status}).`
+      );
+    }
 
     // 3. HAPUS Validasi DIDs (sudah tidak diperlukan)
     // if (revokeRequest.issuer_did !== issuer_did || revokeRequest.holder_did !== holder_did) {
@@ -575,46 +638,69 @@ class CredentialService {
         request_id: updatedRequest.id,
         status: updatedRequest.status,
       };
-
     } else if (action === RequestStatus.APPROVED) {
       // ... (logika APPROVED tidak berubah)
       if (!vc_id) {
         throw new BadRequestError("vc_id is required when action is APPROVED.");
       }
-      
-      // ... (sisanya tidak berubah)
-      logger.info(`Processing approval for revocation request ${request_id} targeting VC ${vc_id}`);
+
+      logger.info(
+        `Processing approval for revocation request ${request_id} targeting VC ${vc_id}`
+      );
 
       // --- Pre-Revocation Blockchain Check ---
       try {
-        const currentVcStatus = await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
+        const currentVcStatus =
+          await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
         if (currentVcStatus && currentVcStatus.status === false) {
-            logger.warn(`Attempted to approve revocation for an already revoked VC: ${vc_id}`);
-             await this.db.vCRevokeRequest.update({ // Still update request status
-                where: { id: request_id },
-                data: { status: RequestStatus.APPROVED },
-             });
-            throw new BadRequestError(`VC with ID ${vc_id} is already revoked on the blockchain.`);
+          logger.warn(
+            `Attempted to approve revocation for an already revoked VC: ${vc_id}`
+          );
+          await this.db.vCRevokeRequest.update({
+            // Still update request status
+            where: { id: request_id },
+            data: { status: RequestStatus.APPROVED },
+          });
+          throw new BadRequestError(
+            `VC with ID ${vc_id} is already revoked on the blockchain.`
+          );
         }
-        logger.info(`VC ${vc_id} found and is currently active. Proceeding with blockchain revocation.`);
+        logger.info(
+          `VC ${vc_id} found and is currently active. Proceeding with blockchain revocation.`
+        );
       } catch (error: any) {
-          logger.error(`Pre-revocation check failed for VC ${vc_id}:`, error);
-          if (error instanceof NotFoundError) {
-               throw new NotFoundError(`VC with ID ${vc_id} not found on the blockchain. Cannot approve revocation request ${request_id}.`);
-          }
-          if (error instanceof BadRequestError) { throw error; }
-          throw new BadRequestError(`Failed to verify VC status before revocation: ${error.message}`);
+        logger.error(`Pre-revocation check failed for VC ${vc_id}:`, error);
+        if (error instanceof NotFoundError) {
+          throw new NotFoundError(
+            `VC with ID ${vc_id} not found on the blockchain. Cannot approve revocation request ${request_id}.`
+          );
+        }
+        if (error instanceof BadRequestError) {
+          throw error;
+        }
+        throw new BadRequestError(
+          `Failed to verify VC status before revocation: ${error.message}`
+        );
       }
       // ------------------------------------
 
       // --- Blockchain Revocation Call ---
       let blockchainReceipt: any;
       try {
-        blockchainReceipt = await VCBlockchainService.revokeVCInBlockchain(vc_id);
-        logger.success(`VC ${vc_id} revoked successfully on blockchain. TX: ${blockchainReceipt?.hash}`);
+        blockchainReceipt = await VCBlockchainService.revokeVCInBlockchain(
+          vc_id
+        );
+        logger.success(
+          `VC ${vc_id} revoked successfully on blockchain. TX: ${blockchainReceipt?.hash}`
+        );
       } catch (blockchainError: any) {
-        logger.error(`Blockchain revocation failed during approval for request ${request_id} (VC ${vc_id}):`, blockchainError);
-        throw new BadRequestError(`Blockchain revocation failed: ${blockchainError.message}`);
+        logger.error(
+          `Blockchain revocation failed during approval for request ${request_id} (VC ${vc_id}):`,
+          blockchainError
+        );
+        throw new BadRequestError(
+          `Blockchain revocation failed: ${blockchainError.message}`
+        );
       }
       // ---------------------------------
 
@@ -623,11 +709,14 @@ class CredentialService {
         where: { id: request_id },
         data: { status: RequestStatus.APPROVED },
       });
-      logger.info(`Revocation request ${request_id} status updated to APPROVED in DB.`);
+      logger.info(
+        `Revocation request ${request_id} status updated to APPROVED in DB.`
+      );
       // ------------------------
 
       return {
-        message: "Verifiable Credential revocation request approved and VC revoked on blockchain.",
+        message:
+          "Verifiable Credential revocation request approved and VC revoked on blockchain.",
         request_id: updatedRequest.id,
         status: updatedRequest.status,
         transaction_hash: blockchainReceipt?.hash,
@@ -638,8 +727,10 @@ class CredentialService {
     }
   }
 
-  async processRenewalVC(data: ProcessRenewalVCDTO): Promise<ProcessRenewalVCResponseDTO> {
-    const { request_id, issuer_did, holder_did, action, vc_id, encrypted_body, expired_at } = data;
+  async processRenewalVC(
+    data: ProcessRenewalVCDTO
+  ): Promise<ProcessRenewalVCResponseDTO> {
+    const { request_id, action, vc_id, encrypted_body, expired_at } = data;
 
     // 1. Find the original renewal request
     const renewalRequest = await this.db.vCRenewalRequest.findUnique({
@@ -647,17 +738,20 @@ class CredentialService {
     });
 
     if (!renewalRequest) {
-      throw new NotFoundError(`Renewal request with ID ${request_id} not found.`);
+      throw new NotFoundError(
+        `Renewal request with ID ${request_id} not found.`
+      );
     }
 
-    // 2. Check if already processed
+    // 2. Get issuer_did and holder_did from database
+    const issuer_did = renewalRequest.issuer_did;
+    const holder_did = renewalRequest.holder_did;
+
+    // 3. Check if already processed
     if (renewalRequest.status !== RequestStatus.PENDING) {
-      throw new BadRequestError(`Renewal request ${request_id} has already been processed (Status: ${renewalRequest.status}).`);
-    }
-
-    // 3. Validate DIDs
-    if (renewalRequest.issuer_did !== issuer_did || renewalRequest.holder_did !== holder_did) {
-      throw new BadRequestError(`Issuer DID or Holder DID does not match the original renewal request.`);
+      throw new BadRequestError(
+        `Renewal request ${request_id} has already been processed (Status: ${renewalRequest.status}).`
+      );
     }
 
     // 4. Process based on action
@@ -675,58 +769,76 @@ class CredentialService {
         request_id: updatedRequest.id,
         status: updatedRequest.status,
       };
-
     } else if (action === RequestStatus.APPROVED) {
       // Ensure required fields for approval are present
-      if (!vc_id || !encrypted_body || !expired_at) {
-        throw new BadRequestError("vc_id, encrypted_body, and expired_at are required when action is APPROVED.");
+      if (!vc_id || !encrypted_body) {
+        throw new BadRequestError(
+          "vc_id, encrypted_body, and expired_at are required when action is APPROVED."
+        );
       }
 
-      logger.info(`Processing approval for renewal request ${request_id} targeting VC ${vc_id}`);
+      logger.info(
+        `Processing approval for renewal request ${request_id} targeting VC ${vc_id}`
+      );
 
       // --- Blockchain Call ---
       let blockchainReceipt: any;
       try {
         // Call the renew function on the blockchain
-        blockchainReceipt = await VCBlockchainService.renewVCInBlockchain(vc_id, expired_at);
-        logger.success(`VC ${vc_id} renewed successfully on blockchain. TX: ${blockchainReceipt?.hash}`);
+        blockchainReceipt = await VCBlockchainService.renewVCInBlockchain(
+          vc_id,
+          expired_at
+        );
+        logger.success(
+          `VC ${vc_id} renewed successfully on blockchain. TX: ${blockchainReceipt?.hash}`
+        );
       } catch (blockchainError: any) {
-        logger.error(`Blockchain renewal failed during approval for request ${request_id} (VC ${vc_id}):`, blockchainError);
+        logger.error(
+          `Blockchain renewal failed during approval for request ${request_id} (VC ${vc_id}):`,
+          blockchainError
+        );
         // Handle specific errors like NotFoundError if the service throws them
         if (blockchainError instanceof NotFoundError) {
-             throw new NotFoundError(`VC with ID ${vc_id} not found on the blockchain. Cannot process renewal request ${request_id}.`);
+          throw new NotFoundError(
+            `VC with ID ${vc_id} not found on the blockchain. Cannot process renewal request ${request_id}.`
+          );
         }
-        throw new BadRequestError(`Blockchain renewal failed: ${blockchainError.message}`);
+        throw new BadRequestError(
+          `Blockchain renewal failed: ${blockchainError.message}`
+        );
       }
       // -------------------------
 
       // --- Database Updates ---
       // Use a transaction for atomicity
       const result = await this.db.$transaction(async (tx) => {
-          // Update renewal request status
-          const updatedRequest = await tx.vCRenewalRequest.update({
-            where: { id: request_id },
-            data: { status: RequestStatus.APPROVED },
-          });
+        // Update renewal request status
+        const updatedRequest = await tx.vCRenewalRequest.update({
+          where: { id: request_id },
+          data: { status: RequestStatus.APPROVED },
+        });
 
-          // Create a new VCResponse record for the renewal
-          const newVCResponse = await tx.vCResponse.create({
-            data: {
-              request_id: request_id, // Link to the VCRenewalRequest
-              request_type: RequestType.RENEWAL, // Set type to RENEWAL
-              issuer_did: issuer_did,
-              holder_did: holder_did,
-              encrypted_body: encrypted_body, // Store the new encrypted body
-            },
-          });
+        // Create a new VCResponse record for the renewal
+        const newVCResponse = await tx.vCResponse.create({
+          data: {
+            request_id: request_id, // Link to the VCRenewalRequest
+            request_type: RequestType.RENEWAL, // Set type to RENEWAL
+            issuer_did: issuer_did,
+            holder_did: holder_did,
+            encrypted_body: encrypted_body, // Store the new encrypted body
+          },
+        });
 
-          logger.info(`Renewal request ${request_id} status updated to APPROVED. New VCResponse created: ${newVCResponse.id}`);
-          return { updatedRequest, newVCResponse };
+        logger.info(
+          `Renewal request ${request_id} status updated to APPROVED. New VCResponse created: ${newVCResponse.id}`
+        );
+        return { updatedRequest, newVCResponse };
       });
       // ------------------------
 
       return {
-        message: "Verifiable Credential renewal request approved and VC renewed on blockchain.",
+        message:
+          "Verifiable Credential renewal request approved and VC renewed on blockchain.",
         request_id: result.updatedRequest.id,
         status: result.updatedRequest.status,
         vc_response_id: result.newVCResponse.id, // Include the new VCResponse ID
@@ -738,8 +850,21 @@ class CredentialService {
     }
   }
 
-  async processUpdateVC(data: ProcessUpdateVCDTO): Promise<ProcessUpdateVCResponseDTO> {
-    const { request_id, issuer_did, holder_did, action, vc_id, new_vc_id, vc_type, schema_id, schema_version, new_vc_hash, encrypted_body, expired_at } = data;
+  async processUpdateVC(
+    data: ProcessUpdateVCDTO
+  ): Promise<ProcessUpdateVCResponseDTO> {
+    const {
+      request_id,
+      action,
+      vc_id,
+      new_vc_id,
+      vc_type,
+      schema_id,
+      schema_version,
+      new_vc_hash,
+      encrypted_body,
+      expired_at,
+    } = data;
 
     // 1. Find the original update request
     const updateRequest = await this.db.vCUpdateRequest.findUnique({
@@ -747,17 +872,20 @@ class CredentialService {
     });
 
     if (!updateRequest) {
-      throw new NotFoundError(`Update request with ID ${request_id} not found.`);
+      throw new NotFoundError(
+        `Update request with ID ${request_id} not found.`
+      );
     }
 
-    // 2. Check if already processed
+    // 2. Get issuer_did and holder_did from database
+    const issuer_did = updateRequest.issuer_did;
+    const holder_did = updateRequest.holder_did;
+
+    // 3. Check if already processed
     if (updateRequest.status !== RequestStatus.PENDING) {
-      throw new BadRequestError(`Update request ${request_id} has already been processed (Status: ${updateRequest.status}).`);
-    }
-
-    // 3. Validate DIDs
-    if (updateRequest.issuer_did !== issuer_did || updateRequest.holder_did !== holder_did) {
-      throw new BadRequestError(`Issuer DID or Holder DID does not match the original update request.`);
+      throw new BadRequestError(
+        `Update request ${request_id} has already been processed (Status: ${updateRequest.status}).`
+      );
     }
 
     // 4. Process based on action
@@ -775,31 +903,55 @@ class CredentialService {
         request_id: updatedRequest.id,
         status: updatedRequest.status,
       };
-
     } else if (action === RequestStatus.APPROVED) {
       // Ensure required fields for approval are present
-      if (!vc_id || !new_vc_id || !vc_type || !schema_id || !schema_version || !new_vc_hash || !encrypted_body || !expired_at) {
-        throw new BadRequestError("vc_id, new_vc_id, vc_type, schema_id, schema_version, new_vc_hash, encrypted_body, and expired_at are required when action is APPROVED.");
+      if (
+        !vc_id ||
+        !new_vc_id ||
+        !vc_type ||
+        !schema_id ||
+        !schema_version ||
+        !new_vc_hash ||
+        !encrypted_body
+      ) {
+        throw new BadRequestError(
+          "vc_id, new_vc_id, vc_type, schema_id, schema_version, new_vc_hash, encrypted_body, and expired_at are required when action is APPROVED."
+        );
       }
 
-      logger.info(`Processing approval for update request ${request_id} targeting VC ${vc_id}`);
+      logger.info(
+        `Processing approval for update request ${request_id} targeting VC ${vc_id}`
+      );
 
       // --- Pre-Update Blockchain Check ---
       try {
-        const currentVcStatus = await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
+        const currentVcStatus =
+          await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
         if (currentVcStatus && currentVcStatus.status === false) {
-           logger.warn(`Attempted to approve update for an inactive/revoked VC: ${vc_id}`);
-           // Decide if you should allow updating a revoked VC. Usually not.
-           throw new BadRequestError(`Cannot approve update for VC ${vc_id} because it is currently inactive/revoked on the blockchain.`);
+          logger.warn(
+            `Attempted to approve update for an inactive/revoked VC: ${vc_id}`
+          );
+          // Decide if you should allow updating a revoked VC. Usually not.
+          throw new BadRequestError(
+            `Cannot approve update for VC ${vc_id} because it is currently inactive/revoked on the blockchain.`
+          );
         }
-        logger.info(`VC ${vc_id} found and is active. Proceeding with blockchain update.`);
+        logger.info(
+          `VC ${vc_id} found and is active. Proceeding with blockchain update.`
+        );
       } catch (error: any) {
-          logger.error(`Pre-update check failed for VC ${vc_id}:`, error);
-          if (error instanceof NotFoundError) {
-               throw new NotFoundError(`Original VC with ID ${vc_id} not found on the blockchain. Cannot approve update request ${request_id}.`);
-          }
-           if (error instanceof BadRequestError) { throw error; } // Rethrow specific errors
-          throw new BadRequestError(`Failed to verify VC status before update: ${error.message}`);
+        logger.error(`Pre-update check failed for VC ${vc_id}:`, error);
+        if (error instanceof NotFoundError) {
+          throw new NotFoundError(
+            `Original VC with ID ${vc_id} not found on the blockchain. Cannot approve update request ${request_id}.`
+          );
+        }
+        if (error instanceof BadRequestError) {
+          throw error;
+        } // Rethrow specific errors
+        throw new BadRequestError(
+          `Failed to verify VC status before update: ${error.message}`
+        );
       }
       // ------------------------------------
 
@@ -818,39 +970,49 @@ class CredentialService {
           expired_at,
           new_vc_hash
         );
-        logger.success(`VC ${vc_id} updated successfully on blockchain with new hash. TX: ${blockchainReceipt?.hash}`);
+        logger.success(
+          `VC ${vc_id} updated successfully on blockchain with new hash. TX: ${blockchainReceipt?.hash}`
+        );
       } catch (blockchainError: any) {
-        logger.error(`Blockchain update failed during approval for request ${request_id} (VC ${vc_id}):`, blockchainError);
-        throw new BadRequestError(`Blockchain update failed: ${blockchainError.message}`);
+        logger.error(
+          `Blockchain update failed during approval for request ${request_id} (VC ${vc_id}):`,
+          blockchainError
+        );
+        throw new BadRequestError(
+          `Blockchain update failed: ${blockchainError.message}`
+        );
       }
       // -----------------------------
 
       // --- Database Updates ---
       const result = await this.db.$transaction(async (tx) => {
-          // Update update request status
-          const updatedRequest = await tx.vCUpdateRequest.update({
-            where: { id: request_id },
-            data: { status: RequestStatus.APPROVED },
-          });
+        // Update update request status
+        const updatedRequest = await tx.vCUpdateRequest.update({
+          where: { id: request_id },
+          data: { status: RequestStatus.APPROVED },
+        });
 
-          // Create a new VCResponse record for the update
-          const newVCResponse = await tx.vCResponse.create({
-            data: {
-              request_id: request_id, // Link to the VCUpdateRequest
-              request_type: RequestType.UPDATE, // Set type to UPDATE
-              issuer_did: issuer_did,
-              holder_did: holder_did,
-              encrypted_body: encrypted_body, // Store the new encrypted body
-            },
-          });
+        // Create a new VCResponse record for the update
+        const newVCResponse = await tx.vCResponse.create({
+          data: {
+            request_id: request_id, // Link to the VCUpdateRequest
+            request_type: RequestType.UPDATE, // Set type to UPDATE
+            issuer_did: issuer_did,
+            holder_did: holder_did,
+            encrypted_body: encrypted_body, // Store the new encrypted body
+          },
+        });
 
-          logger.info(`Update request ${request_id} status updated to APPROVED. New VCResponse created: ${newVCResponse.id}`);
-          return { updatedRequest, newVCResponse };
+        logger.info(
+          `Update request ${request_id} status updated to APPROVED. New VCResponse created: ${newVCResponse.id}`
+        );
+        return { updatedRequest, newVCResponse };
       });
       // ------------------------
 
       return {
-        message: "Verifiable Credential update request approved and VC updated on blockchain.",
+        message:
+          "Verifiable Credential update request approved and VC updated on blockchain.",
         request_id: result.updatedRequest.id,
         status: result.updatedRequest.status,
         vc_response_id: result.newVCResponse.id, // Include the new VCResponse ID
@@ -895,7 +1057,9 @@ class CredentialService {
     }
 
     const vcResponse = result[0];
-    logger.success(`VC claimed successfully: ${vcResponse.id} for holder DID: ${holderDid}`);
+    logger.success(
+      `VC claimed successfully: ${vcResponse.id} for holder DID: ${holderDid}`
+    );
 
     return vcResponse;
   }
@@ -920,8 +1084,12 @@ class CredentialService {
     });
 
     if (updatedVC.count === 0) {
-      logger.warn(`VC confirmation failed: VC ${vcId} not found or not in PROCESSING state for holder ${holderDid}`);
-      throw new NotFoundError(`VC with ID ${vcId} not found or not in PROCESSING state.`);
+      logger.warn(
+        `VC confirmation failed: VC ${vcId} not found or not in PROCESSING state for holder ${holderDid}`
+      );
+      throw new NotFoundError(
+        `VC with ID ${vcId} not found or not in PROCESSING state.`
+      );
     }
 
     logger.success(`VC confirmed and soft-deleted: ${vcId}`);
@@ -940,7 +1108,9 @@ class CredentialService {
    * for more than 5 minutes to handle network failures/crashes
    */
   async claimVCsBatch(holderDid: string, limit: number = 10) {
-    logger.info(`Attempting to claim batch of VCs (limit: ${limit}) for holder DID: ${holderDid}`);
+    logger.info(
+      `Attempting to claim batch of VCs (limit: ${limit}) for holder DID: ${holderDid}`
+    );
 
     // Validate limit (max 100 for safety)
     const safeLimit = Math.min(Math.max(limit, 1), 100);
@@ -998,7 +1168,9 @@ class CredentialService {
       },
     });
 
-    logger.success(`Batch claimed ${result.length} VCs for holder DID: ${holderDid} (includes re-claims)`);
+    logger.success(
+      `Batch claimed ${result.length} VCs for holder DID: ${holderDid} (includes re-claims)`
+    );
 
     return {
       claimed_vcs: result,
@@ -1012,7 +1184,9 @@ class CredentialService {
    * Phase 2 Batch: Confirm multiple VCs and soft-delete them
    */
   async confirmVCsBatch(requestIds: string[], holderDid: string) {
-    logger.info(`Confirming batch of ${requestIds.length} VCs for holder DID: ${holderDid}`);
+    logger.info(
+      `Confirming batch of ${requestIds.length} VCs for holder DID: ${holderDid}`
+    );
 
     // Update multiple VCs to CLAIMED status and set deletedAt
     const updatedVCs = await this.db.vCResponse.updateMany({
@@ -1028,12 +1202,18 @@ class CredentialService {
     });
 
     if (updatedVCs.count === 0) {
-      logger.warn(`Batch VC confirmation failed: No VCs found in PROCESSING state for holder ${holderDid}`);
-      throw new NotFoundError(`No VCs found in PROCESSING state for confirmation.`);
+      logger.warn(
+        `Batch VC confirmation failed: No VCs found in PROCESSING state for holder ${holderDid}`
+      );
+      throw new NotFoundError(
+        `No VCs found in PROCESSING state for confirmation.`
+      );
     }
 
     if (updatedVCs.count < requestIds.length) {
-      logger.warn(`Partial batch confirmation: ${updatedVCs.count}/${requestIds.length} VCs confirmed for holder ${holderDid}`);
+      logger.warn(
+        `Partial batch confirmation: ${updatedVCs.count}/${requestIds.length} VCs confirmed for holder ${holderDid}`
+      );
     }
 
     logger.success(`Batch confirmed and soft-deleted ${updatedVCs.count} VCs`);
@@ -1053,7 +1233,9 @@ class CredentialService {
    * @returns Number of VCs reset from PROCESSING to PENDING
    */
   async resetStuckProcessingVCs(timeoutMinutes: number = 15) {
-    logger.info(`Running cleanup job: resetting VCs stuck in PROCESSING for >${timeoutMinutes} minutes`);
+    logger.info(
+      `Running cleanup job: resetting VCs stuck in PROCESSING for >${timeoutMinutes} minutes`
+    );
 
     const cutoffTime = new Date(Date.now() - timeoutMinutes * 60 * 1000);
 
@@ -1072,10 +1254,14 @@ class CredentialService {
     const resetCount = result?.length || 0;
 
     if (resetCount > 0) {
-      logger.warn(`Cleanup job reset ${resetCount} stuck PROCESSING VCs back to PENDING`);
+      logger.warn(
+        `Cleanup job reset ${resetCount} stuck PROCESSING VCs back to PENDING`
+      );
       // Log the affected VCs for debugging
       result.forEach((vc: any) => {
-        logger.debug(`Reset VC ${vc.id} for holder ${vc.holder_did}, stuck since ${vc.processing_at}`);
+        logger.debug(
+          `Reset VC ${vc.id} for holder ${vc.holder_did}, stuck since ${vc.processing_at}`
+        );
       });
     } else {
       logger.info(`Cleanup job completed: no stuck PROCESSING VCs found`);
@@ -1090,10 +1276,13 @@ class CredentialService {
 
   async getAllIssuerRequests(
     issuerDid: string,
-    status?: RequestStatus | 'ALL' // Perbarui tipe untuk menyertakan 'ALL'
+    status?: RequestStatus | "ALL" // Perbarui tipe untuk menyertakan 'ALL'
   ): Promise<AllIssuerRequestsResponseDTO> {
-    
-    logger.info(`Fetching all requests for issuer: ${issuerDid}, status: ${status || 'ALL'}`);
+    logger.info(
+      `Fetching all requests for issuer: ${issuerDid}, status: ${
+        status || "ALL"
+      }`
+    );
 
     // Tentukan klausa 'where'
     const whereClause: { issuer_did: string; status?: RequestStatus } = {
@@ -1101,7 +1290,7 @@ class CredentialService {
     };
 
     // Hanya tambahkan filter status jika ada DAN bukan 'ALL'
-    if (status && status !== 'ALL') {
+    if (status && status !== "ALL") {
       whereClause.status = status;
     }
 
@@ -1117,28 +1306,52 @@ class CredentialService {
 
     // ... (sisa fungsi tetap sama: Promise.all, map, sort) ...
     //
-    const [
-      issuanceRequests,
-      renewalRequests,
-      updateRequests,
-      revokeRequests,
-    ] = await Promise.all([
-      this.db.vCIssuanceRequest.findMany({ where: whereClause, select: selectFields }),
-      this.db.vCRenewalRequest.findMany({ where: whereClause, select: selectFields }),
-      this.db.vCUpdateRequest.findMany({ where: whereClause, select: selectFields }),
-      this.db.vCRevokeRequest.findMany({ where: whereClause, select: selectFields }),
-    ]);
+    const [issuanceRequests, renewalRequests, updateRequests, revokeRequests] =
+      await Promise.all([
+        this.db.vCIssuanceRequest.findMany({
+          where: whereClause,
+          select: selectFields,
+        }),
+        this.db.vCRenewalRequest.findMany({
+          where: whereClause,
+          select: selectFields,
+        }),
+        this.db.vCUpdateRequest.findMany({
+          where: whereClause,
+          select: selectFields,
+        }),
+        this.db.vCRevokeRequest.findMany({
+          where: whereClause,
+          select: selectFields,
+        }),
+      ]);
 
     const aggregatedRequests: AggregatedRequestDTO[] = [
-      ...issuanceRequests.map(req => ({ ...req, request_type: RequestType.ISSUANCE })),
-      ...renewalRequests.map(req => ({ ...req, request_type: RequestType.RENEWAL })),
-      ...updateRequests.map(req => ({ ...req, request_type: RequestType.UPDATE })),
-      ...revokeRequests.map(req => ({ ...req, request_type: RequestType.REVOKE })),
+      ...issuanceRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.ISSUANCE,
+      })),
+      ...renewalRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.RENEWAL,
+      })),
+      ...updateRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.UPDATE,
+      })),
+      ...revokeRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.REVOKE,
+      })),
     ];
 
-    aggregatedRequests.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    
-    logger.success(`Found ${aggregatedRequests.length} total requests for issuer: ${issuerDid}`);
+    aggregatedRequests.sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+    );
+
+    logger.success(
+      `Found ${aggregatedRequests.length} total requests for issuer: ${issuerDid}`
+    );
 
     return {
       count: aggregatedRequests.length,
@@ -1150,12 +1363,15 @@ class CredentialService {
     data: IssuerIssueVCDTO,
     authenticatedDid: string // DID dari token JWT
   ): Promise<IssuerIssueVCResponseDTO> {
-    
     // Validasi Keamanan: Pastikan DID yang diautentikasi adalah issuer yang sebenarnya
     if (data.issuer_did !== authenticatedDid) {
-      logger.warn(`Auth mismatch: Token DID (${authenticatedDid}) != Issuer DID (${data.issuer_did})`);
+      logger.warn(
+        `Auth mismatch: Token DID (${authenticatedDid}) != Issuer DID (${data.issuer_did})`
+      );
       // --- MENGGUNAKAN ForbiddenError YANG DIIMPOR ---
-      throw new ForbiddenError("Authenticated DID does not match the issuer_did in the request body.");
+      throw new ForbiddenError(
+        "Authenticated DID does not match the issuer_did in the request body."
+      );
     }
 
     const {
@@ -1167,10 +1383,12 @@ class CredentialService {
       schema_version,
       vc_hash,
       encrypted_body,
-      expiredAt
+      expiredAt,
     } = data;
 
-    logger.info(`Attempting direct issue by issuer ${issuer_did} for VC ${vc_id}`);
+    logger.info(
+      `Attempting direct issue by issuer ${issuer_did} for VC ${vc_id}`
+    );
 
     // 1. Panggil Blockchain
     let blockchainReceipt: any;
@@ -1185,10 +1403,17 @@ class CredentialService {
         expiredAt, // Menggunakan parameter expiredAt yang baru
         vc_hash
       );
-      logger.info(`Blockchain issue successful for ${vc_id}. TX: ${blockchainReceipt?.hash}`);
+      logger.info(
+        `Blockchain issue successful for ${vc_id}. TX: ${blockchainReceipt?.hash}`
+      );
     } catch (blockchainError: any) {
-      logger.error(`Blockchain direct issue failed for ${vc_id}:`, blockchainError);
-      throw new BadRequestError(`Blockchain issuance failed: ${blockchainError.message}`);
+      logger.error(
+        `Blockchain direct issue failed for ${vc_id}:`,
+        blockchainError
+      );
+      throw new BadRequestError(
+        `Blockchain issuance failed: ${blockchainError.message}`
+      );
     }
 
     // 2. Simpan ke tabel VCinitiatedByIssuer
@@ -1205,8 +1430,10 @@ class CredentialService {
         },
       });
 
-      logger.success(`New VC record created in VCinitiatedByIssuer: ${newRecord.id}`);
-      
+      logger.success(
+        `New VC record created in VCinitiatedByIssuer: ${newRecord.id}`
+      );
+
       // (Opsional) Kirim notifikasi push ke holder
       try {
         // --- PERBAIKAN 3: Menambahkan argumen yang diperlukan ---
@@ -1214,29 +1441,40 @@ class CredentialService {
           holder_did, // 1. holder_did
           "Credential Baru Telah Diterbitkan!", // 2. title
           "Sebuah kredensial baru telah diterbitkan untuk Anda dan siap untuk diklaim.", // 3. body
-          { // 4. data (opsional)
+          {
+            // 4. data (opsional)
             type: "VC_ISSUED_BY_ISSUER",
             record_id: newRecord.id,
             request_type: RequestType.ISSUANCE,
           }
         );
-        logger.success(`Push notification sent to holder (direct issue): ${holder_did}`);
+        logger.success(
+          `Push notification sent to holder (direct issue): ${holder_did}`
+        );
       } catch (notifError: any) {
-        logger.error(`Failed to send push notification (direct issue) to ${holder_did}:`, notifError);
+        logger.error(
+          `Failed to send push notification (direct issue) to ${holder_did}:`,
+          notifError
+        );
       }
 
       return {
-        message: "VC issued directly to blockchain and stored for holder claim.",
+        message:
+          "VC issued directly to blockchain and stored for holder claim.",
         record_id: newRecord.id,
         transaction_hash: blockchainReceipt.hash,
         block_number: blockchainReceipt.blockNumber,
       };
-
     } catch (dbError: any) {
-      logger.error(`Database storage failed for VCinitiatedByIssuer (VC ${vc_id}) after successful TX ${blockchainReceipt?.hash}:`, dbError);
+      logger.error(
+        `Database storage failed for VCinitiatedByIssuer (VC ${vc_id}) after successful TX ${blockchainReceipt?.hash}:`,
+        dbError
+      );
       // Ini adalah error kritis. Blockchain berhasil tapi DB gagal.
       // --- MENGGUNAKAN InternalServerError YANG DIIMPOR ---
-      throw new InternalServerError(`Blockchain succeeded (TX: ${blockchainReceipt.hash}), but database save failed. Please contact support. Error: ${dbError.message}`);
+      throw new InternalServerError(
+        `Blockchain succeeded (TX: ${blockchainReceipt.hash}), but database save failed. Please contact support. Error: ${dbError.message}`
+      );
     }
   }
 
@@ -1244,11 +1482,14 @@ class CredentialService {
     data: IssuerUpdateVCDTO,
     authenticatedDid: string
   ): Promise<IssuerUpdateVCResponseDTO> {
-    
     // 1. Validasi Keamanan
     if (data.issuer_did !== authenticatedDid) {
-      logger.warn(`Auth mismatch: Token DID (${authenticatedDid}) != Issuer DID (${data.issuer_did})`);
-      throw new ForbiddenError("Authenticated DID does not match the issuer_did in the request body.");
+      logger.warn(
+        `Auth mismatch: Token DID (${authenticatedDid}) != Issuer DID (${data.issuer_did})`
+      );
+      throw new ForbiddenError(
+        "Authenticated DID does not match the issuer_did in the request body."
+      );
     }
 
     const {
@@ -1261,26 +1502,39 @@ class CredentialService {
       schema_version,
       new_vc_hash,
       encrypted_body,
-      expiredAt
+      expiredAt,
     } = data;
 
-    logger.info(`Attempting direct update by issuer ${issuer_did} for old VC ${old_vc_id} -> new VC ${new_vc_id}`);
+    logger.info(
+      `Attempting direct update by issuer ${issuer_did} for old VC ${old_vc_id} -> new VC ${new_vc_id}`
+    );
 
     // 2. Pre-Check: Pastikan VC lama ada dan aktif
     try {
-      const currentVcStatus = await VCBlockchainService.getVCStatusFromBlockchain(old_vc_id);
+      const currentVcStatus =
+        await VCBlockchainService.getVCStatusFromBlockchain(old_vc_id);
       if (currentVcStatus && currentVcStatus.status === false) {
-         logger.warn(`Attempted to update an inactive/revoked VC: ${old_vc_id}`);
-         throw new BadRequestError(`Cannot update VC ${old_vc_id} because it is currently inactive/revoked on the blockchain.`);
+        logger.warn(`Attempted to update an inactive/revoked VC: ${old_vc_id}`);
+        throw new BadRequestError(
+          `Cannot update VC ${old_vc_id} because it is currently inactive/revoked on the blockchain.`
+        );
       }
-      logger.info(`VC ${old_vc_id} found and is active. Proceeding with blockchain update.`);
+      logger.info(
+        `VC ${old_vc_id} found and is active. Proceeding with blockchain update.`
+      );
     } catch (error: any) {
-        logger.error(`Pre-update check failed for VC ${old_vc_id}:`, error);
-        if (error instanceof NotFoundError) {
-             throw new NotFoundError(`Original VC with ID ${old_vc_id} not found on the blockchain. Cannot process update.`);
-        }
-        if (error instanceof BadRequestError) { throw error; }
-        throw new BadRequestError(`Failed to verify VC status before update: ${error.message}`);
+      logger.error(`Pre-update check failed for VC ${old_vc_id}:`, error);
+      if (error instanceof NotFoundError) {
+        throw new NotFoundError(
+          `Original VC with ID ${old_vc_id} not found on the blockchain. Cannot process update.`
+        );
+      }
+      if (error instanceof BadRequestError) {
+        throw error;
+      }
+      throw new BadRequestError(
+        `Failed to verify VC status before update: ${error.message}`
+      );
     }
 
     // 3. Panggil Blockchain (UpdateVC)
@@ -1297,11 +1551,17 @@ class CredentialService {
         expiredAt,
         new_vc_hash
       );
-      logger.info(`Blockchain update successful for ${new_vc_id}. TX: ${blockchainReceipt?.hash}`);
-    } catch (blockchainError: any)
-    {
-      logger.error(`Blockchain direct update failed for ${old_vc_id} -> ${new_vc_id}:`, blockchainError);
-      throw new BadRequestError(`Blockchain update failed: ${blockchainError.message}`);
+      logger.info(
+        `Blockchain update successful for ${new_vc_id}. TX: ${blockchainReceipt?.hash}`
+      );
+    } catch (blockchainError: any) {
+      logger.error(
+        `Blockchain direct update failed for ${old_vc_id} -> ${new_vc_id}:`,
+        blockchainError
+      );
+      throw new BadRequestError(
+        `Blockchain update failed: ${blockchainError.message}`
+      );
     }
 
     // 4. Simpan VC BARU ke tabel VCinitiatedByIssuer
@@ -1316,8 +1576,10 @@ class CredentialService {
         },
       });
 
-      logger.success(`New VC record (from update) created in VCinitiatedByIssuer: ${newRecord.id}`);
-      
+      logger.success(
+        `New VC record (from update) created in VCinitiatedByIssuer: ${newRecord.id}`
+      );
+
       // (Opsional) Kirim notifikasi push ke holder
       try {
         await NotificationService.sendVCStatusNotification(
@@ -1330,21 +1592,31 @@ class CredentialService {
             request_type: RequestType.UPDATE,
           }
         );
-        logger.success(`Push notification sent to holder (direct update): ${holder_did}`);
+        logger.success(
+          `Push notification sent to holder (direct update): ${holder_did}`
+        );
       } catch (notifError: any) {
-        logger.error(`Failed to send push notification (direct update) to ${holder_did}:`, notifError);
+        logger.error(
+          `Failed to send push notification (direct update) to ${holder_did}:`,
+          notifError
+        );
       }
 
       return {
-        message: "VC updated directly on blockchain and new VC stored for holder claim.",
+        message:
+          "VC updated directly on blockchain and new VC stored for holder claim.",
         record_id: newRecord.id,
         transaction_hash: blockchainReceipt.hash,
         block_number: blockchainReceipt.blockNumber,
       };
-
     } catch (dbError: any) {
-      logger.error(`Database storage failed for VCinitiatedByIssuer (VC ${new_vc_id}) after successful TX ${blockchainReceipt?.hash}:`, dbError);
-      throw new InternalServerError(`Blockchain update succeeded (TX: ${blockchainReceipt.hash}), but database save failed. Please contact support. Error: ${dbError.message}`);
+      logger.error(
+        `Database storage failed for VCinitiatedByIssuer (VC ${new_vc_id}) after successful TX ${blockchainReceipt?.hash}:`,
+        dbError
+      );
+      throw new InternalServerError(
+        `Blockchain update succeeded (TX: ${blockchainReceipt.hash}), but database save failed. Please contact support. Error: ${dbError.message}`
+      );
     }
   }
 
@@ -1352,51 +1624,76 @@ class CredentialService {
     data: IssuerRevokeVCDTO,
     authenticatedDid: string
   ): Promise<IssuerRevokeVCResponseDTO> {
-    
     // 1. Validasi Keamanan
     if (data.issuer_did !== authenticatedDid) {
-      logger.warn(`Auth mismatch: Token DID (${authenticatedDid}) != Issuer DID (${data.issuer_did})`);
-      throw new ForbiddenError("Authenticated DID does not match the issuer_did in the request body.");
+      logger.warn(
+        `Auth mismatch: Token DID (${authenticatedDid}) != Issuer DID (${data.issuer_did})`
+      );
+      throw new ForbiddenError(
+        "Authenticated DID does not match the issuer_did in the request body."
+      );
     }
 
     const { issuer_did, vc_id } = data;
 
-    logger.info(`Attempting direct revoke by issuer ${issuer_did} for VC ${vc_id}`);
+    logger.info(
+      `Attempting direct revoke by issuer ${issuer_did} for VC ${vc_id}`
+    );
 
     // 2. Pre-Check: Pastikan VC ada dan aktif
     try {
-      const currentVcStatus = await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
-      
+      const currentVcStatus =
+        await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
+
       // Periksa apakah issuer-nya cocok
       if (currentVcStatus.issuerDID !== issuer_did) {
-         logger.warn(`Revoke attempt failed: VC ${vc_id} was not issued by ${issuer_did}.`);
-         throw new ForbiddenError(`Authenticated issuer (${issuer_did}) did not issue this VC.`);
+        logger.warn(
+          `Revoke attempt failed: VC ${vc_id} was not issued by ${issuer_did}.`
+        );
+        throw new ForbiddenError(
+          `Authenticated issuer (${issuer_did}) did not issue this VC.`
+        );
       }
 
       if (currentVcStatus && currentVcStatus.status === false) {
-         logger.warn(`Attempted to revoke an already revoked VC: ${vc_id}`);
-         throw new BadRequestError(`VC with ID ${vc_id} is already revoked on the blockchain.`);
+        logger.warn(`Attempted to revoke an already revoked VC: ${vc_id}`);
+        throw new BadRequestError(
+          `VC with ID ${vc_id} is already revoked on the blockchain.`
+        );
       }
-      logger.info(`VC ${vc_id} found, is active, and matches issuer. Proceeding with blockchain revocation.`);
+      logger.info(
+        `VC ${vc_id} found, is active, and matches issuer. Proceeding with blockchain revocation.`
+      );
     } catch (error: any) {
-        logger.error(`Pre-revocation check failed for VC ${vc_id}:`, error);
-        if (error instanceof NotFoundError) {
-             throw new NotFoundError(`VC with ID ${vc_id} not found on the blockchain.`);
-        }
-        if (error instanceof BadRequestError || error instanceof ForbiddenError) {
-          throw error; // Lemparkan kembali error yang sudah spesifik
-        }
-        throw new BadRequestError(`Failed to verify VC status before revocation: ${error.message}`);
+      logger.error(`Pre-revocation check failed for VC ${vc_id}:`, error);
+      if (error instanceof NotFoundError) {
+        throw new NotFoundError(
+          `VC with ID ${vc_id} not found on the blockchain.`
+        );
+      }
+      if (error instanceof BadRequestError || error instanceof ForbiddenError) {
+        throw error; // Lemparkan kembali error yang sudah spesifik
+      }
+      throw new BadRequestError(
+        `Failed to verify VC status before revocation: ${error.message}`
+      );
     }
 
     // 3. Panggil Blockchain (RevokeVC)
     let blockchainReceipt: any;
     try {
       blockchainReceipt = await VCBlockchainService.revokeVCInBlockchain(vc_id);
-      logger.success(`VC ${vc_id} revoked successfully on blockchain. TX: ${blockchainReceipt?.hash}`);
+      logger.success(
+        `VC ${vc_id} revoked successfully on blockchain. TX: ${blockchainReceipt?.hash}`
+      );
     } catch (blockchainError: any) {
-      logger.error(`Blockchain direct revoke failed for ${vc_id}:`, blockchainError);
-      throw new BadRequestError(`Blockchain revocation failed: ${blockchainError.message}`);
+      logger.error(
+        `Blockchain direct revoke failed for ${vc_id}:`,
+        blockchainError
+      );
+      throw new BadRequestError(
+        `Blockchain revocation failed: ${blockchainError.message}`
+      );
     }
 
     // 4. Kirim respons
@@ -1412,44 +1709,70 @@ class CredentialService {
     data: IssuerRenewVCDTO,
     authenticatedDid: string
   ): Promise<IssuerRenewVCResponseDTO> {
-    
     // 1. Validasi Keamanan
     if (data.issuer_did !== authenticatedDid) {
-      logger.warn(`Auth mismatch: Token DID (${authenticatedDid}) != Issuer DID (${data.issuer_did})`);
-      throw new ForbiddenError("Authenticated DID does not match the issuer_did in the request body.");
+      logger.warn(
+        `Auth mismatch: Token DID (${authenticatedDid}) != Issuer DID (${data.issuer_did})`
+      );
+      throw new ForbiddenError(
+        "Authenticated DID does not match the issuer_did in the request body."
+      );
     }
 
     // Destrukturisasi data, termasuk expiredAt
     const { issuer_did, holder_did, vc_id, encrypted_body, expiredAt } = data; // <-- TAMBAHKAN expiredAt
 
-    logger.info(`Attempting direct renew by issuer ${issuer_did} for VC ${vc_id}`);
+    logger.info(
+      `Attempting direct renew by issuer ${issuer_did} for VC ${vc_id}`
+    );
 
     // 2. Pre-Check: Pastikan VC ada dan milik issuer
     try {
       // ... (Logika pre-check tetap sama) ...
-      const currentVcStatus = await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
+      const currentVcStatus =
+        await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
       if (currentVcStatus.issuerDID !== issuer_did) {
-         throw new ForbiddenError(`Authenticated issuer (${issuer_did}) did not issue this VC.`);
+        throw new ForbiddenError(
+          `Authenticated issuer (${issuer_did}) did not issue this VC.`
+        );
       }
-      logger.info(`VC ${vc_id} found and matches issuer. Proceeding with blockchain renewal.`);
+      logger.info(
+        `VC ${vc_id} found and matches issuer. Proceeding with blockchain renewal.`
+      );
     } catch (error: any) {
       // ... (Error handling pre-check tetap sama) ...
       if (error instanceof NotFoundError) {
-           throw new NotFoundError(`VC with ID ${vc_id} not found on the blockchain.`);
+        throw new NotFoundError(
+          `VC with ID ${vc_id} not found on the blockchain.`
+        );
       }
-      if (error instanceof ForbiddenError) { throw error; }
-      throw new BadRequestError(`Failed to verify VC status before renewal: ${error.message}`);
+      if (error instanceof ForbiddenError) {
+        throw error;
+      }
+      throw new BadRequestError(
+        `Failed to verify VC status before renewal: ${error.message}`
+      );
     }
 
     // 3. Panggil Blockchain (RenewVC)
     let blockchainReceipt: any;
     try {
       // --- PERBAIKAN: Teruskan expiredAt ke fungsi blockchain ---
-      blockchainReceipt = await VCBlockchainService.renewVCInBlockchain(vc_id, expiredAt);
-      logger.success(`VC ${vc_id} renewed successfully on blockchain. TX: ${blockchainReceipt?.hash}`);
+      blockchainReceipt = await VCBlockchainService.renewVCInBlockchain(
+        vc_id,
+        expiredAt
+      );
+      logger.success(
+        `VC ${vc_id} renewed successfully on blockchain. TX: ${blockchainReceipt?.hash}`
+      );
     } catch (blockchainError: any) {
-      logger.error(`Blockchain direct renew failed for ${vc_id}:`, blockchainError);
-      throw new BadRequestError(`Blockchain renewal failed: ${blockchainError.message}`);
+      logger.error(
+        `Blockchain direct renew failed for ${vc_id}:`,
+        blockchainError
+      );
+      throw new BadRequestError(
+        `Blockchain renewal failed: ${blockchainError.message}`
+      );
     }
 
     // 4. Simpan VC BARU ke tabel VCinitiatedByIssuer
@@ -1465,8 +1788,10 @@ class CredentialService {
         },
       });
 
-      logger.success(`New VC record (from renew) created in VCinitiatedByIssuer: ${newRecord.id}`);
-      
+      logger.success(
+        `New VC record (from renew) created in VCinitiatedByIssuer: ${newRecord.id}`
+      );
+
       // ... (Logika notifikasi push tetap sama) ...
       try {
         await NotificationService.sendVCStatusNotification(
@@ -1480,27 +1805,34 @@ class CredentialService {
           }
         );
       } catch (notifError: any) {
-         logger.error(`Failed to send push notification (direct renew) to ${holder_did}:`, notifError);
+        logger.error(
+          `Failed to send push notification (direct renew) to ${holder_did}:`,
+          notifError
+        );
       }
 
       return {
-        message: "VC renewed directly on blockchain and new VC stored for holder claim.",
+        message:
+          "VC renewed directly on blockchain and new VC stored for holder claim.",
         record_id: newRecord.id,
         transaction_hash: blockchainReceipt.hash,
         block_number: blockchainReceipt.blockNumber,
       };
-
     } catch (dbError: any) {
       // ... (Error handling DB tetap sama) ...
-      throw new InternalServerError(`Blockchain renew succeeded (TX: ${blockchainReceipt.hash}), but database save failed. Please contact support. Error: ${dbError.message}`);
+      throw new InternalServerError(
+        `Blockchain renew succeeded (TX: ${blockchainReceipt.hash}), but database save failed. Please contact support. Error: ${dbError.message}`
+      );
     }
   }
 
   async claimIssuerInitiatedVCsBatch(
-    holderDid: string, 
+    holderDid: string,
     limit: number = 10
   ): Promise<ClaimIssuerInitiatedVCsResponseDTO> {
-    logger.info(`Attempting to claim batch of ISSUER-INITIATED VCs (limit: ${limit}) for holder DID: ${holderDid}`);
+    logger.info(
+      `Attempting to claim batch of ISSUER-INITIATED VCs (limit: ${limit}) for holder DID: ${holderDid}`
+    );
 
     // Gunakan batas aman yang sama
     const safeLimit = Math.min(Math.max(limit, 1), 100);
@@ -1531,7 +1863,9 @@ class CredentialService {
     `;
 
     if (!result || result.length === 0) {
-      logger.info(`No claimable ISSUER-INITIATED VCs found for holder DID: ${holderDid}`);
+      logger.info(
+        `No claimable ISSUER-INITIATED VCs found for holder DID: ${holderDid}`
+      );
       return {
         claimed_vcs: [],
         claimed_count: 0,
@@ -1557,7 +1891,9 @@ class CredentialService {
       },
     });
 
-    logger.success(`Batch claimed ${result.length} ISSUER-INITIATED VCs for holder DID: ${holderDid}`);
+    logger.success(
+      `Batch claimed ${result.length} ISSUER-INITIATED VCs for holder DID: ${holderDid}`
+    );
 
     return {
       claimed_vcs: result,
@@ -1571,10 +1907,12 @@ class CredentialService {
    * Phase 2 Batch (Issuer-Initiated): Confirm multiple VCs and soft-delete them
    */
   async confirmIssuerInitiatedVCsBatch(
-    vcIds: string[], 
+    vcIds: string[],
     holderDid: string
   ): Promise<ConfirmIssuerInitiatedVCsResponseDTO> {
-    logger.info(`Confirming batch of ${vcIds.length} ISSUER-INITIATED VCs for holder DID: ${holderDid}`);
+    logger.info(
+      `Confirming batch of ${vcIds.length} ISSUER-INITIATED VCs for holder DID: ${holderDid}`
+    );
 
     // Update multiple VCs, GANTI target ke vCinitiatedByIssuer
     const updatedVCs = await this.db.vCinitiatedByIssuer.updateMany({
@@ -1590,15 +1928,23 @@ class CredentialService {
     });
 
     if (updatedVCs.count === 0) {
-      logger.warn(`Batch VC confirmation failed (ISSUER-INITIATED): No VCs found in PROCESSING state for holder ${holderDid}`);
-      throw new NotFoundError(`No VCs (issuer-initiated) found in PROCESSING state for confirmation.`);
+      logger.warn(
+        `Batch VC confirmation failed (ISSUER-INITIATED): No VCs found in PROCESSING state for holder ${holderDid}`
+      );
+      throw new NotFoundError(
+        `No VCs (issuer-initiated) found in PROCESSING state for confirmation.`
+      );
     }
 
     if (updatedVCs.count < vcIds.length) {
-      logger.warn(`Partial batch confirmation (ISSUER-INITIATED): ${updatedVCs.count}/${vcIds.length} VCs confirmed for holder ${holderDid}`);
+      logger.warn(
+        `Partial batch confirmation (ISSUER-INITIATED): ${updatedVCs.count}/${vcIds.length} VCs confirmed for holder ${holderDid}`
+      );
     }
 
-    logger.success(`Batch confirmed and soft-deleted ${updatedVCs.count} ISSUER-INITIATED VCs`);
+    logger.success(
+      `Batch confirmed and soft-deleted ${updatedVCs.count} ISSUER-INITIATED VCs`
+    );
 
     return {
       message: `Successfully confirmed ${updatedVCs.count} issuer-initiated VCs.`,
@@ -1607,6 +1953,139 @@ class CredentialService {
     };
   }
 
+  /**
+   * Validate VC JSON uploaded by institution
+   * Validates DID ownership, expiration, and hash against blockchain
+   */
+  async validateVC(data: ValidateVCDTO): Promise<VCValidationResult> {
+    const { vc_json, vc_hash, holder_did } = data;
+
+    const errors: string[] = [];
+    let did_valid = false;
+    let expiration_valid = false;
+    let hash_valid = false;
+    let is_expired = false;
+    let vcHolderDid = undefined;
+
+    // Extract VC ID from the composite id field
+    // Format: "uuid:version:did:timestamp" or similar
+    const vcId = vc_json.id;
+    const vcIssuerDid = vc_json.issuer;
+    const expiredAt = vc_json.expiredAt;
+
+    logger.info(`Validating VC: ${vcId} for holder: ${holder_did}`);
+
+    // 3. Validate Hash - Query blockchain and compare
+    try {
+      // Use the full VC ID (composite format: uuid:version:did:timestamp)
+      // No need to split - blockchain uses the full ID
+      logger.info(`Querying blockchain for VC: ${vcId}`);
+
+      const vcStatusOnChain =
+        await VCBlockchainService.getVCStatusFromBlockchain(vcId);
+
+      vcHolderDid = vcStatusOnChain.holderDID
+        ? vcStatusOnChain.holderDID
+        : undefined;
+
+      // 1. Validate DID - Check if holder_did matches credentialSubject.id
+      if (vcHolderDid === holder_did) {
+        did_valid = true;
+        logger.info(`✅ DID validation passed: ${holder_did}`);
+      } else {
+        did_valid = false;
+        errors.push(
+          `DID mismatch: VC belongs to ${vcHolderDid}, but you provided ${holder_did}`
+        );
+        logger.warn(
+          `❌ DID validation failed: Expected ${holder_did}, got ${vcHolderDid}`
+        );
+      }
+
+      // 2. Validate Expiration - Check if VC is not expired (skip if expiredAt is null)
+      if (!expiredAt || expiredAt === null) {
+        // No expiration date - VC has lifetime validity
+        expiration_valid = true;
+        logger.info(
+          `✅ Expiration validation skipped: VC has lifetime validity (no expiration)`
+        );
+      } else {
+        const now = new Date();
+        const expirationDate = new Date(expiredAt);
+        is_expired = now > expirationDate;
+
+        if (!is_expired) {
+          expiration_valid = true;
+          logger.info(
+            `✅ Expiration validation passed: VC valid until ${expiredAt}`
+          );
+        } else {
+          expiration_valid = false;
+          errors.push(`VC has expired on ${expiredAt}`);
+          logger.warn(
+            `❌ Expiration validation failed: VC expired on ${expiredAt}`
+          );
+        }
+      }
+
+      if (vcStatusOnChain) {
+        const blockchainHash = vcStatusOnChain.hash;
+
+        // Compare hashes (remove 0x prefix if present)
+        const normalizedVcHash = vc_hash.toLowerCase().replace(/^0x/, "");
+        const normalizedBlockchainHash = blockchainHash
+          .toLowerCase()
+          .replace(/^0x/, "");
+
+        if (normalizedVcHash === normalizedBlockchainHash) {
+          hash_valid = true;
+          logger.info(`✅ Hash validation passed: ${normalizedVcHash}`);
+        } else {
+          hash_valid = false;
+          errors.push(
+            `Hash mismatch: Provided hash ${normalizedVcHash} does not match blockchain hash`
+          );
+          logger.warn(
+            `❌ Hash validation failed: Expected ${normalizedBlockchainHash}, got ${normalizedVcHash}`
+          );
+        }
+      } else {
+        hash_valid = false;
+        errors.push(`VC not found on blockchain`);
+        logger.warn(`❌ VC ${vcId} not found on blockchain`);
+      }
+    } catch (error: any) {
+      hash_valid = false;
+      errors.push(`Blockchain query failed: ${error.message}`);
+      logger.error(`❌ Blockchain query error:`, error);
+    }
+
+    // Overall validation result
+    const is_valid = did_valid && expiration_valid && hash_valid;
+
+    const result: VCValidationResult = {
+      is_valid,
+      did_valid,
+      expiration_valid,
+      hash_valid,
+      errors,
+      vc_id: vcId,
+      holder_did: vcHolderDid,
+      issuer_did: vcIssuerDid,
+      expired_at: expiredAt,
+      is_expired,
+    };
+
+    if (is_valid) {
+      logger.success(`✅ VC validation successful: ${vcId}`);
+    } else {
+      logger.warn(
+        `❌ VC validation failed: ${vcId}. Errors: ${errors.join(", ")}`
+      );
+    }
+
+    return result;
+  }
 }
 
 // Export singleton instance for backward compatibility

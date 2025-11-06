@@ -115,8 +115,6 @@ export interface RevokeVCResponseDTO {
 
 export interface ProcessRenewalVCDTO {
   request_id: string; // ID of the VCRenewalRequest record
-  issuer_did: string;
-  holder_did: string;
   action: "APPROVED" | "REJECTED";
   vc_id?: string; // VC ID to renew (Required only if action is APPROVED)
   encrypted_body?: string; // Newly issued/renewed encrypted VC body (Required only if action is APPROVED)
@@ -135,8 +133,6 @@ export interface ProcessRenewalVCResponseDTO {
 
 export interface ProcessUpdateVCDTO {
   request_id: string; // ID of the VCUpdateRequest record
-  issuer_did: string;
-  holder_did: string;
   action: "APPROVED" | "REJECTED";
   vc_id?: string; // Original VC ID to update on blockchain (Required if action is APPROVED)
   new_vc_id?: string; // New VC ID (Required if action is APPROVED)
@@ -271,4 +267,24 @@ export interface ConfirmIssuerInitiatedVCsResponseDTO {
   message: string;
   confirmed_count: number;
   requested_count: number;
+}
+
+// VC Validation DTOs
+export interface ValidateVCDTO {
+  vc_json: any; // The complete VC JSON object
+  vc_hash: string; // Hash calculated by frontend (Keccak256)
+  holder_did: string; // DID of the institution uploading (for validation)
+}
+
+export interface VCValidationResult {
+  is_valid: boolean;
+  did_valid: boolean;
+  expiration_valid: boolean;
+  hash_valid: boolean;
+  errors: string[];
+  vc_id?: string;
+  holder_did?: string;
+  issuer_did?: string;
+  expired_at?: string | null;
+  is_expired?: boolean;
 }
