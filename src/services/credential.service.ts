@@ -618,9 +618,14 @@ class CredentialService {
       );
     }
 
-    // 4. Process based on action
+    // 3. HAPUS Validasi DIDs (sudah tidak diperlukan)
+    // if (revokeRequest.issuer_did !== issuer_did || revokeRequest.holder_did !== holder_did) {
+    //   throw new BadRequestError(`Issuer DID or Holder DID does not match the original revocation request.`);
+    // }
+
+    // 4. Process based on action (Logika ini tetap sama)
     if (action === RequestStatus.REJECTED) {
-      // Update DB status to REJECTED
+      // ... (logika REJECTED tidak berubah)
       const updatedRequest = await this.db.vCRevokeRequest.update({
         where: { id: request_id },
         data: { status: RequestStatus.REJECTED },
@@ -634,7 +639,7 @@ class CredentialService {
         status: updatedRequest.status,
       };
     } else if (action === RequestStatus.APPROVED) {
-      // Ensure vc_id is provided for approval
+      // ... (logika APPROVED tidak berubah)
       if (!vc_id) {
         throw new BadRequestError("vc_id is required when action is APPROVED.");
       }
