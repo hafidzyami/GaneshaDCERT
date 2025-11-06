@@ -77,6 +77,11 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_SERVER_URL: ${MINIO_PUBLIC_URL}
+      # Disable file-based credentials - force use env vars
+      MINIO_ROOT_USER_FILE: ""
+      MINIO_ROOT_PASSWORD_FILE: ""
+      MINIO_ACCESS_KEY_FILE: ""
+      MINIO_SECRET_KEY_FILE: ""
     volumes:
       - minio-data:/data
     command: server /data --console-address ":9001"
