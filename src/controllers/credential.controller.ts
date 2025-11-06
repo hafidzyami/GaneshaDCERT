@@ -239,11 +239,11 @@ export const revokeVC = asyncHandler(async (req: Request, res: Response) => {
     throw new ValidationError("Validation error", errors.array());
   }
 
-  // Cast body to the updated DTO
+  // Cast body to the updated DTO (RevokeVCDTO sekarang lebih ramping)
   const requestData: RevokeVCDTO = req.body;
 
   // Call the MODIFIED service function (which now processes the request)
-  const result = await CredentialService.revokeVC(requestData); // The service method name might be kept or changed
+  const result = await CredentialService.revokeVC(requestData); // Service akan diubah
 
   // Send success response
   return ResponseHelper.success(res, result, result.message);

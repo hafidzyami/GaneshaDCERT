@@ -344,20 +344,6 @@ export const revokeVCValidator = [
     .isUUID()
     .withMessage("Invalid request ID format (must be UUID)"),
 
-  body("issuer_did")
-    .trim()
-    .notEmpty()
-    .withMessage("Issuer DID is required")
-    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
-    .withMessage("Invalid issuer DID format"),
-
-  body("holder_did")
-    .trim()
-    .notEmpty()
-    .withMessage("Holder DID is required")
-    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
-    .withMessage("Invalid holder DID format"),
-
   body("action")
     .trim()
     .notEmpty()
