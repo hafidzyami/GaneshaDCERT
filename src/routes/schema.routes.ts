@@ -16,6 +16,7 @@ import {
 } from "../validators/schema.validator";
 import { uploadOptionalImage } from "../middlewares/upload.middleware";
 import { parseSchemaJson } from "../middlewares/parseMultipartJson.middleware";
+import { verifyDIDSignature } from "middlewares";
 
 const router: Router = express.Router();
 
@@ -433,7 +434,11 @@ router.get(
  *       500:
  *         description: Internal server error
  */
-router.get("/:id/version/:version/active", isSchemaActiveValidator, vcSchema.isSchemaActive);
+router.get(
+  "/:id/version/:version/active",
+  isSchemaActiveValidator,
+  vcSchema.isSchemaActive
+);
 
 // ============================================
 // 🔹 POST/PUT/PATCH/DELETE ENDPOINTS (Database + Blockchain)
@@ -652,7 +657,14 @@ router.get("/:id/version/:version/active", isSchemaActiveValidator, vcSchema.isS
  *       500:
  *         description: Internal server error
  */
-router.post("/", uploadOptionalImage, parseSchemaJson, createVCSchemaValidator, vcSchema.createVCSchema);
+router.post(
+  "/",
+  uploadOptionalImage,
+  parseSchemaJson,
+  verifyDIDSignature,
+  createVCSchemaValidator,
+  vcSchema.createVCSchema
+);
 
 /**
  * @swagger
@@ -785,7 +797,14 @@ router.post("/", uploadOptionalImage, parseSchemaJson, createVCSchemaValidator, 
  *       500:
  *         description: Internal server error
  */
-router.put("/:id", uploadOptionalImage, parseSchemaJson, updateVCSchemaValidator, vcSchema.updateVCSchema);
+router.put(
+  "/:id",
+  uploadOptionalImage,
+  parseSchemaJson,
+  verifyDIDSignature,
+  updateVCSchemaValidator,
+  vcSchema.updateVCSchema
+);
 
 /**
  * @swagger
@@ -855,6 +874,7 @@ router.put("/:id", uploadOptionalImage, parseSchemaJson, updateVCSchemaValidator
 router.patch(
   "/:id/version/:version/deactivate",
   deactivateVCSchemaValidator,
+  verifyDIDSignature,
   vcSchema.deactivateVCSchema
 );
 
@@ -925,6 +945,7 @@ router.patch(
 router.patch(
   "/:id/version/:version/reactivate",
   reactivateVCSchemaValidator,
+  verifyDIDSignature,
   vcSchema.reactivateVCSchema
 );
 
