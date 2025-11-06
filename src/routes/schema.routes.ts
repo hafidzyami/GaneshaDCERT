@@ -16,7 +16,7 @@ import {
 } from "../validators/schema.validator";
 import { uploadOptionalImage } from "../middlewares/upload.middleware";
 import { parseSchemaJson } from "../middlewares/parseMultipartJson.middleware";
-import { verifyDIDSignature } from "middlewares";
+import { verifyDIDSignature } from "../middlewares";
 
 const router: Router = express.Router();
 
