@@ -83,7 +83,7 @@ export const getCredentialRequestsByType = asyncHandler(async (req: Request, res
   const { type, issuer_did, holder_did } = req.query; 
 
   const result = await CredentialService.getCredentialRequestsByType(
-    type as RequestType,
+    type as (RequestType | "ALL"),
     issuer_did as string | undefined,
     holder_did as string | undefined // <-- Teruskan 'holder_did' ke service
   );

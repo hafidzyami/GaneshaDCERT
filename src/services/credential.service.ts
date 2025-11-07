@@ -105,62 +105,101 @@ class CredentialService {
    * Get credential requests by type
    */
   async getCredentialRequestsByType(
-    type: RequestType,
+    type: RequestType | "ALL", // <-- PERBAIKI BARIS INI
     issuerDid?: string,
     holderDid?: string
   ) {
-    // Added holderDid parameter
-
+    
     interface WhereClause {
-      issuer_did?: string;
-      holder_did?: string;
+        issuer_did?: string;
+        holder_did?: string;
     }
 
     const whereClause: WhereClause = {};
     if (issuerDid) {
       whereClause.issuer_did = issuerDid;
     }
-    if (holderDid) {
-      // Add holderDid to the where clause if present
+    if (holderDid) { 
       whereClause.holder_did = holderDid;
     }
 
     logger.info(`Fetching ${type} requests with filters:`, whereClause);
 
-    let requests;
+    let requests: any[]; // Ubah ke any[] untuk menampung agregat
 
-    switch (type) {
-      case RequestType.ISSUANCE:
-        requests = await this.db.vCIssuanceRequest.findMany({
+    // --- Handle "ALL" ---
+    if (type === "ALL") {
+      const [
+        issuanceRequests,
+        renewalRequests,
+        updateRequests,
+        revokeRequests,
+      ] = await Promise.all([
+        this.db.vCIssuanceRequest.findMany({
           where: whereClause,
           orderBy: { createdAt: "desc" },
-        });
-        break;
-
-      case RequestType.RENEWAL:
-        requests = await this.db.vCRenewalRequest.findMany({
+        }),
+        this.db.vCRenewalRequest.findMany({
           where: whereClause,
           orderBy: { createdAt: "desc" },
-        });
-        break;
-
-      case RequestType.UPDATE:
-        requests = await this.db.vCUpdateRequest.findMany({
+        }),
+        this.db.vCUpdateRequest.findMany({
           where: whereClause,
           orderBy: { createdAt: "desc" },
-        });
-        break;
-
-      case RequestType.REVOKE:
-        requests = await this.db.vCRevokeRequest.findMany({
+        }),
+        this.db.vCRevokeRequest.findMany({
           where: whereClause,
           orderBy: { createdAt: "desc" },
-        });
-        break;
+        }),
+      ]);
 
-      default:
-        throw new BadRequestError("Invalid request type specified.");
+      // Agregasi hasil
+      requests = [
+        ...issuanceRequests.map(req => ({ ...req, request_type: RequestType.ISSUANCE })),
+        ...renewalRequests.map(req => ({ ...req, request_type: RequestType.RENEWAL })),
+        ...updateRequests.map(req => ({ ...req, request_type: RequestType.UPDATE })),
+        ...revokeRequests.map(req => ({ ...req, request_type: RequestType.REVOKE })),
+      ];
+
+      // Urutkan berdasarkan tanggal (terbaru dulu)
+      requests.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      
+    } else {
+      // --- Logika switch yang sudah ada ---
+      switch (type) {
+        case RequestType.ISSUANCE:
+          requests = await this.db.vCIssuanceRequest.findMany({
+            where: whereClause, 
+            orderBy: { createdAt: "desc" },
+          });
+          break;
+
+        case RequestType.RENEWAL:
+          requests = await this.db.vCRenewalRequest.findMany({
+            where: whereClause, 
+            orderBy: { createdAt: "desc" },
+          });
+          break;
+
+        case RequestType.UPDATE:
+          requests = await this.db.vCUpdateRequest.findMany({
+            where: whereClause, 
+            orderBy: { createdAt: "desc" },
+          });
+          break;
+
+        case RequestType.REVOKE:
+          requests = await this.db.vCRevokeRequest.findMany({
+            where: whereClause, 
+            orderBy: { createdAt: "desc" },
+          });
+          break;
+
+        default:
+          throw new BadRequestError("Invalid request type specified.");
+      }
     }
+    // ------------------------------------
 
     logger.info(`Found ${requests.length} ${type} requests matching criteria.`);
 
