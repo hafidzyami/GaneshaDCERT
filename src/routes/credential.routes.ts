@@ -114,17 +114,19 @@ router.post(
  * /credentials/requests:
  *   get:
  *     summary: Get credential requests by type
- *     description: Retrieve credential requests filtered by type (ISSUANCE, RENEWAL, UPDATE, REVOCATION). Requires providing at least one of issuer_did OR holder_did for filtering.
+ *     description: Retrieve credential requests filtered by type (ISSUANCE, RENEWAL, UPDATE, REVOCATION, or ALL). Requires providing at least one of issuer_did OR holder_did for filtering.
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - InstitutionBearerAuth: []
  *     parameters:
  *       - in: query
  *         name: type
  *         required: true
  *         schema:
  *           type: string
- *           enum: [ISSUANCE, RENEWAL, UPDATE, REVOKE]
- *         description: Type of credential request.
+ *           enum: [ISSUANCE, RENEWAL, UPDATE, REVOKE, ALL]
+ *         description: Type of credential request. Use 'ALL' to retrieve all types.
  *       - in: query
  *         name: issuer_did
  *         required: false
@@ -154,29 +156,42 @@ router.post(
  *                   type: string
  *                   example: "Successfully retrieved ISSUANCE requests."
  *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: string
- *                         format: uuid
- *                       issuer_did:
- *                         type: string
- *                       holder_did:
- *                         type: string
- *                       status:
- *                         type: string
- *                       createdAt:
- *                         type: string
- *                         format: date-time
+ *                   type: object
+ *                   properties:
+ *                     count:
+ *                       type: integer
+ *                       example: 5
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           request_type:
+ *                             type: string
+ *                             enum: [ISSUANCE, RENEWAL, UPDATE, REVOKE]
+ *                             description: Only present if type=ALL
+ *                           issuer_did:
+ *                             type: string
+ *                           holder_did:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
  *       400:
  *         description: Invalid query parameters (e.g., missing type, invalid DID format, OR neither issuer_did nor holder_did provided).
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token).
  *       500:
  *         description: Internal server error.
  */
 router.get(
   "/requests",
+  verifyDIDSignature,
   getCredentialRequestsByTypeValidator,
   credentialController.getCredentialRequestsByType
 );

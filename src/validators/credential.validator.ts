@@ -151,6 +151,7 @@ export const getCredentialRequestsByTypeValidator: ValidationChain[] = [
       RequestType.RENEWAL,
       RequestType.UPDATE,
       RequestType.REVOKE,
+      "ALL",
     ])
     .withMessage(
       "Invalid request type query parameter. Must be ISSUANCE, RENEWAL, UPDATE, or REVOKE"
