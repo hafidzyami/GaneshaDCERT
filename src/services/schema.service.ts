@@ -478,8 +478,23 @@ class SchemaService {
       // 1. Get existing schema
       const existingSchema = await this.getLastSchemaById(id);
 
-      // Upload image to MinIO if provided
-      if (imageBuffer) {
+      // Image management logic
+      // Case 1: Keep existing background (image_link provided, no new file)
+      // Case 2: Change background (new file provided, no image_link)
+      // Case 3: Remove background (neither image_link nor file provided)
+      // NOTE: Old images are NOT deleted because they belong to previous versions
+
+      let finalImageLink: string | null = null;
+
+      if (data.image_link) {
+        // Case 1: Keep existing background
+        finalImageLink = data.image_link;
+        this.logSuccess(
+          "Keep existing schema background",
+          "Using provided image_link"
+        );
+      } else if (imageBuffer) {
+        // Case 2: Change background - upload new image (old image kept for previous version)
         try {
           uploadedImageFileName = `${uuidv4()}`;
           const uploadResult = await StorageService.uploadFile(
@@ -489,8 +504,9 @@ class SchemaService {
             imageMimeType
           );
           uploadedImageUrl = uploadResult.url;
+          finalImageLink = uploadedImageUrl;
           this.logSuccess(
-            "Upload schema background image",
+            "Upload new schema background image",
             uploadResult.filePath
           );
         } catch (uploadError: any) {
@@ -502,12 +518,14 @@ class SchemaService {
             `Image upload failed: ${uploadError.message}`
           );
         }
+      } else {
+        // Case 3: Remove background (old image kept for previous version)
+        finalImageLink = null;
+        this.logSuccess(
+          "Remove schema background",
+          "Setting image_link to null for new version"
+        );
       }
-
-      // Determine image_link for new version:
-      // - If new image uploaded: use new image URL
-      // - If no new image: set to null (don't keep old image_link)
-      const finalImageLink = uploadedImageUrl || null;
 
       // Determine expired_in for new version:
       // - If provided in data: use new value (even if 0 or null)

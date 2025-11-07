@@ -25,6 +25,7 @@ export interface CreateVCSchemaDTO {
 export interface UpdateVCSchemaDTO {
   schema: Prisma.JsonValue;
   expired_in?: number; // Expiration in years (0 = lifetime, null/undefined = not set)
+  image_link?: string | null; // Optional: keep existing background by providing old image_link
 }
 
 /**

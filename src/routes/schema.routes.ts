@@ -713,7 +713,22 @@ router.post(
  *               image:
  *                 type: string
  *                 format: binary
- *                 description: Optional new background image for the VC schema (JPEG, PNG, GIF, WEBP, max 5MB). If provided, replaces the existing image.
+ *                 description: |
+ *                   Optional new background image for the VC schema (JPEG, PNG, GIF, WEBP, max 5MB).
+ *                   **Image Management (for versioning):**
+ *                   - **Keep existing background:** Send only `image_link` (no `image` file) - reuses same image for new version
+ *                   - **Change background:** Send only `image` file (no `image_link`) - uploads new image for new version (old image kept for previous version)
+ *                   - **Remove background:** Send neither `image` nor `image_link` - new version has no background (old image kept for previous version)
+ *
+ *                   **Note:** Old images are preserved in MinIO because they belong to previous schema versions.
+ *               image_link:
+ *                 type: string
+ *                 format: uri
+ *                 description: |
+ *                   Optional URL of the existing background image to keep.
+ *                   Provide this (without sending `image` file) to keep the current background image.
+ *                   This helps manage MinIO storage efficiently by avoiding unnecessary uploads.
+ *                 example: "https://dev-dcert.ganeshait.com/dcert-storage/background/550e8400-e29b-41d4-a716-446655440000?X-Amz-Algorithm=..."
  *           examples:
  *             addHonorsField:
  *               summary: Add honors field to diploma schema
@@ -745,6 +760,14 @@ router.post(
  *                       type: string
  *                       enum: ["Cum Laude", "Magna Cum Laude", "Summa Cum Laude"]
  *                   required: ["studentName", "studentId", "major", "graduationYear"]
+ *               image_link:
+ *                 type: string
+ *                 format: uri
+ *                 description: |
+ *                   Optional URL of the existing background image to keep.
+ *                   **Note:** When using application/json (not multipart/form-data), you can only manage existing images via image_link.
+ *                   To upload a new image, use multipart/form-data instead.
+ *                 example: "https://dev-dcert.ganeshait.com/dcert-storage/background/550e8400-e29b-41d4-a716-446655440000?X-Amz-Algorithm=..."
  *           examples:
  *             addHonorsField:
  *               summary: Add honors field to diploma schema

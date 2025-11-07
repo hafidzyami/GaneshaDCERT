@@ -155,6 +155,12 @@ export const createVCSchemaValidator = [
   expiredInValidation,
 ];
 
+const imageLinkValidation = body("image_link")
+  .optional({ nullable: true })
+  .trim()
+  .isURL()
+  .withMessage("image_link must be a valid URL if provided");
+
 /**
  * Validator for PUT /schemas/:id
  */
@@ -162,6 +168,7 @@ export const updateVCSchemaValidator = [
   schemaIdValidation,
   schemaObjectValidation,
   expiredInValidation,
+  imageLinkValidation,
 ];
 
 /**

@@ -227,6 +227,7 @@ export const updateVCSchema = asyncHandler(
     const dto: UpdateVCSchemaDTO = {
       schema: req.body.schema,
       expired_in: req.body.expired_in, // Extracted from schema object by middleware
+      image_link: req.body.image_link, // Optional: to keep existing background
     };
 
     // Get optional image file from multer
