@@ -111,7 +111,7 @@ router.post(
 
 /**
  * @swagger
- * /credentials/get-requests:
+ * /credentials/requests:
  *   get:
  *     summary: Get credential requests by type
  *     description: Retrieve credential requests filtered by type (ISSUANCE, RENEWAL, UPDATE, REVOCATION). Requires providing at least one of issuer_did OR holder_did for filtering.
@@ -176,7 +176,7 @@ router.post(
  *         description: Internal server error.
  */
 router.get(
-  "/get-requests",
+  "/requests",
   getCredentialRequestsByTypeValidator,
   credentialController.getCredentialRequestsByType
 );
