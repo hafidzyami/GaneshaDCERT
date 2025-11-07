@@ -419,6 +419,26 @@ class CredentialService {
 
       logger.warn(`VC Issuance request rejected: ${request_id}`);
 
+      // Send push notification to holder
+      try {
+        await NotificationService.sendVCStatusNotification(
+          holder_did,
+          "Credential Request Declined",
+          "Your credential issuance request has been declined by the issuer.",
+          {
+            type: "VC_ISSUANCE_REJECTED",
+            request_id: request_id,
+            request_type: RequestType.ISSUANCE,
+          }
+        );
+        logger.success(`Push notification sent to holder: ${holder_did}`);
+      } catch (notifError: any) {
+        logger.error(
+          `Failed to send push notification to ${holder_did}:`,
+          notifError
+        );
+      }
+
       return {
         message: "Verifiable Credential issuance request rejected.",
         request_id: updatedRequest.id,
@@ -455,6 +475,60 @@ class CredentialService {
       }
 
       const vc_type = vcSchema.name;
+
+      // --- Check and Revoke Existing VCs with Same Criteria ---
+      try {
+        logger.info(
+          `Checking for existing VCs with holderDID: ${holder_did}, schemaID: ${schema_id}, schemaVersion: ${schema_version}`
+        );
+
+        const allVCs = await VCBlockchainService.getAllVCsFromBlockchain();
+
+        // Filter VCs that match the criteria and are still active
+        const existingVCs = allVCs.filter((vc: any) => {
+          return (
+            vc.holderDID === holder_did &&
+            vc.schemaID === schema_id &&
+            vc.schemaVersion === schema_version &&
+            vc.isActive === true
+          );
+        });
+
+        // Revoke each matching VC
+        if (existingVCs.length > 0) {
+          logger.info(
+            `Found ${existingVCs.length} existing active VC(s) to revoke`
+          );
+
+          for (const existingVC of existingVCs) {
+            try {
+              const revokeReceipt = await VCBlockchainService.revokeVCInBlockchain(
+                existingVC.id
+              );
+              logger.info(
+                `✅ Revoked existing VC ${existingVC.id}. TX: ${revokeReceipt.hash}`
+              );
+            } catch (revokeError: any) {
+              logger.error(
+                `Failed to revoke existing VC ${existingVC.id}:`,
+                revokeError
+              );
+              // Continue with other VCs even if one fails
+            }
+          }
+        } else {
+          logger.info(
+            `No existing active VCs found for this holder with the same schema`
+          );
+        }
+      } catch (checkError: any) {
+        logger.error(
+          "Error checking/revoking existing VCs (non-critical):",
+          checkError
+        );
+        // Don't fail the issuance if checking/revoking fails
+        // The new VC can still be issued
+      }
 
       // --- Blockchain Call (Directly, similar to did.service.ts) ---
       let blockchainReceipt: any;
@@ -509,8 +583,8 @@ class CredentialService {
         try {
           await NotificationService.sendVCStatusNotification(
             holder_did,
-            "New Credential Issued!",
-            "Your verifiable credential has been successfully issued and is ready to claim.",
+            "Credential Issued Successfully",
+            "Your verifiable credential has been issued and is now available for use.",
             {
               type: "VC_ISSUED",
               vc_response_id: newVCResponse.id,
@@ -633,6 +707,26 @@ class CredentialService {
 
       logger.warn(`VC Revocation request rejected: ${request_id}`);
 
+      // Send push notification to holder
+      try {
+        await NotificationService.sendVCStatusNotification(
+          holder_did,
+          "Revocation Request Declined",
+          "Your credential revocation request has been declined by the issuer.",
+          {
+            type: "VC_REVOKE_REJECTED",
+            request_id: request_id,
+            request_type: RequestType.REVOKE,
+          }
+        );
+        logger.success(`Push notification sent to holder: ${holder_did}`);
+      } catch (notifError: any) {
+        logger.error(
+          `Failed to send push notification to ${holder_did}:`,
+          notifError
+        );
+      }
+
       return {
         message: "Verifiable Credential revocation request rejected.",
         request_id: updatedRequest.id,
@@ -714,6 +808,27 @@ class CredentialService {
       );
       // ------------------------
 
+      // Send push notification to holder
+      try {
+        await NotificationService.sendVCStatusNotification(
+          holder_did,
+          "Credential Revoked",
+          "Your verifiable credential has been revoked and is no longer valid.",
+          {
+            type: "VC_REVOKED",
+            request_id: request_id,
+            request_type: RequestType.REVOKE,
+            transaction_hash: blockchainReceipt?.hash,
+          }
+        );
+        logger.success(`Push notification sent to holder: ${holder_did}`);
+      } catch (notifError: any) {
+        logger.error(
+          `Failed to send push notification to ${holder_did}:`,
+          notifError
+        );
+      }
+
       return {
         message:
           "Verifiable Credential revocation request approved and VC revoked on blockchain.",
@@ -763,6 +878,26 @@ class CredentialService {
       });
 
       logger.warn(`VC Renewal request rejected: ${request_id}`);
+
+      // Send push notification to holder
+      try {
+        await NotificationService.sendVCStatusNotification(
+          holder_did,
+          "Renewal Request Declined",
+          "Your credential renewal request has been declined by the issuer.",
+          {
+            type: "VC_RENEWAL_REJECTED",
+            request_id: request_id,
+            request_type: RequestType.RENEWAL,
+          }
+        );
+        logger.success(`Push notification sent to holder: ${holder_did}`);
+      } catch (notifError: any) {
+        logger.error(
+          `Failed to send push notification to ${holder_did}:`,
+          notifError
+        );
+      }
 
       return {
         message: "Verifiable Credential renewal request rejected.",
@@ -836,6 +971,28 @@ class CredentialService {
       });
       // ------------------------
 
+      // Send push notification to holder
+      try {
+        await NotificationService.sendVCStatusNotification(
+          holder_did,
+          "Credential Renewed Successfully",
+          "Your verifiable credential has been renewed and is ready for continued use.",
+          {
+            type: "VC_RENEWED",
+            vc_response_id: result.newVCResponse.id,
+            request_id: request_id,
+            request_type: RequestType.RENEWAL,
+            transaction_hash: blockchainReceipt?.hash,
+          }
+        );
+        logger.success(`Push notification sent to holder: ${holder_did}`);
+      } catch (notifError: any) {
+        logger.error(
+          `Failed to send push notification to ${holder_did}:`,
+          notifError
+        );
+      }
+
       return {
         message:
           "Verifiable Credential renewal request approved and VC renewed on blockchain.",
@@ -897,6 +1054,26 @@ class CredentialService {
       });
 
       logger.warn(`VC Update request rejected: ${request_id}`);
+
+      // Send push notification to holder
+      try {
+        await NotificationService.sendVCStatusNotification(
+          holder_did,
+          "Update Request Declined",
+          "Your credential update request has been declined by the issuer.",
+          {
+            type: "VC_UPDATE_REJECTED",
+            request_id: request_id,
+            request_type: RequestType.UPDATE,
+          }
+        );
+        logger.success(`Push notification sent to holder: ${holder_did}`);
+      } catch (notifError: any) {
+        logger.error(
+          `Failed to send push notification to ${holder_did}:`,
+          notifError
+        );
+      }
 
       return {
         message: "Verifiable Credential update request rejected.",
@@ -1009,6 +1186,28 @@ class CredentialService {
         return { updatedRequest, newVCResponse };
       });
       // ------------------------
+
+      // Send push notification to holder
+      try {
+        await NotificationService.sendVCStatusNotification(
+          holder_did,
+          "Credential Updated Successfully",
+          "Your verifiable credential has been updated with the latest information.",
+          {
+            type: "VC_UPDATED",
+            vc_response_id: result.newVCResponse.id,
+            request_id: request_id,
+            request_type: RequestType.UPDATE,
+            transaction_hash: blockchainReceipt?.hash,
+          }
+        );
+        logger.success(`Push notification sent to holder: ${holder_did}`);
+      } catch (notifError: any) {
+        logger.error(
+          `Failed to send push notification to ${holder_did}:`,
+          notifError
+        );
+      }
 
       return {
         message:
@@ -1436,13 +1635,11 @@ class CredentialService {
 
       // (Opsional) Kirim notifikasi push ke holder
       try {
-        // --- PERBAIKAN 3: Menambahkan argumen yang diperlukan ---
         await NotificationService.sendVCStatusNotification(
-          holder_did, // 1. holder_did
-          "Credential Baru Telah Diterbitkan!", // 2. title
-          "Sebuah kredensial baru telah diterbitkan untuk Anda dan siap untuk diklaim.", // 3. body
+          holder_did,
+          "New Credential Issued",
+          "A new verifiable credential has been issued to you and is ready to be claimed.",
           {
-            // 4. data (opsional)
             type: "VC_ISSUED_BY_ISSUER",
             record_id: newRecord.id,
             request_type: RequestType.ISSUANCE,
@@ -1584,8 +1781,8 @@ class CredentialService {
       try {
         await NotificationService.sendVCStatusNotification(
           holder_did,
-          "Kredensial Anda Telah Diperbarui!",
-          "Sebuah kredensial Anda telah diperbarui oleh penerbit dan siap untuk diklaim.",
+          "Credential Updated",
+          "Your verifiable credential has been updated by the issuer and is ready to be claimed.",
           {
             type: "VC_UPDATED_BY_ISSUER",
             record_id: newRecord.id,
@@ -1641,9 +1838,13 @@ class CredentialService {
     );
 
     // 2. Pre-Check: Pastikan VC ada dan aktif
+    let holder_did: string | undefined;
     try {
       const currentVcStatus =
         await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
+
+      // Simpan holder_did untuk notifikasi
+      holder_did = currentVcStatus.holderDID;
 
       // Periksa apakah issuer-nya cocok
       if (currentVcStatus.issuerDID !== issuer_did) {
@@ -1696,7 +1897,32 @@ class CredentialService {
       );
     }
 
-    // 4. Kirim respons
+    // 4. Kirim notifikasi push ke holder
+    if (holder_did) {
+      try {
+        await NotificationService.sendVCStatusNotification(
+          holder_did,
+          "Credential Revoked",
+          "Your verifiable credential has been revoked by the issuer and is no longer valid.",
+          {
+            type: "VC_REVOKED_BY_ISSUER",
+            vc_id: vc_id,
+            request_type: RequestType.REVOKE,
+            transaction_hash: blockchainReceipt?.hash,
+          }
+        );
+        logger.success(
+          `Push notification sent to holder (direct revoke): ${holder_did}`
+        );
+      } catch (notifError: any) {
+        logger.error(
+          `Failed to send push notification (direct revoke) to ${holder_did}:`,
+          notifError
+        );
+      }
+    }
+
+    // 5. Kirim respons
     return {
       message: "VC revoked directly on blockchain.",
       vc_id: vc_id,
@@ -1792,17 +2018,20 @@ class CredentialService {
         `New VC record (from renew) created in VCinitiatedByIssuer: ${newRecord.id}`
       );
 
-      // ... (Logika notifikasi push tetap sama) ...
+      // (Opsional) Kirim notifikasi push ke holder
       try {
         await NotificationService.sendVCStatusNotification(
           holder_did,
-          "Kredensial Anda Telah Diperbarui!",
-          "Sebuah kredensial Anda telah diperbarui (renew) oleh penerbit dan siap untuk diklaim.",
+          "Credential Renewed",
+          "Your verifiable credential has been renewed by the issuer and is ready to be claimed.",
           {
             type: "VC_RENEWED_BY_ISSUER",
             record_id: newRecord.id,
             request_type: RequestType.RENEWAL,
           }
+        );
+        logger.success(
+          `Push notification sent to holder (direct renew): ${holder_did}`
         );
       } catch (notifError: any) {
         logger.error(
