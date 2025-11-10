@@ -325,8 +325,6 @@ router.get("/:vpId", getVPValidator, vp.getVP);
  *       "VP not found or already verified".
  *     tags:
  *       - Verification & Presentation (VP) Flow
- *     security:
- *       - VerifierBearerAuth: []
  *     parameters:
  *       - in: path
  *         name: vpId
