@@ -71,10 +71,10 @@ const swaggerOptions: swaggerJsdoc.Options = {
         url: "https://api-dcert.ganeshait.com/api/v1",
         description: "Production Server",
       },
-      // {
-      //   url: "http://192.168.55.114:3069/api/v1",
-      //   description: "Local Server",
-      // },
+      {
+        url: "http://192.168.55.115:3069/api/v1",
+        description: "Local Server",
+      },
     ],
     components: {
       securitySchemes: {
@@ -91,6 +91,12 @@ const swaggerOptions: swaggerJsdoc.Options = {
           description: "Enter JWT token for admin authentication",
         },
         HolderBearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+          description: "Enter JWT token for holder authentication",
+        },
+        VerifierBearerAuth: {
           type: "http",
           scheme: "bearer",
           bearerFormat: "JWT",

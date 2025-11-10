@@ -814,3 +814,16 @@ export const validateVCValidator = [
     .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder_did format"),
 ];
+
+/**
+ * Validator for DELETE /credentials/file
+ * Validates the deletion of VC document file
+ */
+export const deleteVCDocumentValidator = [
+  body("file_id")
+    .trim()
+    .notEmpty()
+    .withMessage("file_id is required")
+    .isUUID()
+    .withMessage("file_id must be a valid UUID"),
+];

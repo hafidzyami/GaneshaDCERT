@@ -42,9 +42,13 @@ import {
   ConfirmIssuerInitiatedVCsResponseDTO,
   ValidateVCDTO,
   VCValidationResult,
+  UploadVCDocumentResponseDTO,
+  DeleteVCDocumentResponseDTO,
 } from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 import NotificationService from "./notification.service";
+import StorageService from "./storage.service";
+import { v4 as uuidv4 } from "uuid";
 
 /**
  * Credential Service with Dependency Injection
@@ -109,17 +113,16 @@ class CredentialService {
     issuerDid?: string,
     holderDid?: string
   ) {
-    
     interface WhereClause {
-        issuer_did?: string;
-        holder_did?: string;
+      issuer_did?: string;
+      holder_did?: string;
     }
 
     const whereClause: WhereClause = {};
     if (issuerDid) {
       whereClause.issuer_did = issuerDid;
     }
-    if (holderDid) { 
+    if (holderDid) {
       whereClause.holder_did = holderDid;
     }
 
@@ -155,42 +158,53 @@ class CredentialService {
 
       // Agregasi hasil
       requests = [
-        ...issuanceRequests.map(req => ({ ...req, request_type: RequestType.ISSUANCE })),
-        ...renewalRequests.map(req => ({ ...req, request_type: RequestType.RENEWAL })),
-        ...updateRequests.map(req => ({ ...req, request_type: RequestType.UPDATE })),
-        ...revokeRequests.map(req => ({ ...req, request_type: RequestType.REVOKE })),
+        ...issuanceRequests.map((req) => ({
+          ...req,
+          request_type: RequestType.ISSUANCE,
+        })),
+        ...renewalRequests.map((req) => ({
+          ...req,
+          request_type: RequestType.RENEWAL,
+        })),
+        ...updateRequests.map((req) => ({
+          ...req,
+          request_type: RequestType.UPDATE,
+        })),
+        ...revokeRequests.map((req) => ({
+          ...req,
+          request_type: RequestType.REVOKE,
+        })),
       ];
 
       // Urutkan berdasarkan tanggal (terbaru dulu)
       requests.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      
     } else {
       // --- Logika switch yang sudah ada ---
       switch (type) {
         case RequestType.ISSUANCE:
           requests = await this.db.vCIssuanceRequest.findMany({
-            where: whereClause, 
+            where: whereClause,
             orderBy: { createdAt: "desc" },
           });
           break;
 
         case RequestType.RENEWAL:
           requests = await this.db.vCRenewalRequest.findMany({
-            where: whereClause, 
+            where: whereClause,
             orderBy: { createdAt: "desc" },
           });
           break;
 
         case RequestType.UPDATE:
           requests = await this.db.vCUpdateRequest.findMany({
-            where: whereClause, 
+            where: whereClause,
             orderBy: { createdAt: "desc" },
           });
           break;
 
         case RequestType.REVOKE:
           requests = await this.db.vCRevokeRequest.findMany({
-            where: whereClause, 
+            where: whereClause,
             orderBy: { createdAt: "desc" },
           });
           break;
@@ -541,9 +555,8 @@ class CredentialService {
 
           for (const existingVC of existingVCs) {
             try {
-              const revokeReceipt = await VCBlockchainService.revokeVCInBlockchain(
-                existingVC.id
-              );
+              const revokeReceipt =
+                await VCBlockchainService.revokeVCInBlockchain(existingVC.id);
               logger.info(
                 `✅ Revoked existing VC ${existingVC.id}. TX: ${revokeReceipt.hash}`
               );
@@ -2353,6 +2366,109 @@ class CredentialService {
     }
 
     return result;
+  }
+
+  /**
+   * Upload VC document file to MinIO storage
+   * Generates UUID for filename and stores original filename in response
+   */
+  async uploadVCDocumentFile(
+    fileBuffer: Buffer,
+    originalFilename: string,
+    mimetype: string
+  ): Promise<UploadVCDocumentResponseDTO> {
+    try {
+      // Generate UUID for file
+      const fileId = uuidv4();
+
+      // Get file extension from original filename
+      const extension = originalFilename.includes(".")
+        ? originalFilename.substring(originalFilename.lastIndexOf("."))
+        : "";
+
+      // Create filename with UUID + extension
+      const uuidFilename = `${fileId}${extension}`;
+
+      logger.info(
+        `Uploading VC document file: ${originalFilename} as ${uuidFilename}`
+      );
+
+      // Upload to MinIO in vc-document directory with UUID filename
+      const uploadResult = await StorageService.uploadFile(
+        "vc-document",
+        uuidFilename,
+        fileBuffer,
+        mimetype
+      );
+
+      logger.success(
+        `VC document file uploaded successfully: ${uploadResult.filePath}`
+      );
+
+      return {
+        message: "VC document file uploaded successfully",
+        file_id: fileId,
+        file_url: uploadResult.url,
+        size: uploadResult.size,
+      };
+    } catch (error: any) {
+      logger.error(
+        `Failed to upload VC document file: ${originalFilename}`,
+        error
+      );
+      throw new BadRequestError(`File upload failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Delete VC document file from MinIO storage by file_id (UUID)
+   */
+  async deleteVCDocumentFile(
+    fileId: string
+  ): Promise<DeleteVCDocumentResponseDTO> {
+    try {
+      logger.info(`Deleting VC document file with ID: ${fileId}`);
+
+      // List files in vc-document directory to find file with matching UUID
+      const files = await StorageService.listFiles("vc-document");
+
+      // Find file that starts with the UUID
+      // Extract filename without directory path before checking
+      const targetFile = files.find((file) => {
+        const filename = file.name.split('/').pop() || file.name;
+        return filename.startsWith(fileId);
+      });
+
+      if (!targetFile) {
+        throw new NotFoundError(`File with ID ${fileId} not found in storage`);
+      }
+
+      // Extract filename without directory path
+      const filename = targetFile.name.split('/').pop() || targetFile.name;
+
+      // Delete from MinIO in vc-document directory
+      await StorageService.deleteFile("vc-document", filename);
+
+      logger.success(
+        `VC document file deleted successfully: ${targetFile.name}`
+      );
+
+      return {
+        message: "VC document file deleted successfully",
+        file_id: fileId,
+      };
+    } catch (error: any) {
+      logger.error(
+        `Failed to delete VC document file with ID: ${fileId}`,
+        error
+      );
+
+      if (error instanceof NotFoundError) {
+        throw error;
+      }
+
+      throw new BadRequestError(`File deletion failed: ${error.message}`);
+    }
   }
 }
 

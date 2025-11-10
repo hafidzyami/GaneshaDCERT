@@ -185,9 +185,9 @@ export interface IssuerIssueVCDTO {
 export interface IssuerUpdateVCDTO {
   issuer_did: string;
   holder_did: string;
-  
+
   old_vc_id: string; // ID VC lama yang akan diganti
-  
+
   // Detail VC baru
   new_vc_id: string; // ID unik untuk VC yang baru (diperbarui)
   vc_type: string;
@@ -216,7 +216,7 @@ export interface IssuerIssueVCResponseDTO {
 
 export interface IssuerRevokeVCDTO {
   issuer_did: string; // DID Issuer yang diautentikasi
-  vc_id: string;      // ID VC yang akan dicabut
+  vc_id: string; // ID VC yang akan dicabut
 }
 
 // Response body DTO for POST /credentials/issuer/revoke-vc
@@ -230,9 +230,9 @@ export interface IssuerRevokeVCResponseDTO {
 export interface IssuerRenewVCDTO {
   issuer_did: string;
   holder_did: string;
-  vc_id: string;          // ID dari VC on-chain yang akan diperbarui (renew)
+  vc_id: string; // ID dari VC on-chain yang akan diperbarui (renew)
   encrypted_body: string; // Body VC BARU (sudah dienkripsi) yang akan disimpan di DB
-  expiredAt: string;      // <-- TAMBAHKAN BARIS INI
+  expiredAt: string; // <-- TAMBAHKAN BARIS INI
 }
 
 // Response body DTO for POST /credentials/issuer/renew-vc
@@ -287,4 +287,26 @@ export interface VCValidationResult {
   issuer_did?: string;
   expired_at?: string | null;
   is_expired?: boolean;
+}
+
+/**
+ * DTO for uploading VC document file
+ */
+export interface UploadVCDocumentResponseDTO {
+  message: string;
+  file_id: string; // UUID generated for the file
+  file_url: string;
+  size: number;
+}
+
+/**
+ * DTO for deleting VC document file
+ */
+export interface DeleteVCDocumentDTO {
+  file_id: string; // UUID of the file to delete
+}
+
+export interface DeleteVCDocumentResponseDTO {
+  message: string;
+  file_id: string;
 }

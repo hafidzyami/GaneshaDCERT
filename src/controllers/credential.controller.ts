@@ -575,3 +575,49 @@ export const validateVC = asyncHandler(async (req: Request, res: Response) => {
 
   return ResponseHelper.success(res, result, message);
 });
+
+/**
+ * Upload VC document file
+ * POST /credentials/file
+ */
+export const uploadVCDocumentFile = asyncHandler(
+  async (req: Request, res: Response) => {
+    // Check if file exists
+    if (!req.file) {
+      throw new BadRequestError("File is required");
+    }
+
+    const fileBuffer = req.file.buffer;
+    const filename = req.file.originalname;
+    const mimetype = req.file.mimetype;
+
+    // Call service to upload file
+    const result = await CredentialService.uploadVCDocumentFile(
+      fileBuffer,
+      filename,
+      mimetype
+    );
+
+    return ResponseHelper.success(res, result, result.message);
+  }
+);
+
+/**
+ * Delete VC document file
+ * DELETE /credentials/file
+ */
+export const deleteVCDocumentFile = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { file_id } = req.body;
+
+    // Call service to delete file
+    const result = await CredentialService.deleteVCDocumentFile(file_id);
+
+    return ResponseHelper.success(res, result, result.message);
+  }
+);

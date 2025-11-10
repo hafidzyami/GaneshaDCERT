@@ -1,6 +1,7 @@
 import express, { Router } from "express";
 import * as credentialController from "../controllers/credential.controller";
 import { verifyDIDSignature, adminAuthMiddleware } from "../middlewares";
+import { uploadSingleFile } from "../middlewares/upload.middleware";
 import {
   requestCredentialValidator,
   getCredentialRequestsByTypeValidator,
@@ -27,6 +28,7 @@ import {
   claimIssuerInitiatedVCsBatchValidator,
   confirmIssuerInitiatedVCsBatchValidator,
   validateVCValidator,
+  deleteVCDocumentValidator,
 } from "../validators/credential.validator";
 
 const router: Router = express.Router();
@@ -2022,6 +2024,136 @@ router.post(
   verifyDIDSignature,
   validateVCValidator,
   credentialController.validateVC
+);
+
+/**
+ * @swagger
+ * /credentials/file:
+ *   post:
+ *     summary: Upload VC document file
+ *     description: |
+ *       Upload a VC document file to temporary storage (MinIO).
+ *       This endpoint is used when an issuer wants to attach a physical document to a VC.
+ *
+ *       **Workflow:**
+ *       1. Holder requests VC issuance
+ *       2. Issuer fills VC and uploads VC document file (this endpoint)
+ *       3. Issuer calls issue-vc API
+ *       4. Holder claims VC
+ *       5. Holder downloads VC and calls delete endpoint to clean up storage
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: VC document file (any format, max 10MB)
+ *     responses:
+ *       200:
+ *         description: File uploaded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC document file uploaded successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     file_id:
+ *                       type: string
+ *                       format: uuid
+ *                       description: UUID generated for the file (use this for deletion)
+ *                       example: "550e8400-e29b-41d4-a716-446655440000"
+ *                     file_url:
+ *                       type: string
+ *                       example: "https://dev-dcert.ganeshait.com/dcert-storage/vc-document/550e8400-e29b-41d4-a716-446655440000.pdf?X-Amz-Algorithm=..."
+ *                     size:
+ *                       type: number
+ *                       example: 1024567
+ *       400:
+ *         description: Validation error or file upload failed
+ *       500:
+ *         description: Internal server error
+ *   delete:
+ *     summary: Delete VC document file
+ *     description: |
+ *       Delete a VC document file from temporary storage (MinIO) using the file_id (UUID).
+ *       This endpoint should be called after the holder has downloaded the VC and saved it locally.
+ *       Use the `file_id` returned from the upload endpoint.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file_id
+ *             properties:
+ *               file_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: UUID of the file to delete (from upload response)
+ *                 example: "550e8400-e29b-41d4-a716-446655440000"
+ *     responses:
+ *       200:
+ *         description: File deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC document file deleted successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     file_id:
+ *                       type: string
+ *                       format: uuid
+ *                       example: "550e8400-e29b-41d4-a716-446655440000"
+ *       400:
+ *         description: Validation error or file deletion failed
+ *       404:
+ *         description: File not found
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  "/file",
+  verifyDIDSignature,
+  uploadSingleFile,
+  credentialController.uploadVCDocumentFile
+);
+
+router.delete(
+  "/file",
+  verifyDIDSignature,
+  deleteVCDocumentValidator,
+  credentialController.deleteVCDocumentFile
 );
 
 export default router;
