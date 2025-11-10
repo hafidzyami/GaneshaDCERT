@@ -42,6 +42,7 @@ model VCIssuanceRequest {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
+  vc_id          String?
 }
 
 model VCRenewalRequest {
@@ -53,6 +54,7 @@ model VCRenewalRequest {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
+  vc_id          String?
 }
 
 model VCUpdateRequest {
@@ -64,6 +66,7 @@ model VCUpdateRequest {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
+  vc_id          String?
 }
 
 model VCRevokeRequest {
@@ -75,6 +78,22 @@ model VCRevokeRequest {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
+  vc_id          String?
+}
+
+model IssuerActionLog {
+  id               String      @id @default(uuid())
+  action_type      RequestType // Tipe aksi: ISSUANCE, RENEWAL, UPDATE, or REVOKE
+  issuer_did       String
+  holder_did       String?     // Opsional, karena revoke mungkin tidak selalu memiliki info ini
+  vc_id            String      // VC ID yang terdampak (VC lama untuk UPDATE/RENEW, VC baru untuk ISSUE)
+  new_vc_id        String?     // Hanya diisi untuk aksi UPDATE
+  transaction_hash String?     // Hash transaksi blockchain
+  createdAt        DateTime    @default(now())
+
+  @@index([issuer_did])
+  @@index([holder_did])
+  @@index([action_type])
 }
 
 model VPSharing {
