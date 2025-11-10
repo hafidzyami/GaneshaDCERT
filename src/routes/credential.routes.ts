@@ -1310,12 +1310,12 @@ router.post(
  * @swagger
  * /credentials/issuer-history:
  *   get:
- *     summary: Get all requests for an issuer (Aggregated)
- *     description: Retrieve all ISSUANCE, RENEWAL, UPDATE, and REVOKE requests associated with a specific issuer DID. This endpoint is protected and requires issuer authentication.
+ *     summary: Get all requests and actions for an issuer (Aggregated History)
+ *     description: Retrieve a combined history of all actions performed by an issuer. This includes (1) Holder-Initiated Requests (ISSUANCE, RENEWAL, UPDATE, REVOKE) from holders, and (2) Issuer-Initiated Actions (direct issue, update, renew, revoke) logged in IssuerActionLog. Filtering by status PENDING/APPROVED/REJECTED will ONLY return Holder-Initiated Requests. Using status=ALL or omitting it will return BOTH Requests and direct Actions.
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
  *     security:
- *       - HolderBearerAuth: []
+ *       - InstitutionBearerAuth: []
  *     parameters:
  *       - in: query
  *         name: issuer_did
@@ -1330,10 +1330,10 @@ router.post(
  *         schema:
  *           type: string
  *           enum: [PENDING, APPROVED, REJECTED, ALL]
- *         description: Filter requests by status (e.g., PENDING). Omitting this or using 'ALL' will return all statuses.
+ *         description: Filter requests by status. Use 'ALL' or omit to include direct actions.
  *     responses:
  *       200:
- *         description: A list of all requests for the issuer, sorted by date (newest first).
+ *         description: A combined list of all requests and actions, sorted by date (newest first).
  *         content:
  *           application/json:
  *             schema:
@@ -1344,13 +1344,13 @@ router.post(
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: "Successfully retrieved 25 requests for issuer."
+ *                   example: "Successfully retrieved 30 total history items for issuer."
  *                 data:
  *                   type: object
  *                   properties:
  *                     count:
  *                       type: integer
- *                       example: 25
+ *                       example: 30
  *                     requests:
  *                       type: array
  *                       items:
@@ -1359,6 +1359,10 @@ router.post(
  *                           id:
  *                             type: string
  *                             format: uuid
+ *                           history_type:
+ *                             type: string
+ *                             enum: [REQUEST, DIRECT_ACTION]
+ *                             description: REQUEST (from holder) or DIRECT_ACTION (by issuer).
  *                           request_type:
  *                             type: string
  *                             enum: [ISSUANCE, RENEWAL, UPDATE, REVOKE]
@@ -1366,11 +1370,28 @@ router.post(
  *                             type: string
  *                           holder_did:
  *                             type: string
+ *                             nullable: true
  *                           status:
  *                             type: string
  *                             enum: [PENDING, APPROVED, REJECTED]
+ *                             nullable: true
+ *                             description: Null for DIRECT_ACTION types.
  *                           encrypted_body:
  *                             type: string
+ *                             nullable: true
+ *                             description: Null for DIRECT_ACTION types.
+ *                           vc_id:
+ *                             type: string
+ *                             nullable: true
+ *                             description: The associated VC ID. For UPDATE, this is the OLD VC ID (if DIRECT_ACTION) or NEW VC ID (if REQUEST).
+ *                           new_vc_id:
+ *                             type: string
+ *                             nullable: true
+ *                             description: The NEW VC ID (only for UPDATE type from DIRECT_ACTION).
+ *                           transaction_hash:
+ *                             type: string
+ *                             nullable: true
+ *                             description: Blockchain TX hash (only for DIRECT_ACTION types).
  *                           createdAt:
  *                             type: string
  *                             format: date-time

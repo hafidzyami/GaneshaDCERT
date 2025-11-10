@@ -156,12 +156,16 @@ export interface ProcessUpdateVCResponseDTO {
 
 export interface AggregatedRequestDTO {
   id: string;
-  request_type: RequestType; // ISSUANCE, RENEWAL, UPDATE, or REVOKE
+  request_type: RequestType;
   issuer_did: string;
-  holder_did: string;
-  status: RequestStatus;
-  encrypted_body: string;
+  holder_did: string | null; // Dibuat nullable (karena log mungkin tidak punya holder_did)
+  status: RequestStatus | null; // Dibuat nullable (karena log tidak punya status PENDING/APPROVED)
+  encrypted_body: string | null; // Dibuat nullable (karena log tidak punya encrypted_body)
+  vc_id: string | null;
+  new_vc_id: string | null; // Ditambahkan untuk log UPDATE
+  transaction_hash: string | null; // Ditambahkan untuk log
   createdAt: Date;
+  history_type: 'REQUEST' | 'DIRECT_ACTION'; // Field baru untuk membedakan
 }
 
 // Response DTO for the new endpoint

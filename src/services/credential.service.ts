@@ -615,7 +615,10 @@ class CredentialService {
       try {
         updatedRequest = await this.db.vCIssuanceRequest.update({
           where: { id: request_id },
-          data: { status: RequestStatus.APPROVED },
+          data: { 
+            status: RequestStatus.APPROVED,
+            vc_id: vc_id // <-- SIMPAN VC_ID DI SINI
+          },
         });
 
         newVCResponse = await this.db.vCResponse.create({
@@ -744,11 +747,6 @@ class CredentialService {
       );
     }
 
-    // 3. HAPUS Validasi DIDs (sudah tidak diperlukan)
-    // if (revokeRequest.issuer_did !== issuer_did || revokeRequest.holder_did !== holder_did) {
-    //   throw new BadRequestError(`Issuer DID or Holder DID does not match the original revocation request.`);
-    // }
-
     // 4. Process based on action (Logika ini tetap sama)
     if (action === RequestStatus.REJECTED) {
       // ... (logika REJECTED tidak berubah)
@@ -805,7 +803,10 @@ class CredentialService {
           await this.db.vCRevokeRequest.update({
             // Still update request status
             where: { id: request_id },
-            data: { status: RequestStatus.APPROVED },
+            data: { 
+              status: RequestStatus.APPROVED,
+              vc_id: vc_id // <-- SIMPAN VC_ID DI SINI
+            },
           });
           throw new BadRequestError(
             `VC with ID ${vc_id} is already revoked on the blockchain.`
@@ -853,7 +854,10 @@ class CredentialService {
       // --- Update DB Status ---
       const updatedRequest = await this.db.vCRevokeRequest.update({
         where: { id: request_id },
-        data: { status: RequestStatus.APPROVED },
+        data: { 
+          status: RequestStatus.APPROVED,
+          vc_id: vc_id // <-- SIMPAN VC_ID DI SINI
+        },
       });
       logger.info(
         `Revocation request ${request_id} status updated to APPROVED in DB.`
@@ -1002,7 +1006,10 @@ class CredentialService {
         // Update renewal request status
         const updatedRequest = await tx.vCRenewalRequest.update({
           where: { id: request_id },
-          data: { status: RequestStatus.APPROVED },
+          data: { 
+            status: RequestStatus.APPROVED,
+            vc_id: vc_id // <-- SIMPAN VC_ID DI SINI
+          },
         });
 
         // Create a new VCResponse record for the renewal
@@ -1218,7 +1225,10 @@ class CredentialService {
         // Update update request status
         const updatedRequest = await tx.vCUpdateRequest.update({
           where: { id: request_id },
-          data: { status: RequestStatus.APPROVED },
+          data: { 
+            status: RequestStatus.APPROVED,
+            vc_id: new_vc_id // <-- SIMPAN NEW_VC_ID DI SINI
+          },
         });
 
         // Create a new VCResponse record for the update
@@ -1527,86 +1537,126 @@ class CredentialService {
 
   async getAllIssuerRequests(
     issuerDid: string,
-    status?: RequestStatus | "ALL" // Perbarui tipe untuk menyertakan 'ALL'
+    status?: RequestStatus | 'ALL'
   ): Promise<AllIssuerRequestsResponseDTO> {
-    logger.info(
-      `Fetching all requests for issuer: ${issuerDid}, status: ${
-        status || "ALL"
-      }`
-    );
+    
+    logger.info(`Fetching all requests for issuer: ${issuerDid}, status: ${status || 'ALL'}`);
 
-    // Tentukan klausa 'where'
-    const whereClause: { issuer_did: string; status?: RequestStatus } = {
+    // 1. Definisikan klausa 'where' untuk tabel Request
+    const whereClauseRequests: { issuer_did: string; status?: RequestStatus } = {
       issuer_did: issuerDid,
     };
 
-    // Hanya tambahkan filter status jika ada DAN bukan 'ALL'
-    if (status && status !== "ALL") {
-      whereClause.status = status;
+    if (status && status !== 'ALL') {
+      whereClauseRequests.status = status;
     }
 
-    //
-    const selectFields = {
+    const selectFieldsRequests = {
       id: true,
       issuer_did: true,
       holder_did: true,
       status: true,
       encrypted_body: true,
+      vc_id: true,
+      createdAt: true,
+    };
+    
+    // 2. Definisikan klausa 'where' untuk tabel Log
+    const whereClauseLogs: { issuer_did: string } = {
+      issuer_did: issuerDid,
+    };
+    
+    const selectFieldsLogs = {
+      id: true,
+      action_type: true,
+      issuer_did: true,
+      holder_did: true,
+      vc_id: true,
+      new_vc_id: true,
+      transaction_hash: true,
       createdAt: true,
     };
 
-    // ... (sisa fungsi tetap sama: Promise.all, map, sort) ...
-    //
-    const [issuanceRequests, renewalRequests, updateRequests, revokeRequests] =
-      await Promise.all([
-        this.db.vCIssuanceRequest.findMany({
-          where: whereClause,
-          select: selectFields,
-        }),
-        this.db.vCRenewalRequest.findMany({
-          where: whereClause,
-          select: selectFields,
-        }),
-        this.db.vCUpdateRequest.findMany({
-          where: whereClause,
-          select: selectFields,
-        }),
-        this.db.vCRevokeRequest.findMany({
-          where: whereClause,
-          select: selectFields,
-        }),
-      ]);
+    // 3. Ambil data dari 5 tabel secara paralel
+    const [
+      issuanceRequests,
+      renewalRequests,
+      updateRequests,
+      revokeRequests,
+      issuerLogs
+    ] = await Promise.all([
+      this.db.vCIssuanceRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
+      this.db.vCRenewalRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
+      this.db.vCUpdateRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
+      this.db.vCRevokeRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
+      
+      (status === 'ALL' || !status)
+        ? this.db.issuerActionLog.findMany({ where: whereClauseLogs, select: selectFieldsLogs, orderBy: { createdAt: "desc" } })
+        : Promise.resolve([]) 
+    ]);
 
-    const aggregatedRequests: AggregatedRequestDTO[] = [
-      ...issuanceRequests.map((req) => ({
-        ...req,
-        request_type: RequestType.ISSUANCE,
+    // 4. Petakan (map) hasil query Request ke DTO
+    //    --- PERUBAHAN UTAMA ADA DI SINI: "as 'REQUEST'" ---
+    const mappedRequests: AggregatedRequestDTO[] = [
+      ...issuanceRequests.map(req => ({ 
+        ...req, 
+        request_type: RequestType.ISSUANCE, 
+        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
+        new_vc_id: null,
+        transaction_hash: null,
+        holder_did: req.holder_did 
       })),
-      ...renewalRequests.map((req) => ({
-        ...req,
-        request_type: RequestType.RENEWAL,
+      ...renewalRequests.map(req => ({ 
+        ...req, 
+        request_type: RequestType.RENEWAL, 
+        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
+        new_vc_id: null,
+        transaction_hash: null,
+        holder_did: req.holder_did
       })),
-      ...updateRequests.map((req) => ({
-        ...req,
-        request_type: RequestType.UPDATE,
+      ...updateRequests.map(req => ({ 
+        ...req, 
+        request_type: RequestType.UPDATE, 
+        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
+        new_vc_id: req.vc_id, 
+        transaction_hash: null,
+        holder_did: req.holder_did
       })),
-      ...revokeRequests.map((req) => ({
-        ...req,
-        request_type: RequestType.REVOKE,
+      ...revokeRequests.map(req => ({ 
+        ...req, 
+        request_type: RequestType.REVOKE, 
+        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
+        new_vc_id: null,
+        transaction_hash: null,
+        holder_did: req.holder_did
       })),
     ];
 
-    aggregatedRequests.sort(
-      (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
-    );
+    // 5. Petakan (map) hasil query Log ke DTO
+    //    --- "as 'DIRECT_ACTION'" ---
+    const mappedLogs: AggregatedRequestDTO[] = issuerLogs.map(log => ({
+      id: log.id,
+      request_type: log.action_type,
+      issuer_did: log.issuer_did,
+      holder_did: log.holder_did,
+      status: null, 
+      encrypted_body: null, 
+      vc_id: log.vc_id,
+      new_vc_id: log.new_vc_id,
+      transaction_hash: log.transaction_hash,
+      createdAt: log.createdAt,
+      history_type: 'DIRECT_ACTION' as 'DIRECT_ACTION', // <-- PERBAIKAN
+    }));
 
-    logger.success(
-      `Found ${aggregatedRequests.length} total requests for issuer: ${issuerDid}`
-    );
+    // 6. Gabungkan dan urutkan
+    const allHistory = [...mappedRequests, ...mappedLogs];
+    allHistory.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    
+    logger.success(`Found ${allHistory.length} total history items for issuer: ${issuerDid}`);
 
     return {
-      count: aggregatedRequests.length,
-      requests: aggregatedRequests,
+      count: allHistory.length,
+      requests: allHistory,
     };
   }
 
@@ -1679,6 +1729,15 @@ class CredentialService {
           status: VCResponseStatus.PENDING, // Status default PENDING
           // processing_at, createdAt, updatedAt, deletedAt akan di-handle oleh Prisma
         },
+      });
+      await this.db.issuerActionLog.create({
+        data: {
+          action_type: RequestType.ISSUANCE,
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          vc_id: vc_id, // Log VC ID yang baru
+          transaction_hash: blockchainReceipt.hash,
+        }
       });
 
       logger.success(
@@ -1825,6 +1884,17 @@ class CredentialService {
         },
       });
 
+      await this.db.issuerActionLog.create({
+        data: {
+          action_type: RequestType.UPDATE,
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          vc_id: old_vc_id,     // Log VC ID lama
+          new_vc_id: new_vc_id, // Log VC ID baru
+          transaction_hash: blockchainReceipt.hash,
+        }
+      });
+
       logger.success(
         `New VC record (from update) created in VCinitiatedByIssuer: ${newRecord.id}`
       );
@@ -1882,7 +1952,6 @@ class CredentialService {
         "Authenticated DID does not match the issuer_did in the request body."
       );
     }
-
     const { issuer_did, vc_id } = data;
 
     logger.info(
@@ -1972,6 +2041,30 @@ class CredentialService {
           notifError
         );
       }
+      try {
+      await this.db.issuerActionLog.create({
+        data: {
+          action_type: RequestType.REVOKE,
+          issuer_did: issuer_did,
+          holder_did: holder_did, // Gunakan holder_did yang didapat dari pre-check
+          vc_id: vc_id,
+          transaction_hash: blockchainReceipt.hash,
+        }
+      });
+      logger.success(`Issuer action REVOKE logged for VC: ${vc_id}`);
+    } catch (logError: any) {
+      // Jangan gagalkan seluruh proses jika logging error
+      logger.error(`Failed to log issuer action for REVOKE VC ${vc_id}:`, logError);
+    }
+    // --- AKHIR LOGGING AUDIT ---
+
+    // 5. Kirim respons
+    return {
+      message: "VC revoked directly on blockchain.",
+      vc_id: vc_id,
+      transaction_hash: blockchainReceipt.hash,
+      block_number: blockchainReceipt.blockNumber,
+    };
     }
 
     // 5. Kirim respons
@@ -2064,6 +2157,15 @@ class CredentialService {
           encrypted_body: encrypted_body,
           status: VCResponseStatus.PENDING,
         },
+      });
+      await this.db.issuerActionLog.create({
+        data: {
+          action_type: RequestType.RENEWAL,
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          vc_id: vc_id, // Log VC ID yang diperbarui
+          transaction_hash: blockchainReceipt.hash,
+        }
       });
 
       logger.success(
