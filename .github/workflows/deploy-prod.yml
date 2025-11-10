@@ -31,6 +31,8 @@ jobs:
             cd /var/www/ganeshadcert-prod
 
             # 1. Hentikan semua container yang sedang berjalan
+            # IMPORTANT: Using 'docker compose down' WITHOUT '-v' flag to preserve volumes
+            # This ensures MinIO data (and other persistent data) is NOT deleted
             docker compose down
 
             # 2. Hapus semua image yang tidak terpakai untuk memastikan build fresh

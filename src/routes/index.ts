@@ -10,3 +10,4 @@ export { default as credentialRoutes } from './credential.routes';
 export { default as schemaRoutes } from './schema.routes';
 export { default as presentationRoutes } from './presentation.routes';
 export { default as notificationRoutes } from './notification.routes';
+export { default as institutionRoutes } from './institution.routes';

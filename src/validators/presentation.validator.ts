@@ -9,14 +9,14 @@ export const requestVPValidator = [
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder DID format"),
 
   body("verifier_did")
     .trim()
     .notEmpty()
     .withMessage("Verifier DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid verifier DID format"),
 
   body("list_schema_id")
@@ -39,21 +39,31 @@ export const getVPRequestDetailsValidator = [
 ];
 
 export const storeVPValidator = [
-  body("holder_did")
-    .trim()
-    .notEmpty()
-    .withMessage("Holder DID is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
-    .withMessage("Invalid holder DID format"),
-
   body("vp")
     .notEmpty()
     .withMessage("VP is required")
-    .isObject()
-    .withMessage("VP must be an object"),
+    .isString()
+    .withMessage("VP must be a string")
+    .custom((value) => {
+      try {
+        JSON.parse(value);
+        return true;
+      } catch (error) {
+        throw new Error("VP must be a valid JSON string");
+      }
+    }),
 ];
 
 export const getVPValidator = [
+  param("vpId")
+    .trim()
+    .notEmpty()
+    .withMessage("VP ID is required")
+    .isUUID()
+    .withMessage("Invalid VP ID format"),
+];
+
+export const verifyVPValidator = [
   param("vpId")
     .trim()
     .notEmpty()

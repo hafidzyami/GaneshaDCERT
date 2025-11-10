@@ -3,6 +3,7 @@ import { validationResult } from "express-validator";
 import { AdminAuthService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler } from "../middlewares";
+import { ResponseHelper } from "../utils/helpers";
 
 /**
  * Admin Login Controller
@@ -17,11 +18,7 @@ export const adminLogin = asyncHandler(async (req: Request, res: Response) => {
 
   const result = await AdminAuthService.login(email, password);
 
-  res.status(200).json({
-    success: true,
-    message: "Login berhasil",
-    data: result,
-  });
+  return ResponseHelper.success(res, result, "Login berhasil");
 });
 
 /**
@@ -32,10 +29,7 @@ export const getAdminProfile = asyncHandler(async (req: Request, res: Response) 
 
   const admin = await AdminAuthService.getProfile(adminId);
 
-  res.status(200).json({
-    success: true,
-    data: admin,
-  });
+  return ResponseHelper.success(res, admin, "Admin profile retrieved successfully");
 });
 
 /**
@@ -51,11 +45,7 @@ export const createAdmin = asyncHandler(async (req: Request, res: Response) => {
 
   const admin = await AdminAuthService.createAdmin({ email, password, name });
 
-  res.status(201).json({
-    success: true,
-    message: "Admin berhasil dibuat",
-    data: admin,
-  });
+  return ResponseHelper.created(res, admin, "Admin berhasil dibuat");
 });
 
 /**
@@ -72,8 +62,5 @@ export const changePassword = asyncHandler(async (req: Request, res: Response) =
 
   await AdminAuthService.changePassword(adminId, currentPassword, newPassword);
 
-  res.status(200).json({
-    success: true,
-    message: "Password berhasil diubah",
-  });
+  return ResponseHelper.success(res, null, "Password berhasil diubah");
 });

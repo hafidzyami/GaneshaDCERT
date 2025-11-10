@@ -27,6 +27,12 @@ enum PaymentStatus {
   CANCELED
 }
 
+enum VCResponseStatus {
+  PENDING
+  PROCESSING
+  CLAIMED
+}
+
 model VCIssuanceRequest {
   id             String        @id @default(uuid())
   encrypted_body String
@@ -36,6 +42,7 @@ model VCIssuanceRequest {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
+  vc_id          String?
 }
 
 model VCRenewalRequest {
@@ -47,6 +54,7 @@ model VCRenewalRequest {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
+  vc_id          String?
 }
 
 model VCUpdateRequest {
@@ -58,6 +66,7 @@ model VCUpdateRequest {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
+  vc_id          String?
 }
 
 model VCRevokeRequest {
@@ -69,12 +78,30 @@ model VCRevokeRequest {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
+  vc_id          String?
+}
+
+model IssuerActionLog {
+  id               String      @id @default(uuid())
+  action_type      RequestType // Tipe aksi: ISSUANCE, RENEWAL, UPDATE, or REVOKE
+  issuer_did       String
+  holder_did       String?     // Opsional, karena revoke mungkin tidak selalu memiliki info ini
+  vc_id            String      // VC ID yang terdampak (VC lama untuk UPDATE/RENEW, VC baru untuk ISSUE)
+  new_vc_id        String?     // Hanya diisi untuk aksi UPDATE
+  transaction_hash String?     // Hash transaksi blockchain
+  createdAt        DateTime    @default(now())
+
+  @@index([issuer_did])
+  @@index([holder_did])
+  @@index([action_type])
 }
 
 model VPSharing {
-  id         String @id @default(uuid())
+  id         String    @id @default(uuid())
   holder_did String
-  VP         Json
+  VP         String
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
 }
 
 model VCResponse {
@@ -85,6 +112,11 @@ model VCResponse {
   issuer_did     String
   holder_did     String
   encrypted_body String
+  status         VCResponseStatus @default(PENDING)
+  processing_at  DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @default(now()) @updatedAt
+  deletedAt      DateTime?
 }
 
 model Order {
@@ -124,42 +156,49 @@ model PaymentMethod {
 }
 
 model InstitutionRegistration {
-  id           String        @id @default(uuid())
-  email        String        @unique
-  name         String
-  phone        String
-  country      String
-  website      String
-  address      String
-  status       RequestStatus @default(PENDING)
-  approvedBy   String?
-  approvedAt   DateTime?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  magicLinks   MagicLink[]
+  id         String        @id @default(uuid())
+  email      String        @unique
+  name       String
+  phone      String
+  country    String
+  website    String
+  address    String
+  status     RequestStatus @default(PENDING)
+  approvedBy String?
+  approvedAt DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  magicLinks MagicLink[]
 }
 
 model VCSchema {
-  id         String   @id @default(uuid())
-  name       String
-  schema     Json
-  issuer_did String
-  version    Int      @default(1)
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          String   @default(uuid())
+  version     Int      @default(1)
+  name        String
+  schema      Json
+  issuer_did  String
+  issuer_name String?
+  image_link  String?
+  expired_in  Int?     // Expiration in years (0 = lifetime, null = not set)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@id([id, version])
+  @@index([id])
+  @@index([version])
+  @@index([isActive])
 }
 
-
 model MagicLink {
-  id             String                   @id @default(uuid())
-  institutionId  String
-  token          String                   @unique
-  expiresAt      DateTime
-  used           Boolean                  @default(false)
-  usedAt         DateTime?
-  createdAt      DateTime                 @default(now())
-  institution    InstitutionRegistration  @relation(fields: [institutionId], references: [id])
+  id            String                  @id @default(uuid())
+  institutionId String
+  token         String                  @unique
+  expiresAt     DateTime
+  used          Boolean                 @default(false)
+  usedAt        DateTime?
+  createdAt     DateTime                @default(now())
+  institution   InstitutionRegistration @relation(fields: [institutionId], references: [id])
 
   @@index([token])
   @@index([institutionId])
@@ -173,7 +212,7 @@ model VPRequest {
   createdAt      DateTime @default(now())
 }
 
-model Admin{
+model Admin {
   id        String   @id @default(uuid())
   email     String   @unique
   password  String
@@ -193,4 +232,30 @@ model PushToken {
 
   @@index([holder_did])
   @@index([token])
+}
+
+model Institution {
+  id        String   @id @default(uuid())
+  did       String   @unique
+  email     String   @unique
+  name      String
+  phone     String
+  country   String
+  website   String
+  address   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VCinitiatedByIssuer {
+  id             String           @id @default(uuid())
+  request_type   RequestType
+  issuer_did     String
+  holder_did     String
+  encrypted_body String
+  status         VCResponseStatus @default(PENDING)
+  processing_at  DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
 }

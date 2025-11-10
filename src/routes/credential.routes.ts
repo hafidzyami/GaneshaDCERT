@@ -1,17 +1,32 @@
 import express, { Router } from "express";
 import * as credentialController from "../controllers/credential.controller";
+import { verifyDIDSignature, adminAuthMiddleware } from "../middlewares";
 import {
   requestCredentialValidator,
   getCredentialRequestsByTypeValidator,
-  processCredentialResponseValidator,
   getHolderVCsValidator,
   credentialUpdateRequestValidator,
   credentialRenewalRequestValidator,
   credentialRevocationRequestValidator,
-  addVCStatusBlockValidator,
   getVCStatusValidator,
   processIssuanceVCValidator,
-  getHolderCredentialsValidator, revokeVCValidator
+  getHolderCredentialsValidator,
+  revokeVCValidator,
+  processRenewalVCValidator,
+  processUpdateVCValidator,
+  claimVCValidator,
+  confirmVCValidator,
+  claimVCsBatchValidator,
+  issuerRenewVCValidator,
+  confirmVCsBatchValidator,
+  issuerRevokeVCValidator,
+  resetStuckVCsValidator,
+  getAllIssuerRequestsValidator,
+  issuerIssueVCValidator,
+  issuerUpdateVCValidator,
+  claimIssuerInitiatedVCsBatchValidator,
+  confirmIssuerInitiatedVCsBatchValidator,
+  validateVCValidator,
 } from "../validators/credential.validator";
 
 const router: Router = express.Router();
@@ -31,6 +46,8 @@ const router: Router = express.Router();
  *     description: Holder requests a new Verifiable Credential from an issuer
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -44,17 +61,17 @@ const router: Router = express.Router();
  *             properties:
  *               holder_did:
  *                 type: string
- *                 example: did:ganesha:0x1234567890abcdef
+ *                 example: did:dcert:1234567890abcdef
  *                 description: DID of the credential holder
  *               issuer_did:
  *                 type: string
- *                 example: did:ganesha:0xabcdef1234567890
+ *                 example: did:dcert:string_hash
  *                 description: DID of the credential issuer
  *               encrypted_body:
  *                 type: string
  *                 format: uuid
  *                 description: ID of the VC schema to use
- *               
+ *
  *     responses:
  *       201:
  *         description: Credential request created successfully
@@ -85,38 +102,45 @@ const router: Router = express.Router();
  *       500:
  *         description: Internal server error
  */
-router.post("/requests", requestCredentialValidator, credentialController.requestCredential);
+router.post(
+  "/requests",
+  verifyDIDSignature,
+  requestCredentialValidator,
+  credentialController.requestCredential
+);
 
 /**
  * @swagger
- * /credentials/get-requests:
+ * /credentials/requests:
  *   get:
  *     summary: Get credential requests by type
- *     description: Retrieve credential requests filtered by type (ISSUANCE, RENEWAL, UPDATE, REVOCATION). Requires providing at least one of issuer_did OR holder_did for filtering.
+ *     description: Retrieve credential requests filtered by type (ISSUANCE, RENEWAL, UPDATE, REVOCATION, or ALL). Requires providing at least one of issuer_did OR holder_did for filtering.
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - InstitutionBearerAuth: []
  *     parameters:
  *       - in: query
  *         name: type
  *         required: true
  *         schema:
  *           type: string
- *           enum: [ISSUANCE, RENEWAL, UPDATE, REVOCATION]
- *         description: Type of credential request.
+ *           enum: [ISSUANCE, RENEWAL, UPDATE, REVOKE, ALL]
+ *         description: Type of credential request. Use 'ALL' to retrieve all types.
  *       - in: query
  *         name: issuer_did
  *         required: false
  *         schema:
  *           type: string
  *         description: Filter by issuer DID. (Either this or holder_did is required).
- *         example: did:ganesha:0xabcdef1234567890
+ *         example: did:dcert:abcdef1234567890
  *       - in: query
  *         name: holder_did
  *         required: false
  *         schema:
  *           type: string
  *         description: Filter by holder DID. (Either this or issuer_did is required).
- *         example: did:ganesha:0x1234567890abcdef
+ *         example: did:dcert:1234567890abcdef
  *     responses:
  *       200:
  *         description: List of credential requests retrieved successfully.
@@ -132,91 +156,45 @@ router.post("/requests", requestCredentialValidator, credentialController.reques
  *                   type: string
  *                   example: "Successfully retrieved ISSUANCE requests."
  *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: string
- *                         format: uuid
- *                       issuer_did:
- *                         type: string
- *                       holder_did:
- *                         type: string
- *                       status:
- *                         type: string
- *                       createdAt:
- *                         type: string
- *                         format: date-time
+ *                   type: object
+ *                   properties:
+ *                     count:
+ *                       type: integer
+ *                       example: 5
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           request_type:
+ *                             type: string
+ *                             enum: [ISSUANCE, RENEWAL, UPDATE, REVOKE]
+ *                             description: Only present if type=ALL
+ *                           issuer_did:
+ *                             type: string
+ *                           holder_did:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
  *       400:
  *         description: Invalid query parameters (e.g., missing type, invalid DID format, OR neither issuer_did nor holder_did provided).
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token).
  *       500:
  *         description: Internal server error.
  */
-router.get("/get-requests", getCredentialRequestsByTypeValidator, credentialController.getCredentialRequestsByType);
-
-/**
- * @swagger
- * /credentials/response:
- *   post:
- *     summary: Process credential response
- *     description: Issuer approves or rejects credential request (issuance, renewal, or update)
- *     tags:
- *       - Verifiable Credential (VC) Lifecycle
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - request_id
- *               - action
- *             properties:
- *               request_id:
- *                 type: string
- *                 format: uuid
- *                 description: ID of the credential request
- *               action:
- *                 type: string
- *                 enum: [APPROVE, REJECT]
- *                 description: Action to take on the request
- *               rejection_reason:
- *                 type: string
- *                 description: Required if action is REJECT
- *               credential_data:
- *                 type: object
- *                 description: Credential data if approving
- *     responses:
- *       200:
- *         description: Credential response processed successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: Kredensial berhasil diterbitkan
- *                 data:
- *                   type: object
- *                   properties:
- *                     vc_id:
- *                       type: string
- *                       format: uuid
- *                     status:
- *                       type: string
- *       400:
- *         description: Invalid request or validation error
- *       404:
- *         description: Request not found
- *       500:
- *         description: Internal server error
- */
-router.post("/response", processCredentialResponseValidator, credentialController.processCredentialResponse);
+router.get(
+  "/requests",
+  verifyDIDSignature,
+  getCredentialRequestsByTypeValidator,
+  credentialController.getCredentialRequestsByType
+);
 
 /**
  * @swagger
@@ -272,16 +250,22 @@ router.post("/response", processCredentialResponseValidator, credentialControlle
  *       500:
  *         description: Internal server error
  */
-router.get("/credentials", getHolderVCsValidator, credentialController.getHolderVCs);
+router.get(
+  "/credentials",
+  getHolderVCsValidator,
+  credentialController.getHolderVCs
+);
 
 /**
  * @swagger
  * /credentials/update-request:
  *   post:
- *     summary: Request credential update
- *     description: Holder requests to update an existing Verifiable Credential
+ *     summary: Request credential update (Creates DB record)
+ *     description: Submits a request to update an existing Verifiable Credential. This creates a record in the database with PENDING status. The actual update processing happens separately.
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -289,22 +273,24 @@ router.get("/credentials", getHolderVCsValidator, credentialController.getHolder
  *           schema:
  *             type: object
  *             required:
- *               - vc_id
- *               - updated_data
+ *               - issuer_did
+ *               - holder_did
+ *               - encrypted_body
  *             properties:
- *               vc_id:
+ *               issuer_did:
  *                 type: string
- *                 format: uuid
- *                 description: ID of the credential to update
- *               updated_data:
- *                 type: object
- *                 description: Updated credential data
- *               reason:
+ *                 example: did:ganesha:0xabcdef1234567890
+ *                 description: DID of the credential issuer.
+ *               holder_did:
  *                 type: string
- *                 description: Reason for update request
+ *                 example: did:ganesha:0x1234567890abcdef
+ *                 description: DID of the credential holder.
+ *               encrypted_body:
+ *                 type: string
+ *                 description: Encrypted payload containing the VC ID to update and the new data/reason.
  *     responses:
  *       201:
- *         description: Update request created successfully
+ *         description: Update request created successfully in the database.
  *         content:
  *           application/json:
  *             schema:
@@ -315,30 +301,36 @@ router.get("/credentials", getHolderVCsValidator, credentialController.getHolder
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: Permintaan update kredensial berhasil dibuat
+ *                   example: "Verifiable Credential update request submitted successfully."
  *                 data:
  *                   type: object
  *                   properties:
  *                     request_id:
  *                       type: string
  *                       format: uuid
+ *                       description: The ID of the newly created VCUpdateRequest record.
  *       400:
- *         description: Invalid request data
- *       404:
- *         description: Credential not found
+ *         description: Validation error (e.g., missing fields, invalid DIDs).
  *       500:
- *         description: Internal server error
+ *         description: Internal server error.
  */
-router.post("/update-request", credentialUpdateRequestValidator, credentialController.requestCredentialUpdate);
+router.post(
+  "/update-request",
+  verifyDIDSignature,
+  credentialUpdateRequestValidator,
+  credentialController.requestCredentialUpdate
+);
 
 /**
  * @swagger
- * /credentials/renew-requests:
+ * /credentials/renew-request:
  *   post:
- *     summary: Request credential renewal
- *     description: Holder requests to renew an expiring or expired Verifiable Credential
+ *     summary: Request credential renewal (Creates DB record)
+ *     description: Submits a request to renew an expiring or expired Verifiable Credential. This creates a record in the database with PENDING status. The actual renewal processing happens separately.
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -346,18 +338,24 @@ router.post("/update-request", credentialUpdateRequestValidator, credentialContr
  *           schema:
  *             type: object
  *             required:
- *               - vc_id
+ *               - issuer_did
+ *               - holder_did
+ *               - encrypted_body
  *             properties:
- *               vc_id:
+ *               issuer_did:
  *                 type: string
- *                 format: uuid
- *                 description: ID of the credential to renew
- *               reason:
+ *                 example: did:ganesha:0xabcdef1234567890
+ *                 description: DID of the credential issuer.
+ *               holder_did:
  *                 type: string
- *                 description: Reason for renewal request
+ *                 example: did:ganesha:0x1234567890abcdef
+ *                 description: DID of the credential holder.
+ *               encrypted_body:
+ *                 type: string
+ *                 description: Encrypted payload containing the VC ID to renew and any required justification/data.
  *     responses:
  *       201:
- *         description: Renewal request created successfully
+ *         description: Renewal request created successfully in the database.
  *         content:
  *           application/json:
  *             schema:
@@ -368,32 +366,36 @@ router.post("/update-request", credentialUpdateRequestValidator, credentialContr
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: Permintaan renewal kredensial berhasil dibuat
+ *                   example: "Verifiable Credential renewal request submitted successfully."
  *                 data:
  *                   type: object
  *                   properties:
  *                     request_id:
  *                       type: string
  *                       format: uuid
+ *                       description: The ID of the newly created VCRenewalRequest record.
  *       400:
- *         description: Invalid request data
- *       404:
- *         description: Credential not found
+ *         description: Validation error (e.g., missing fields, invalid DIDs).
  *       500:
- *         description: Internal server error
+ *         description: Internal server error.
  */
-router.post("/renew-requests", credentialRenewalRequestValidator, credentialController.requestCredentialRenewal);
+router.post(
+  "/renew-request",
+  verifyDIDSignature,
+  credentialRenewalRequestValidator,
+  credentialController.requestCredentialRenewal
+);
 
 /**
  * @swagger
  * /credentials/revoke-request:
  *   post:
- *     summary: Request credential revocation (Creates DB record) - REVERTED
+ *     summary: Request credential revocation (Creates DB record)
  *     description: Submits a request to revoke a Verifiable Credential. This creates a record in the database with PENDING status. The actual revocation processing happens separately (e.g., via an admin/issuer action).
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
  *     security:
- *       - bearerAuth: []
+ *       - HolderBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -410,11 +412,11 @@ router.post("/renew-requests", credentialRenewalRequestValidator, credentialCont
  *                 description: Encrypted payload containing the VC ID to revoke and the reason.
  *               issuer_did:
  *                 type: string
- *                 example: did:ganesha:0xabcdef1234567890
+ *                 example: did:dcert:abcdef1234567890
  *                 description: DID of the entity requesting revocation (usually issuer or holder).
  *               holder_did:
  *                 type: string
- *                 example: did:ganesha:0x1234567890abcdef
+ *                 example: did:dcert:1234567890abcdef
  *                 description: DID of the credential holder.
  *     responses:
  *       201:
@@ -442,66 +444,12 @@ router.post("/renew-requests", credentialRenewalRequestValidator, credentialCont
  *       500:
  *         description: Internal server error.
  */
-router.post("/revoke-request", credentialRevocationRequestValidator, credentialController.requestCredentialRevocation);
-
-/**
- * @swagger
- * /credentials/add-status-block:
- *   post:
- *     summary: Add VC status block to blockchain
- *     description: Record credential status change on the blockchain
- *     tags:
- *       - Verifiable Credential (VC) Lifecycle
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - vc_id
- *               - status
- *             properties:
- *               vc_id:
- *                 type: string
- *                 format: uuid
- *                 description: ID of the credential
- *               status:
- *                 type: string
- *                 enum: [ACTIVE, REVOKED, SUSPENDED, EXPIRED]
- *                 description: New status of the credential
- *               reason:
- *                 type: string
- *                 description: Reason for status change
- *     responses:
- *       201:
- *         description: Status block added to blockchain successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: Status block berhasil ditambahkan ke blockchain
- *                 data:
- *                   type: object
- *                   properties:
- *                     block_hash:
- *                       type: string
- *                     block_index:
- *                       type: integer
- *       400:
- *         description: Invalid request data
- *       404:
- *         description: Credential not found
- *       500:
- *         description: Internal server error
- */
-router.post("/add-status-block", addVCStatusBlockValidator, credentialController.addVCStatusBlock);
+router.post(
+  "/revoke-request",
+  verifyDIDSignature,
+  credentialRevocationRequestValidator,
+  credentialController.requestCredentialRevocation
+);
 
 /**
  * @swagger
@@ -560,7 +508,11 @@ router.post("/add-status-block", addVCStatusBlockValidator, credentialController
  *       500:
  *         description: Internal server error or blockchain communication error.
  */
-router.get("/:vcId/status", getVCStatusValidator, credentialController.getVCStatus);
+router.get(
+  "/:vcId/status",
+  getVCStatusValidator,
+  credentialController.getVCStatus
+);
 
 /**
  * @swagger
@@ -570,6 +522,7 @@ router.get("/:vcId/status", getVCStatusValidator, credentialController.getVCStat
  *     description: Issuer approves or rejects a specific credential issuance request, issuing it on the blockchain if approved.
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
+ *
  *     requestBody:
  *       required: true
  *       content:
@@ -578,38 +531,19 @@ router.get("/:vcId/status", getVCStatusValidator, credentialController.getVCStat
  *             type: object
  *             required:
  *               - request_id
- *               - issuer_did
- *               - holder_did
  *               - action
- *               - request_type
  *             properties:
  *               request_id:
  *                 type: string
  *                 format: uuid
  *                 description: ID of the VCIssuanceRequest to process
- *               issuer_did:
- *                 type: string
- *                 example: did:ganesha:0xabcdef1234567890
- *                 description: DID of the issuer (must match original request)
- *               holder_did:
- *                 type: string
- *                 example: did:ganesha:0x1234567890abcdef
- *                 description: DID of the holder (must match original request)
  *               action:
  *                 type: string
  *                 enum: [APPROVED, REJECTED]
  *                 description: Action to take (APPROVED or REJECTED)
- *               request_type:
- *                 type: string
- *                 enum: [ISSUANCE]
- *                 description: Must be ISSUANCE for this endpoint
  *               vc_id:
  *                 type: string
  *                 description: Unique ID for the new VC (Required if action is APPROVED)
- *               vc_type:
- *                 type: string
- *                 example: UniversityDegreeCredential
- *                 description: Type/Name of the VC (Required if action is APPROVED)
  *               schema_id:
  *                 type: string
  *                 format: uuid
@@ -620,11 +554,16 @@ router.get("/:vcId/status", getVCStatusValidator, credentialController.getVCStat
  *                 description: Version of the schema used (Required if action is APPROVED)
  *               vc_hash:
  *                 type: string
- *                 example: "0x..."
+ *                 example: "string_hash"
  *                 description: Hash of the VC data (Required if action is APPROVED)
  *               encrypted_body:
  *                 type: string
  *                 description: Encrypted VC data (Required if action is APPROVED)
+ *               expired_at:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2030-11-04T10:00:00.000Z"
+ *                 description: Expiration date and time for the VC (ISO 8601 format, Required only if action is APPROVED)
  *     responses:
  *       200:
  *         description: Request processed successfully (Approved or Rejected)
@@ -660,20 +599,22 @@ router.get("/:vcId/status", getVCStatusValidator, credentialController.getVCStat
  *                       description: Blockchain block number (Present only if action was APPROVED)
  *       400:
  *         description: Validation error, mismatched DIDs, request already processed, missing required fields for approval, or blockchain error.
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token).
  *       404:
  *         description: Issuance request not found.
  *       500:
  *         description: Internal server error.
  */
 router.post(
-  "/issue-vc", // The new endpoint path
-  processIssuanceVCValidator, // Apply the specific validator
-  credentialController.processIssuanceVC // Use the specific controller function
+  "/issue-vc",
+  processIssuanceVCValidator,
+  credentialController.processIssuanceVC
 );
 
 /**
  * @swagger
- * /credentials/get-credentials-from-db:
+ * /credentials/credentials-from-db:
  *   get:
  *     summary: Get holder's issued VCs from DB
  *     description: Retrieve all Verifiable Credentials issued to a specific holder from the database
@@ -685,7 +626,7 @@ router.post(
  *         required: true
  *         schema:
  *           type: string
- *         example: did:ganesha:0x1234567890abcdef
+ *         example: did:dcert:string_hashf
  *         description: DID of the credential holder whose VCs are requested
  *     responses:
  *       200:
@@ -700,7 +641,7 @@ router.post(
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: "Successfully retrieved 2 credentials for holder did:ganesha:..."
+ *                   example: "Successfully retrieved 2 credentials for holder did:dcert:..."
  *                 data:
  *                   type: array
  *                   items:
@@ -731,9 +672,9 @@ router.post(
  *         description: Internal server error.
  */
 router.get(
-  "/get-credentials-from-db", 
-  getHolderCredentialsValidator, 
-  credentialController.getHolderCredentialsFromDB 
+  "/credentials-from-db",
+  getHolderCredentialsValidator,
+  credentialController.getHolderCredentialsFromDB
 );
 
 /**
@@ -741,11 +682,11 @@ router.get(
  * /credentials/revoke-vc:
  *   post:
  *     summary: Process VC revocation request (Approve/Reject)
- *     description: Processes a request stored in the VCRevokeRequest table. If approved, verifies the target VC on-chain and then revokes it on the blockchain, updating the request status in the DB. If rejected, only updates the request status in the DB.
+ *     description: Processes a request stored in the VCRevokeRequest table. If approved, verifies the target VC on-chain and then revokes it on the blockchain, updating the request status in the DB. If rejected, only updates the request status in the DB. The issuer_did and holder_did are automatically retrieved from the database using request_id.
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
  *     security:
- *       - bearerAuth: []
+ *       - InstitutionBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -754,20 +695,12 @@ router.get(
  *             type: object
  *             required:
  *               - request_id
- *               - issuer_did
- *               - holder_did
  *               - action
  *             properties:
  *               request_id:
  *                 type: string
  *                 format: uuid
  *                 description: The ID of the VCRevokeRequest record to process.
- *               issuer_did:
- *                 type: string
- *                 description: Issuer DID (must match the one in the VCRevokeRequest).
- *               holder_did:
- *                 type: string
- *                 description: Holder DID (must match the one in the VCRevokeRequest).
  *               action:
  *                 type: string
  *                 enum: [APPROVED, REJECTED]
@@ -805,16 +738,1311 @@ router.get(
  *                       type: integer
  *                       description: Blockchain block number (Present only if action was APPROVED and blockchain call succeeded).
  *       400:
- *         description: Validation error, mismatched DIDs, request already processed, VC already revoked on chain, missing vc_id for approval, or blockchain error.
+ *         description: Validation error, request already processed, VC already revoked on chain, missing vc_id for approval, or blockchain error.
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token).
  *       404:
  *         description: Revocation request (request_id) not found in DB, or target VC (vc_id) not found on blockchain when approving.
  *       500:
  *         description: Internal server error.
  */
 router.post(
-  "/revoke-vc", // The new POST endpoint path
-  revokeVCValidator, // Apply the validator
-  credentialController.revokeVC // Use the specific controller function
+  "/revoke-vc",
+  verifyDIDSignature,
+  revokeVCValidator,
+  credentialController.revokeVC
+);
+
+/**
+ * @swagger
+ * /credentials/renew-vc:
+ *   post:
+ *     summary: Process VC renewal request (Approve/Reject)
+ *     description: Processes a request stored in the VCRenewalRequest table. If approved, calls the renew function on the blockchain for the specified VC, updates the request status, and stores the new encrypted VC body in VCResponse. If rejected, only updates the request status. The issuer_did and holder_did are automatically retrieved from the database using request_id.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - InstitutionBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - request_id
+ *               - action
+ *             properties:
+ *               request_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: The ID of the VCRenewalRequest record to process.
+ *               action:
+ *                 type: string
+ *                 enum: [APPROVED, REJECTED]
+ *                 description: Action to take on the renewal request.
+ *               vc_id:
+ *                 type: string
+ *                 description: The ID of the actual VC to renew on the blockchain (Required only if action is APPROVED).
+ *               encrypted_body:
+ *                 type: string
+ *                 description: The new encrypted body of the renewed VC (Required only if action is APPROVED).
+ *               expired_at:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2030-11-04T10:00:00.000Z"
+ *                 description: Expiration date and time for the renewed VC (ISO 8601 format, Required only if action is APPROVED).
+ *     responses:
+ *       200:
+ *         description: Renewal request processed successfully (Approved or Rejected).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Verifiable Credential renewal request approved and VC renewed on blockchain."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     request_id:
+ *                       type: string
+ *                       format: uuid
+ *                     status:
+ *                       type: string
+ *                       enum: [APPROVED, REJECTED]
+ *                     vc_response_id:
+ *                       type: string
+ *                       format: uuid
+ *                       description: The ID of the new VCResponse record created upon approval.
+ *                     transaction_hash:
+ *                       type: string
+ *                       description: Blockchain transaction hash (Present only if action was APPROVED and blockchain call succeeded).
+ *                     block_number:
+ *                       type: integer
+ *                       description: Blockchain block number (Present only if action was APPROVED and blockchain call succeeded).
+ *       400:
+ *         description: Validation error, mismatched DIDs, request already processed, missing vc_id/encrypted_body for approval, or blockchain error.
+ *       404:
+ *         description: Renewal request (request_id) not found in DB, or target VC (vc_id) not found on blockchain when approving.
+ *       500:
+ *         description: Internal server error.
+ */
+router.post(
+  "/renew-vc", // The new POST endpoint path
+  processRenewalVCValidator, // Apply the validator
+  credentialController.processRenewalVC // Use the specific controller function
+);
+
+/**
+ * @swagger
+ * /credentials/update-vc:
+ *   post:
+ *     summary: Process VC update request (Approve/Reject)
+ *     description: Processes a request stored in the VCUpdateRequest table. If approved, checks the target VC on-chain, updates its hash on the blockchain, updates the request status, and stores the new encrypted VC body in VCResponse. If rejected, only updates the request status. The issuer_did and holder_did are automatically retrieved from the database using request_id.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - InstitutionBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - request_id
+ *               - action
+ *             properties:
+ *               request_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: The ID of the VCUpdateRequest record to process.
+ *               action:
+ *                 type: string
+ *                 enum: [APPROVED, REJECTED]
+ *                 description: Action to take on the update request.
+ *               vc_id:
+ *                 type: string
+ *                 description: The ID of the original VC to update on the blockchain (Required only if action is APPROVED).
+ *               new_vc_id:
+ *                 type: string
+ *                 description: The new ID for the updated VC (Required only if action is APPROVED).
+ *               vc_type:
+ *                 type: string
+ *                 example: UniversityDegreeCredential
+ *                 description: Type/Name of the VC (Required only if action is APPROVED).
+ *               schema_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the schema used (Required only if action is APPROVED).
+ *               schema_version:
+ *                 type: integer
+ *                 example: 1
+ *                 description: Version of the schema used (Required only if action is APPROVED).
+ *               new_vc_hash:
+ *                 type: string
+ *                 example: "0x..."
+ *                 description: The new hash representing the updated VC data (Required only if action is APPROVED).
+ *               encrypted_body:
+ *                 type: string
+ *                 description: The new encrypted body of the updated VC (Required only if action is APPROVED).
+ *               expired_at:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2030-11-04T10:00:00.000Z"
+ *                 description: Expiration date and time for the updated VC (ISO 8601 format, Required only if action is APPROVED).
+ *     responses:
+ *       200:
+ *         description: Update request processed successfully (Approved or Rejected).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Verifiable Credential update request approved and VC updated on blockchain."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     request_id:
+ *                       type: string
+ *                       format: uuid
+ *                     status:
+ *                       type: string
+ *                       enum: [APPROVED, REJECTED]
+ *                     vc_response_id:
+ *                       type: string
+ *                       format: uuid
+ *                       description: The ID of the new VCResponse record created upon approval.
+ *                     transaction_hash:
+ *                       type: string
+ *                       description: Blockchain transaction hash (Present only if action was APPROVED and blockchain call succeeded).
+ *                     block_number:
+ *                       type: integer
+ *                       description: Blockchain block number (Present only if action was APPROVED and blockchain call succeeded).
+ *       400:
+ *         description: Validation error, mismatched DIDs, request already processed, VC inactive/revoked on chain, missing required fields for approval, or blockchain error.
+ *       404:
+ *         description: Update request (request_id) not found in DB, or target VC (vc_id) not found on blockchain when approving.
+ *       500:
+ *         description: Internal server error.
+ */
+router.post(
+  "/update-vc", // The new POST endpoint path
+  processUpdateVCValidator, // Apply the validator
+  credentialController.processUpdateVC // Use the specific controller function
+);
+
+/**
+ * @swagger
+ * /credentials/claim:
+ *   post:
+ *     summary: Claim a pending VC (Phase 1)
+ *     description: Atomically claims a pending VC for the holder. Sets status to PROCESSING and returns the VC for the holder to save locally.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - holder_did
+ *             properties:
+ *               holder_did:
+ *                 type: string
+ *                 example: did:dcert:u1234567890abcdef1234567890abcdef12345678
+ *                 description: DID of the credential holder
+ *     responses:
+ *       200:
+ *         description: VC claimed successfully or no pending VCs available
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC claimed successfully. Please save it and confirm."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     encrypted_body:
+ *                       type: string
+ *                     status:
+ *                       type: string
+ *                       example: PROCESSING
+ *       400:
+ *         description: Validation error
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  "/claim",
+  verifyDIDSignature,
+  claimVCValidator,
+  credentialController.claimVC
+);
+
+/**
+ * @swagger
+ * /credentials/confirm:
+ *   post:
+ *     summary: Confirm VC claim (Phase 2)
+ *     description: Confirms that the holder has saved the VC locally. Sets status to CLAIMED and soft-deletes the record.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - vc_id
+ *               - holder_did
+ *             properties:
+ *               vc_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the VC being confirmed
+ *               holder_did:
+ *                 type: string
+ *                 example: did:dcert:u1234567890abcdef1234567890abcdef12345678
+ *                 description: DID of the credential holder
+ *     responses:
+ *       200:
+ *         description: VC confirmed and soft-deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC claimed and confirmed successfully."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                     vc_id:
+ *                       type: string
+ *                       format: uuid
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: VC not found or not in PROCESSING state
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  "/confirm",
+  verifyDIDSignature,
+  confirmVCValidator,
+  credentialController.confirmVC
+);
+
+/**
+ * @swagger
+ * /credentials/claim-batch:
+ *   post:
+ *     summary: Claim multiple pending VCs in batch (Phase 1 - Batch)
+ *     description: Atomically claims up to N pending VCs for the holder in a single request. More efficient than claiming one-by-one. Default limit is 10, maximum is 100.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - holder_did
+ *             properties:
+ *               holder_did:
+ *                 type: string
+ *                 example: did:dcert:u1234567890abcdef1234567890abcdef12345678
+ *                 description: DID of the credential holder
+ *               limit:
+ *                 type: integer
+ *                 example: 10
+ *                 minimum: 1
+ *                 maximum: 100
+ *                 default: 10
+ *                 description: Maximum number of VCs to claim (default 10, max 100)
+ *     responses:
+ *       200:
+ *         description: VCs claimed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Successfully claimed 10 VCs. 5 more pending."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     claimed_vcs:
+ *                       type: array
+ *                       description: Array of claimed VCs
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           request_id:
+ *                             type: string
+ *                             format: uuid
+ *                           encrypted_body:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                             example: PROCESSING
+ *                           processing_at:
+ *                             type: string
+ *                             format: date-time
+ *                     claimed_count:
+ *                       type: integer
+ *                       example: 10
+ *                       description: Number of VCs successfully claimed
+ *                     remaining_count:
+ *                       type: integer
+ *                       example: 5
+ *                       description: Number of pending VCs still available
+ *                     has_more:
+ *                       type: boolean
+ *                       example: true
+ *                       description: Whether there are more pending VCs to claim
+ *       400:
+ *         description: Validation error
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  "/claim-batch",
+  verifyDIDSignature,
+  claimVCsBatchValidator,
+  credentialController.claimVCsBatch
+);
+
+/**
+ * @swagger
+ * /credentials/confirm-batch:
+ *   post:
+ *     summary: Confirm multiple VC claims in batch (Phase 2 - Batch)
+ *     description: Confirms that the holder has saved multiple VCs locally. Sets status to CLAIMED and soft-deletes the records. Use this after successfully claiming VCs with /claim-batch.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - request_ids
+ *               - holder_did
+ *             properties:
+ *               request_ids:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 100
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 example: ["550e8400-e29b-41d4-a716-446655440000", "6ba7b810-9dad-11d1-80b4-00c04fd430c8"]
+ *                 description: Array of request IDs from VCResponse table to confirm (max 100)
+ *               holder_did:
+ *                 type: string
+ *                 example: did:dcert:u1234567890abcdef1234567890abcdef12345678
+ *                 description: DID of the credential holder
+ *     responses:
+ *       200:
+ *         description: VCs confirmed and soft-deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Successfully confirmed 10 VCs."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "Successfully confirmed 10 VCs."
+ *                     confirmed_count:
+ *                       type: integer
+ *                       example: 10
+ *                       description: Number of VCs successfully confirmed
+ *                     requested_count:
+ *                       type: integer
+ *                       example: 10
+ *                       description: Number of VCs requested for confirmation
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: No VCs found in PROCESSING state for confirmation
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  "/confirm-batch",
+  verifyDIDSignature,
+  confirmVCsBatchValidator,
+  credentialController.confirmVCsBatch
+);
+
+/**
+ * @swagger
+ * /credentials/admin/reset-stuck:
+ *   post:
+ *     summary: Admin - Reset stuck PROCESSING VCs
+ *     description: |
+ *       Admin endpoint to manually reset VCs stuck in PROCESSING status back to PENDING.
+ *       This is useful for cleaning up VCs that failed to complete the claim-confirm cycle.
+ *
+ *       The background scheduler automatically runs this every 5 minutes with a 15-minute timeout,
+ *       but admins can trigger it manually with custom timeout if needed.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *       - Admin
+ *     security:
+ *       - AdminBearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               timeout_minutes:
+ *                 type: integer
+ *                 description: Minutes threshold for stuck VCs (default 15, max 120)
+ *                 example: 15
+ *                 minimum: 1
+ *                 maximum: 120
+ *     responses:
+ *       200:
+ *         description: Cleanup job completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Successfully reset 5 stuck VCs back to PENDING"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     reset_count:
+ *                       type: integer
+ *                       example: 5
+ *                       description: Number of VCs reset from PROCESSING to PENDING
+ *                     timeout_minutes:
+ *                       type: integer
+ *                       example: 15
+ *                       description: Timeout threshold used for cleanup
+ *                     cutoff_time:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-10-31T10:15:00.000Z"
+ *                       description: VCs in PROCESSING before this time were reset
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized - Invalid or missing admin token
+ *       403:
+ *         description: Forbidden - User is not an admin
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  "/admin/reset-stuck",
+  adminAuthMiddleware,
+  resetStuckVCsValidator,
+  credentialController.resetStuckVCs
+);
+
+/**
+ * @swagger
+ * /credentials/issuer-history:
+ *   get:
+ *     summary: Get all requests and actions for an issuer (Aggregated History)
+ *     description: Retrieve a combined history of all actions performed by an issuer. This includes (1) Holder-Initiated Requests (ISSUANCE, RENEWAL, UPDATE, REVOKE) from holders, and (2) Issuer-Initiated Actions (direct issue, update, renew, revoke) logged in IssuerActionLog. Filtering by status PENDING/APPROVED/REJECTED will ONLY return Holder-Initiated Requests. Using status=ALL or omitting it will return BOTH Requests and direct Actions.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - InstitutionBearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: issuer_did
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the issuer.
+ *         example: did:dcert:i...
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, APPROVED, REJECTED, ALL]
+ *         description: Filter requests by status. Use 'ALL' or omit to include direct actions.
+ *     responses:
+ *       200:
+ *         description: A combined list of all requests and actions, sorted by date (newest first).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Successfully retrieved 30 total history items for issuer."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     count:
+ *                       type: integer
+ *                       example: 30
+ *                     requests:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           history_type:
+ *                             type: string
+ *                             enum: [REQUEST, DIRECT_ACTION]
+ *                             description: REQUEST (from holder) or DIRECT_ACTION (by issuer).
+ *                           request_type:
+ *                             type: string
+ *                             enum: [ISSUANCE, RENEWAL, UPDATE, REVOKE]
+ *                           issuer_did:
+ *                             type: string
+ *                           holder_did:
+ *                             type: string
+ *                             nullable: true
+ *                           status:
+ *                             type: string
+ *                             enum: [PENDING, APPROVED, REJECTED]
+ *                             nullable: true
+ *                             description: Null for DIRECT_ACTION types.
+ *                           encrypted_body:
+ *                             type: string
+ *                             nullable: true
+ *                             description: Null for DIRECT_ACTION types.
+ *                           vc_id:
+ *                             type: string
+ *                             nullable: true
+ *                             description: The associated VC ID. For UPDATE, this is the OLD VC ID (if DIRECT_ACTION) or NEW VC ID (if REQUEST).
+ *                           new_vc_id:
+ *                             type: string
+ *                             nullable: true
+ *                             description: The NEW VC ID (only for UPDATE type from DIRECT_ACTION).
+ *                           transaction_hash:
+ *                             type: string
+ *                             nullable: true
+ *                             description: Blockchain TX hash (only for DIRECT_ACTION types).
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *       400:
+ *         description: Validation error (e.g., missing issuer_did).
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token).
+ *       500:
+ *         description: Internal server error.
+ */
+router.get(
+  "/issuer-history",
+  verifyDIDSignature,
+  getAllIssuerRequestsValidator,
+  credentialController.getAllIssuerRequests
+);
+
+/**
+ * @swagger
+ * /credentials/issuer/issue-vc:
+ *   post:
+ *     summary: (Issuer) Direct Issue VC
+ *     description: Endpoint khusus Issuer untuk menerbitkan VC secara langsung ke blockchain dan menyimpannya di DB (tabel VCinitiatedByIssuer) agar siap di-claim oleh holder. Ini melewati alur permintaan VCIssuanceRequest.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - issuer_did
+ *               - holder_did
+ *               - vc_id
+ *               - vc_type
+ *               - schema_id
+ *               - schema_version
+ *               - vc_hash
+ *               - encrypted_body
+ *               - expiredAt
+ *             properties:
+ *               issuer_did:
+ *                 type: string
+ *                 example: "did:dcert:i..."
+ *                 description: DID Issuer (harus cocok dengan DID di token JWT)
+ *               holder_did:
+ *                 type: string
+ *                 example: "did:dcert:u..."
+ *                 description: DID Holder yang akan menerima
+ *               vc_id:
+ *                 type: string
+ *                 description: ID unik untuk VC ini
+ *               vc_type:
+ *                 type: string
+ *                 example: "UniversityDegreeCredential"
+ *               schema_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID Schema yang divalidasi
+ *               schema_version:
+ *                 type: integer
+ *                 example: 1
+ *                 description: Versi Schema yang divalidasi
+ *               vc_hash:
+ *                 type: string
+ *                 example: "0x..."
+ *                 description: Hash (Keccak256) dari data VC
+ *               encrypted_body:
+ *                 type: string
+ *                 description: Data VC yang sudah dienkripsi untuk holder
+ *               expiredAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Tanggal kadaluwarsa VC (format ISO 8601)
+ *                 example: "2026-11-04T10:00:00.000Z"
+ *     responses:
+ *       201:
+ *         description: VC berhasil diterbitkan di blockchain dan disimpan di DB.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC successfully issued on blockchain and saved to database."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vc_id:
+ *                       type: string
+ *                     transaction_hash:
+ *                       type: string
+ *                       description: Blockchain transaction hash
+ *                     block_number:
+ *                       type: integer
+ *                       description: Blockchain block number
+ *                     db_record_id:
+ *                       type: string
+ *                       format: uuid
+ *                       description: ID record di tabel VCinitiatedByIssuer
+ *       400:
+ *         description: Validation error, schema validation failed, or blockchain error.
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token, or issuer_did mismatch).
+ *       500:
+ *         description: Internal server error.
+ */
+router.post(
+  "/issuer/issue-vc",
+  verifyDIDSignature,
+  issuerIssueVCValidator,
+  credentialController.issuerIssueVC
+);
+
+/**
+ * @swagger
+ * /credentials/issuer/update-vc:
+ *   post:
+ *     summary: (Issuer) Direct Update VC
+ *     description: Endpoint khusus Issuer untuk memperbarui VC secara langsung di blockchain. Ini akan menandai VC lama sebagai tidak aktif dan membuat VC baru, lalu menyimpannya di DB (VCinitiatedByIssuer) agar siap di-claim oleh holder.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - issuer_did
+ *               - holder_did
+ *               - old_vc_id
+ *               - new_vc_id
+ *               - vc_type
+ *               - schema_id
+ *               - schema_version
+ *               - new_vc_hash
+ *               - encrypted_body
+ *               - expiredAt
+ *             properties:
+ *               issuer_did:
+ *                 type: string
+ *                 example: "did:dcert:i..."
+ *                 description: DID Issuer (harus cocok dengan DID di token JWT)
+ *               holder_did:
+ *                 type: string
+ *                 example: "did:dcert:u..."
+ *                 description: DID Holder yang akan menerima
+ *               old_vc_id:
+ *                 type: string
+ *                 description: ID dari VC LAMA yang akan diganti/diperbarui
+ *               new_vc_id:
+ *                 type: string
+ *                 description: ID unik untuk VC BARU ini
+ *               vc_type:
+ *                 type: string
+ *                 example: "UniversityDegreeCredential"
+ *               schema_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID Schema yang divalidasi
+ *               schema_version:
+ *                 type: integer
+ *                 example: 1
+ *                 description: Versi Schema yang divalidasi
+ *               new_vc_hash:
+ *                 type: string
+ *                 example: "0x..."
+ *                 description: Hash (Keccak256) dari data VC yang BARU
+ *               encrypted_body:
+ *                 type: string
+ *                 description: Data VC yang BARU (sudah dienkripsi)
+ *               expiredAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Tanggal kadaluwarsa baru untuk VC (format ISO 8601)
+ *                 example: "2027-11-04T10:00:00.000Z"
+ *     responses:
+ *       201:
+ *         description: VC berhasil diperbarui di blockchain dan VC baru disimpan di DB.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC updated directly on blockchain and new VC stored for holder claim."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     record_id:
+ *                       type: string
+ *                       format: uuid
+ *                       description: ID dari record baru di tabel VCinitiatedByIssuer
+ *                     transaction_hash:
+ *                       type: string
+ *                     block_number:
+ *                       type: integer
+ *       400:
+ *         description: Validasi gagal (data tidak lengkap, VC lama sudah tidak aktif, atau error blockchain).
+ *       401:
+ *         description: Unauthorized (Token JWT Issuer tidak valid/hilang).
+ *       403:
+ *         description: Forbidden (Token JWT tidak cocok dengan issuer_did di body).
+ *       404:
+ *         description: Error (misal VC lama tidak ditemukan di blockchain).
+ *       500:
+ *         description: Internal Server Error.
+ */
+router.post(
+  "/issuer/update-vc",
+  verifyDIDSignature,
+  issuerUpdateVCValidator,
+  credentialController.issuerUpdateVC
+);
+
+/**
+ * @swagger
+ * /credentials/issuer/revoke-vc:
+ *   post:
+ *     summary: (Issuer) Direct Revoke VC
+ *     description: Endpoint khusus Issuer untuk mencabut (revoke) VC secara langsung di blockchain. Ini adalah aksi langsung dan tidak menggunakan tabel request.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - issuer_did
+ *               - vc_id
+ *             properties:
+ *               issuer_did:
+ *                 type: string
+ *                 example: "did:dcert:i..."
+ *                 description: DID Issuer (harus cocok dengan DID di token JWT)
+ *               vc_id:
+ *                 type: string
+ *                 description: ID dari VC yang akan dicabut
+ *     responses:
+ *       200:
+ *         description: VC berhasil dicabut di blockchain.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC revoked directly on blockchain."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vc_id:
+ *                       type: string
+ *                       description: ID dari VC yang dicabut
+ *                     transaction_hash:
+ *                       type: string
+ *                     block_number:
+ *                       type: integer
+ *       400:
+ *         description: Validasi gagal (data tidak lengkap, VC sudah dicabut, atau error blockchain).
+ *       401:
+ *         description: Unauthorized (Token JWT Issuer tidak valid/hilang).
+ *       403:
+ *         description: Forbidden (Token JWT tidak cocok dengan issuer_did di body, atau issuer bukan pemilik VC).
+ *       404:
+ *         description: Error (misal VC tidak ditemukan di blockchain).
+ *       500:
+ *         description: Internal Server Error.
+ */
+router.post(
+  "/issuer/revoke-vc",
+  verifyDIDSignature,
+  issuerRevokeVCValidator,
+  credentialController.issuerRevokeVC
+);
+
+/**
+ * @swagger
+ * /credentials/issuer/renew-vc:
+ *   post:
+ *     summary: (Issuer) Direct Renew VC
+ *     description: Endpoint khusus Issuer untuk memperbarui (renew) VC secara langsung di blockchain. Ini akan mengaktifkan kembali VC di blockchain dan menyimpan VC baru (dengan data/expiry baru) di DB (VCinitiatedByIssuer) agar siap di-claim oleh holder.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - issuer_did
+ *               - holder_did
+ *               - vc_id
+ *               - encrypted_body
+ *               - expiredAt
+ *             properties:
+ *               issuer_did:
+ *                 type: string
+ *                 example: "did:dcert:i..."
+ *                 description: DID Issuer (harus cocok dengan DID di token JWT)
+ *               holder_did:
+ *                 type: string
+ *                 example: "did:dcert:u..."
+ *                 description: DID Holder yang akan menerima
+ *               vc_id:
+ *                 type: string
+ *                 description: ID dari VC yang akan diperbarui (renew)
+ *               encrypted_body:
+ *                 type: string
+ *                 description: Data VC yang BARU (sudah dienkripsi)
+ *               expiredAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Tanggal kedaluwarsa BARU untuk VC (format ISO 8601)
+ *                 example: "2027-11-04T10:00:00.000Z"
+ *     responses:
+ *       201:
+ *         description: VC berhasil diperbarui di blockchain dan VC baru disimpan di DB.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC renewed directly on blockchain and new VC stored for holder claim."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     record_id:
+ *                       type: string
+ *                       format: uuid
+ *                       description: ID dari record baru di tabel VCinitiatedByIssuer
+ *                     transaction_hash:
+ *                       type: string
+ *                     block_number:
+ *                       type: integer
+ *       400:
+ *         description: Validasi gagal (data tidak lengkap, VC sudah tidak aktif, atau error blockchain).
+ *       401:
+ *         description: Unauthorized (Token JWT Issuer tidak valid/hilang).
+ *       403:
+ *         description: Forbidden (Token JWT tidak cocok dengan issuer_did di body).
+ *       404:
+ *         description: Error (misal VC tidak ditemukan di blockchain).
+ *       500:
+ *         description: Internal Server Error.
+ */
+router.post(
+  "/issuer/renew-vc",
+  verifyDIDSignature,
+  issuerRenewVCValidator,
+  credentialController.issuerRenewVC
+);
+
+/**
+ * @swagger
+ * /credentials/claim-vc/issuer-init:
+ *   post:
+ *     summary: Claim multiple VCs issued by Issuer (Phase 1 - Batch)
+ *     description: (Holder) Atomically claims a batch of pending VCs that were directly issued by an Issuer (from VCinitiatedByIssuer table).
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - holder_did
+ *             properties:
+ *               holder_did:
+ *                 type: string
+ *                 example: "did:dcert:u..."
+ *                 description: DID of the credential holder
+ *               limit:
+ *                 type: integer
+ *                 example: 10
+ *                 minimum: 1
+ *                 maximum: 100
+ *                 default: 10
+ *                 description: Maximum number of VCs to claim (default 10, max 100)
+ *     responses:
+ *       200:
+ *         description: VCs claimed successfully (status set to PROCESSING).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ClaimVCsBatchResponse'
+ *       400:
+ *         description: Validation error.
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token).
+ *       500:
+ *         description: Internal server error.
+ *
+ * components:
+ *   schemas:
+ *     ClaimVCsBatchResponse:
+ *       type: object
+ *       properties:
+ *         success:
+ *           type: boolean
+ *           example: true
+ *         message:
+ *           type: string
+ *           example: "Successfully claimed 5 VCs. Processing..."
+ *         data:
+ *           type: object
+ *           properties:
+ *             claimed_count:
+ *               type: integer
+ *               example: 5
+ *             claimed_vc_ids:
+ *               type: array
+ *               items:
+ *                 type: string
+ *               example: ["vc:id:1", "vc:id:2", "vc:id:3"]
+ */
+router.post(
+  "/claim-vc/issuer-init",
+  verifyDIDSignature,
+  claimIssuerInitiatedVCsBatchValidator,
+  credentialController.claimIssuerInitiatedVCsBatch
+);
+
+/**
+ * @swagger
+ * /credentials/confirm-vc/issuer-init:
+ *   post:
+ *     summary: Confirm multiple VC claims from Issuer (Phase 2 - Batch)
+ *     description: (Holder) Confirms that the holder has saved VCs (from VCinitiatedByIssuer table). Sets status to CLAIMED and soft-deletes the records.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - vc_ids
+ *               - holder_did
+ *             properties:
+ *               vc_ids:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 100
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 example: ["550e8400-e29b-41d4-a716-446655440000"]
+ *                 description: Array of VCinitiatedByIssuer record IDs to confirm (max 100)
+ *               holder_did:
+ *                 type: string
+ *                 example: "did:dcert:u..."
+ *                 description: DID of the credential holder
+ *     responses:
+ *       200:
+ *         description: VCs confirmed and soft-deleted successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ConfirmVCsBatchResponse'
+ *       400:
+ *         description: Validation error.
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token).
+ *       404:
+ *         description: No VCs found in PROCESSING state for confirmation.
+ *       500:
+ *         description: Internal server error.
+ *
+ * components:
+ *   schemas:
+ *     ConfirmVCsBatchResponse:
+ *       type: object
+ *       properties:
+ *         success:
+ *           type: boolean
+ *           example: true
+ *         message:
+ *           type: string
+ *           example: "Successfully confirmed 5 VCs."
+ *         data:
+ *           type: object
+ *           properties:
+ *             confirmed_count:
+ *               type: integer
+ *               example: 5
+ *             confirmed_vc_ids:
+ *               type: array
+ *               items:
+ *                 type: string
+ *                 format: uuid
+ *               example: ["550e8400-e29b-41d4-a716-446655440000"]
+ */
+router.post(
+  "/confirm-vc/issuer-init",
+  verifyDIDSignature,
+  confirmIssuerInitiatedVCsBatchValidator,
+  credentialController.confirmIssuerInitiatedVCsBatch
+);
+
+/**
+ * @swagger
+ * /credentials/validate-vc:
+ *   post:
+ *     summary: Validate VC JSON for ownership
+ *     description: |
+ *       Validates a VC JSON file uploaded by an institution acting as a holder.
+ *       This endpoint performs three validations:
+ *       1. **DID Validation**: Verifies the VC belongs to the institution (credentialSubject.id matches holder_did)
+ *       2. **Expiration Validation**: Checks if the VC has not expired (skipped if expiredAt is null - lifetime validity)
+ *       3. **Hash Validation**: Compares the frontend-calculated hash with the blockchain hash
+ *
+ *       This is useful before requesting update, renew, or revoke operations on a VC.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - vc_json
+ *               - vc_hash
+ *               - holder_did
+ *             properties:
+ *               vc_json:
+ *                 type: object
+ *                 description: The complete VC JSON object downloaded by the institution
+ *                 properties:
+ *                   id:
+ *                     type: string
+ *                     example: "1c6247bb-f7bc-4d25-bf5c-4bc82f1d0376:12:did:dcert:iBNiYaSjRgmOhy85ZDLse6oNNtedRXeWIk02l0P7CLDhEi_4p-qN6Ai3aurFYTi_MK2BRDDcu7ZAOeGyTJvpkKes:1762334318178"
+ *                   expiredAt:
+ *                     type: string
+ *                     format: date-time
+ *                     nullable: true
+ *                     description: Expiration date (null for lifetime validity)
+ *                     example: "2125-11-06T09:18:38.178Z"
+ *               vc_hash:
+ *                 type: string
+ *                 description: Keccak256 hash of the VC data (calculated by frontend, 64-character hex string)
+ *                 example: "a1b2c3d4e5f6789012345678901234567890123456789012345678901234abcd"
+ *               holder_did:
+ *                 type: string
+ *                 description: DID of the institution validating the VC
+ *                 example: "did:dcert:iBNiYaSjRgmOhy85ZDLse6oNNtedRXeWIk02l0P7CLDhEi_4p-qN6Ai3aurFYTi_MK2BRDDcu7ZAOeGyTJvpkKes"
+ *     responses:
+ *       200:
+ *         description: Validation completed (may contain errors if validation failed)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "VC validation successful. The credential is valid and belongs to you."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     is_valid:
+ *                       type: boolean
+ *                       example: true
+ *                       description: Overall validation result (true if all checks pass)
+ *                     did_valid:
+ *                       type: boolean
+ *                       example: true
+ *                       description: Whether the DID matches
+ *                     expiration_valid:
+ *                       type: boolean
+ *                       example: true
+ *                       description: Whether the VC has not expired (always true if expiredAt is null)
+ *                     hash_valid:
+ *                       type: boolean
+ *                       example: true
+ *                       description: Whether the hash matches blockchain
+ *                     errors:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: []
+ *                       description: Array of validation error messages (empty if all valid)
+ *                     vc_id:
+ *                       type: string
+ *                       example: "1c6247bb-f7bc-4d25-bf5c-4bc82f1d0376:12:did:dcert:..."
+ *                     holder_did:
+ *                       type: string
+ *                       example: "did:dcert:iBNiYaSjRgmOhy85ZDLse6oNNtedRXeWIk02l0P7CLDhEi_4p-qN6Ai3aurFYTi_MK2BRDDcu7ZAOeGyTJvpkKes"
+ *                     issuer_did:
+ *                       type: string
+ *                       example: "did:dcert:iBBpghbL7ZF8Lh4iWG6l1t7HaQeH87ztvUENyeES3Li4eokUafFYZaGvl_yDvKLCZRn2fnCR35zriBiBEj5vWMqI"
+ *                     expired_at:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                       description: Expiration date (null for lifetime validity)
+ *                       example: "2125-11-06T09:18:38.178Z"
+ *                     is_expired:
+ *                       type: boolean
+ *                       example: false
+ *       400:
+ *         description: Validation error (invalid request body)
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  "/validate-vc",
+  verifyDIDSignature,
+  validateVCValidator,
+  credentialController.validateVC
 );
 
 export default router;

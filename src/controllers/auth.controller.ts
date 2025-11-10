@@ -50,10 +50,10 @@ export const getPendingInstitutions = asyncHandler(async (req: Request, res: Res
 /**
  * Get All Institutions Controller
  */
-export const getAllInstitutions = asyncHandler(async (req: Request, res: Response) => {
+export const getAllRegistrationInstitutions = asyncHandler(async (req: Request, res: Response) => {
   const { status } = req.query;
 
-  const institutions = await AuthService.getAllInstitutions(status as any);
+  const institutions = await AuthService.getAllRegistrationInstitutions(status as any);
 
   return ResponseHelper.success(res, institutions);
 });

@@ -13,18 +13,18 @@ export const registerDIDValidator = [
     .trim()
     .notEmpty()
     .withMessage("DID string is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage(
-      "Invalid DID format. Must follow pattern: did:method:identifier (e.g., did:ganesha:0x123...)"
+      "Invalid DID format. Must follow pattern: did:method:identifier (e.g., did:dcert:123...)"
     ),
 
   body("public_key")
     .trim()
     .notEmpty()
     .withMessage("Public key is required")
-    .matches(/^0x[a-fA-F0-9]{128,130}$/)
+    .matches(/^(?:[a-fA-F0-9]{66}|[a-fA-F0-9]{130})$/)
     .withMessage(
-      "Invalid public key format. Must be hex string starting with 0x (64-65 bytes)"
+      "Invalid public key format. Must be hex string (64-65 bytes, 128-130 hex characters)"
     ),
 
   body("role")
@@ -82,9 +82,9 @@ export const checkDIDValidator = [
     .trim()
     .notEmpty()
     .withMessage("DID string is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage(
-      "Invalid DID format. Must follow pattern: did:method:identifier (e.g., did:ganesha:0x123...)"
+      "Invalid DID format. Must follow pattern: did:method:identifier (e.g., did:dcert:123...)"
     ),
 ];
 
@@ -96,21 +96,21 @@ export const keyRotationValidator = [
     .trim()
     .notEmpty()
     .withMessage("DID parameter is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid DID format"),
 
   body("new_public_key")
     .trim()
     .notEmpty()
     .withMessage("New public key is required")
-    .matches(/^0x[a-fA-F0-9]{128,130}$/)
+    .matches(/^[a-fA-F0-9]{66,130}$/)
     .withMessage("Invalid new public key format"),
 
   body("signature")
     .trim()
     .notEmpty()
     .withMessage("Signature is required for verification")
-    .matches(/^0x[a-fA-F0-9]+$/)
+    .matches(/^[a-fA-F0-9]+$/)
     .withMessage("Invalid signature format"),
 
   body("reason")
@@ -128,14 +128,14 @@ export const deleteDIDValidator = [
     .trim()
     .notEmpty()
     .withMessage("DID parameter is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid DID format"),
 
   body("signature")
     .trim()
     .notEmpty()
     .withMessage("Signature is required for verification")
-    .matches(/^0x[a-fA-F0-9]+$/)
+    .matches(/^[a-fA-F0-9]+$/)
     .withMessage("Invalid signature format"),
 
   body("reason")
@@ -153,6 +153,6 @@ export const getDIDDocumentValidator = [
     .trim()
     .notEmpty()
     .withMessage("DID parameter is required")
-    .matches(/^did:[a-z0-9]+:[a-zA-Z0-9._-]+$/)
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid DID format"),
 ];

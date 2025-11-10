@@ -1,6 +1,8 @@
 import { BadRequestError, NotFoundError } from "../utils/errors/AppError";
 import logger from "../config/logger";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
+import DIDBlockchainService from "./blockchain/didBlockchain.service";
+import StorageService from "./storage.service";
 import { prisma } from "../config/database";
 import { VCSchema, Prisma } from "@prisma/client";
 import {
@@ -13,14 +15,15 @@ import {
   SchemaDeleteResponseDTO,
 } from "../dtos/schema.dto";
 import { SCHEMA_CONSTANTS } from "../constants/schema.constants";
+import { v4 as uuidv4 } from "uuid";
 
 /**
  * VC Schema Service
- * 
+ *
  * ARCHITECTURE STRATEGY:
  * - GET operations: Read from Database only (fast, no blockchain calls)
  * - POST/PUT/DELETE operations: Write to both Database + Blockchain (with rollback on failure)
- * 
+ *
  * PRINCIPLES:
  * - Single Responsibility: Each method does one thing well
  * - DRY: Reusable helper methods
@@ -28,10 +31,15 @@ import { SCHEMA_CONSTANTS } from "../constants/schema.constants";
  * - Transaction Safety: Database rollback on blockchain failures
  */
 class SchemaService {
-  private blockchainService: typeof VCBlockchainService;
+  private vcBlockchainService: typeof VCBlockchainService;
+  private didBlockchainService: typeof DIDBlockchainService;
 
-  constructor(blockchainService?: typeof VCBlockchainService) {
-    this.blockchainService = blockchainService || VCBlockchainService;
+  constructor(
+    vcBlockchainService?: typeof VCBlockchainService,
+    didBlockchainService?: typeof DIDBlockchainService
+  ) {
+    this.vcBlockchainService = vcBlockchainService || VCBlockchainService;
+    this.didBlockchainService = didBlockchainService || DIDBlockchainService;
   }
 
   // ============================================
@@ -76,15 +84,15 @@ class SchemaService {
       where.issuer_did = filter.issuerDid;
     }
 
-    if (filter.activeOnly) {
-      where.isActive = true;
+    if (filter.isActive !== undefined) {
+      where.isActive = filter.isActive;
     }
 
     return where;
   }
 
   // ============================================
-  // 🔹 GETTER METHODS (Database Only)
+  // 🔹 PUBLIC GETTER METHODS (Database Only)
   // ============================================
 
   /**
@@ -98,14 +106,42 @@ class SchemaService {
 
       const schemas = await prisma.vCSchema.findMany({
         where,
-        orderBy: [
-          { issuer_did: "asc" },
-          { name: "asc" },
-          { version: "desc" },
-        ],
+        orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
       });
 
-      this.logSuccess("Get all schemas", `Retrieved ${schemas.length} schema(s)`);
+      for (const schema of schemas) {
+        if (!schema.issuer_name) {
+          try {
+            // Get DID document from blockchain
+            const didDocument = await DIDBlockchainService.getDIDDocument(
+              schema.issuer_did
+            );
+
+            // Extract name from DID document
+            const issuerName = didDocument.details?.name || null;
+
+            if (issuerName) {
+              // Update schema with issuer name using composite key
+              await prisma.vCSchema.update({
+                where: {
+                  id_version: {
+                    id: schema.id,
+                    version: schema.version,
+                  },
+                },
+                data: { issuer_name: issuerName },
+              });
+            }
+          } catch (error) {
+            console.error(`❌ Failed to process schema ${schema.id}`);
+          }
+        }
+      }
+
+      this.logSuccess(
+        "Get all schemas",
+        `Retrieved ${schemas.length} schema(s)`
+      );
       return schemas;
     } catch (error: any) {
       this.logError("Get all schemas", error);
@@ -114,18 +150,100 @@ class SchemaService {
   }
 
   /**
-   * Get schema by ID
+   * Get all versions of a schema by ID only
    */
-  async getSchemaById(id: string): Promise<VCSchema> {
+  async getAllVersionsById(id: string): Promise<VCSchema[]> {
     try {
-      this.logStart("Get schema by ID", id);
+      this.logStart("Get all versions by ID", id);
+
+      const schemas = await prisma.vCSchema.findMany({
+        where: { id },
+        orderBy: { version: "desc" },
+      });
+
+      if (schemas.length === 0) {
+        throw new NotFoundError(
+          `${SCHEMA_CONSTANTS.MESSAGES.NOT_FOUND}: ${id}`
+        );
+      }
+
+      this.logSuccess(
+        "Get all versions by ID",
+        `Found ${schemas.length} version(s)`
+      );
+      return schemas;
+    } catch (error: any) {
+      this.logError("Get all versions by ID", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get schema by ID and Version (both required)
+   */
+  async getSchemaByIdAndVersion(
+    id: string,
+    version: number
+  ): Promise<VCSchema> {
+    try {
+      this.logStart("Get schema by ID and version", `${id} v${version}`);
 
       const schema = await prisma.vCSchema.findUnique({
-        where: { id },
+        where: {
+          id_version: {
+            id,
+            version,
+          },
+        },
       });
 
       if (!schema) {
-        throw new NotFoundError(`${SCHEMA_CONSTANTS.MESSAGES.NOT_FOUND}: ${id}`);
+        throw new NotFoundError(
+          `${SCHEMA_CONSTANTS.MESSAGES.NOT_FOUND}: ${id} v${version}`
+        );
+      }
+
+      this.logSuccess(
+        "Get schema by ID and version",
+        `${id} v${schema.version}`
+      );
+      return schema;
+    } catch (error: any) {
+      this.logError("Get schema by ID and version", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Internal helper: Get schema by ID with optional version
+   * Used internally by other methods (deactivate, reactivate, etc)
+   */
+  async getSchemaById(id: string, version?: number): Promise<VCSchema> {
+    if (version !== undefined) {
+      return this.getSchemaByIdAndVersion(id, version);
+    }
+
+    // Get latest version
+    const schemas = await this.getAllVersionsById(id);
+    return schemas[0]; // Already sorted by version desc
+  }
+
+  /**
+   * Get schema by ID
+   */
+  async getLastSchemaById(id: string): Promise<VCSchema> {
+    try {
+      this.logStart("Get schema by ID", id);
+
+      const schema = await prisma.vCSchema.findFirst({
+        where: { id },
+        orderBy: { version: "desc" },
+      });
+
+      if (!schema) {
+        throw new NotFoundError(
+          `${SCHEMA_CONSTANTS.MESSAGES.NOT_FOUND}: ${id}`
+        );
       }
 
       this.logSuccess("Get schema by ID", id);
@@ -141,7 +259,10 @@ class SchemaService {
    */
   async getLatestVersion(params: SchemaByNameDTO): Promise<VCSchema> {
     try {
-      this.logStart("Get latest version", `${params.name} by ${params.issuerDid}`);
+      this.logStart(
+        "Get latest version",
+        `${params.name} by ${params.issuerDid}`
+      );
 
       const schema = await prisma.vCSchema.findFirst({
         where: {
@@ -159,7 +280,10 @@ class SchemaService {
         );
       }
 
-      this.logSuccess("Get latest version", `v${schema.version} (ID: ${schema.id})`);
+      this.logSuccess(
+        "Get latest version",
+        `v${schema.version} (ID: ${schema.id})`
+      );
       return schema;
     } catch (error: any) {
       this.logError("Get latest version", error);
@@ -168,7 +292,7 @@ class SchemaService {
   }
 
   /**
-   * Get all versions of a schema
+   * Get all versions of a schema by name and issuer
    */
   async getAllVersions(params: SchemaByNameDTO): Promise<VCSchema[]> {
     try {
@@ -194,12 +318,15 @@ class SchemaService {
 
   /**
    * Check if schema is active
+   * @param id - Schema ID
+   * @param version - Optional version number. If not provided, checks the latest version
    */
-  async isActive(id: string): Promise<SchemaActiveStatusDTO> {
+  async isActive(id: string, version?: number): Promise<SchemaActiveStatusDTO> {
     try {
-      const schema = await this.getSchemaById(id);
+      const schema = await this.getSchemaById(id, version);
       return {
         id: schema.id,
+        version: schema.version,
         isActive: schema.isActive,
       };
     } catch (error: any) {
@@ -215,18 +342,61 @@ class SchemaService {
   /**
    * Create new VC schema (version 1)
    */
-  async create(data: CreateVCSchemaDTO): Promise<VCSchemaOperationResponseDTO> {
+  async create(
+    data: CreateVCSchemaDTO,
+    imageBuffer?: Buffer,
+    imageMimeType?: string
+  ): Promise<VCSchemaOperationResponseDTO> {
     this.logStart("Create schema", data.name);
 
     let createdSchema: VCSchema | null = null;
+    let uploadedImageUrl: string | null = null;
+    let uploadedImageFileName: string | null = null;
 
     try {
+      // Get DID document from blockchain
+      const didDocument = await DIDBlockchainService.getDIDDocument(
+        data.issuer_did
+      );
+
+      // Extract name from DID document
+      const issuerName = didDocument.details?.name || null;
+
+      // Upload image to MinIO if provided
+      if (imageBuffer) {
+        try {
+          uploadedImageFileName = `${uuidv4()}`;
+          const uploadResult = await StorageService.uploadFile(
+            "background",
+            uploadedImageFileName,
+            imageBuffer,
+            imageMimeType
+          );
+          uploadedImageUrl = uploadResult.url;
+          this.logSuccess(
+            "Upload schema background image",
+            uploadResult.filePath
+          );
+        } catch (uploadError: any) {
+          logger.error(
+            "Failed to upload schema background image:",
+            uploadError
+          );
+          throw new BadRequestError(
+            `Image upload failed: ${uploadError.message}`
+          );
+        }
+      }
+
       // 1. Create in database
       createdSchema = await prisma.vCSchema.create({
         data: {
           name: data.name,
           schema: data.schema as Prisma.InputJsonValue,
           issuer_did: data.issuer_did,
+          issuer_name: issuerName,
+          image_link: uploadedImageUrl,
+          expired_in: data.expired_in ?? null, // Use provided value or null if not provided
           version: SCHEMA_CONSTANTS.INITIAL_VERSION,
           isActive: true,
         },
@@ -235,8 +405,11 @@ class SchemaService {
       this.logSuccess("Create schema in DB", `${createdSchema.id} v1`);
 
       // 2. Create in blockchain
+      logger.info("Data :", data);
+      logger.info("Schema :", data.schema);
       const schemaString = this.toBlockchainFormat(data.schema);
-      const receipt = await this.blockchainService.createVCSchemaInBlockchain(
+      logger.info("Schema String:", schemaString);
+      const receipt = await this.vcBlockchainService.createVCSchemaInBlockchain(
         createdSchema.id,
         data.name,
         schemaString,
@@ -253,8 +426,30 @@ class SchemaService {
     } catch (error: any) {
       // Rollback database if blockchain fails
       if (createdSchema) {
-        logger.warn(`[SchemaService] Rolling back database for schema: ${createdSchema.id}`);
-        await prisma.vCSchema.delete({ where: { id: createdSchema.id } }).catch(() => {});
+        logger.warn(
+          `[SchemaService] Rolling back database for schema: ${createdSchema.id} v${createdSchema.version}`
+        );
+        await prisma.vCSchema
+          .delete({
+            where: {
+              id_version: {
+                id: createdSchema.id,
+                version: createdSchema.version,
+              },
+            },
+          })
+          .catch(() => {});
+      }
+
+      // Rollback uploaded image if exists
+      if (uploadedImageFileName) {
+        logger.warn(
+          `[SchemaService] Rolling back uploaded image: ${uploadedImageFileName}`
+        );
+        await StorageService.deleteFile(
+          "background",
+          uploadedImageFileName
+        ).catch(() => {});
       }
 
       this.logError("Create schema", error);
@@ -269,33 +464,103 @@ class SchemaService {
    */
   async update(
     id: string,
-    data: UpdateVCSchemaDTO
+    data: UpdateVCSchemaDTO,
+    imageBuffer?: Buffer,
+    imageMimeType?: string
   ): Promise<VCSchemaOperationResponseDTO> {
     this.logStart("Update schema", id);
 
     let newVersionSchema: VCSchema | null = null;
+    let uploadedImageUrl: string | null = null;
+    let uploadedImageFileName: string | null = null;
 
     try {
       // 1. Get existing schema
-      const existingSchema = await this.getSchemaById(id);
+      const existingSchema = await this.getLastSchemaById(id);
+
+      // Image management logic
+      // Case 1: Keep existing background (image_link provided, no new file)
+      // Case 2: Change background (new file provided, no image_link)
+      // Case 3: Remove background (neither image_link nor file provided)
+      // NOTE: Old images are NOT deleted because they belong to previous versions
+
+      let finalImageLink: string | null = null;
+
+      if (data.image_link) {
+        // Case 1: Keep existing background
+        finalImageLink = data.image_link;
+        this.logSuccess(
+          "Keep existing schema background",
+          "Using provided image_link"
+        );
+      } else if (imageBuffer) {
+        // Case 2: Change background - upload new image (old image kept for previous version)
+        try {
+          uploadedImageFileName = `${uuidv4()}`;
+          const uploadResult = await StorageService.uploadFile(
+            "background",
+            uploadedImageFileName,
+            imageBuffer,
+            imageMimeType
+          );
+          uploadedImageUrl = uploadResult.url;
+          finalImageLink = uploadedImageUrl;
+          this.logSuccess(
+            "Upload new schema background image",
+            uploadResult.filePath
+          );
+        } catch (uploadError: any) {
+          logger.error(
+            "Failed to upload schema background image:",
+            uploadError
+          );
+          throw new BadRequestError(
+            `Image upload failed: ${uploadError.message}`
+          );
+        }
+      } else {
+        // Case 3: Remove background (old image kept for previous version)
+        finalImageLink = null;
+        this.logSuccess(
+          "Remove schema background",
+          "Setting image_link to null for new version"
+        );
+      }
+
+      // Determine expired_in for new version:
+      // - If provided in data: use new value (even if 0 or null)
+      // - If not provided: keep existing value
+      const finalExpiredIn =
+        data.expired_in !== undefined
+          ? data.expired_in
+          : existingSchema.expired_in;
 
       // 2. Create new version in database
       const newVersion = existingSchema.version + 1;
       newVersionSchema = await prisma.vCSchema.create({
         data: {
+          id: existingSchema.id,
           name: existingSchema.name,
           schema: data.schema as Prisma.InputJsonValue,
           issuer_did: existingSchema.issuer_did,
+          issuer_name: existingSchema.issuer_name,
+          image_link: finalImageLink,
+          expired_in: finalExpiredIn, // Use new value if provided, otherwise keep old value
           version: newVersion,
           isActive: true,
         },
       });
 
-      this.logSuccess("Update schema in DB", `${newVersionSchema.id} v${newVersion}`);
+      this.logSuccess(
+        "Update schema in DB",
+        `${newVersionSchema.id} v${newVersion}`
+      );
 
       // 3. Update in blockchain
+      logger.info("Schema: ", data.schema);
       const schemaString = this.toBlockchainFormat(data.schema);
-      const receipt = await this.blockchainService.updateVCSchemaInBlockchain(
+      logger.info("Schema String: ", schemaString);
+      const receipt = await this.vcBlockchainService.updateVCSchemaInBlockchain(
         existingSchema.id,
         schemaString
       );
@@ -310,8 +575,30 @@ class SchemaService {
     } catch (error: any) {
       // Rollback database if blockchain fails
       if (newVersionSchema) {
-        logger.warn(`[SchemaService] Rolling back database for schema: ${newVersionSchema.id}`);
-        await prisma.vCSchema.delete({ where: { id: newVersionSchema.id } }).catch(() => {});
+        logger.warn(
+          `[SchemaService] Rolling back database for schema: ${newVersionSchema.id} v${newVersionSchema.version}`
+        );
+        await prisma.vCSchema
+          .delete({
+            where: {
+              id_version: {
+                id: newVersionSchema.id,
+                version: newVersionSchema.version,
+              },
+            },
+          })
+          .catch(() => {});
+      }
+
+      // Rollback uploaded image if exists
+      if (uploadedImageFileName) {
+        logger.warn(
+          `[SchemaService] Rolling back uploaded image: ${uploadedImageFileName}`
+        );
+        await StorageService.deleteFile(
+          "background",
+          uploadedImageFileName
+        ).catch(() => {});
       }
 
       this.logError("Update schema", error);
@@ -323,13 +610,21 @@ class SchemaService {
 
   /**
    * Deactivate schema
+   * @param id - Schema ID
+   * @param version - Optional version number. If not provided, deactivates the latest version
    */
-  async deactivate(id: string): Promise<VCSchemaOperationResponseDTO> {
-    this.logStart("Deactivate schema", id);
+  async deactivate(
+    id: string,
+    version?: number
+  ): Promise<VCSchemaOperationResponseDTO> {
+    this.logStart(
+      "Deactivate schema",
+      `${id}${version ? ` v${version}` : " (latest)"}`
+    );
 
     try {
       // 1. Get schema
-      const schema = await this.getSchemaById(id);
+      const schema = await this.getSchemaById(id, version);
 
       if (!schema.isActive) {
         throw new BadRequestError(SCHEMA_CONSTANTS.MESSAGES.ALREADY_INACTIVE);
@@ -337,17 +632,23 @@ class SchemaService {
 
       // 2. Deactivate in database
       const deactivatedSchema = await prisma.vCSchema.update({
-        where: { id },
+        where: {
+          id_version: {
+            id: schema.id,
+            version: schema.version,
+          },
+        },
         data: { isActive: false },
       });
 
       this.logSuccess("Deactivate schema in DB", id);
 
       // 3. Deactivate in blockchain
-      const receipt = await this.blockchainService.deactivateVCSchemaInBlockchain(
-        schema.id,
-        schema.version
-      );
+      const receipt =
+        await this.vcBlockchainService.deactivateVCSchemaInBlockchain(
+          schema.id,
+          schema.version
+        );
 
       this.logSuccess("Deactivate schema in blockchain", `TX: ${receipt.hash}`);
 
@@ -358,13 +659,31 @@ class SchemaService {
       };
     } catch (error: any) {
       // Rollback database if blockchain fails
-      if (error instanceof BadRequestError && error.message.includes("Blockchain")) {
-        logger.warn(`[SchemaService] Rolling back deactivation for schema: ${id}`);
-        await prisma.vCSchema.update({ where: { id }, data: { isActive: true } }).catch(() => {});
+      if (
+        error instanceof BadRequestError &&
+        error.message.includes("Blockchain")
+      ) {
+        const schema = await this.getSchemaById(id, version).catch(() => null);
+        if (schema) {
+          logger.warn(
+            `[SchemaService] Rolling back deactivation for schema: ${id} v${schema.version}`
+          );
+          await prisma.vCSchema
+            .update({
+              where: {
+                id_version: {
+                  id: schema.id,
+                  version: schema.version,
+                },
+              },
+              data: { isActive: true },
+            })
+            .catch(() => {});
+        }
       }
 
       this.logError("Deactivate schema", error);
-      
+
       if (error instanceof BadRequestError) {
         throw error;
       }
@@ -377,13 +696,21 @@ class SchemaService {
 
   /**
    * Reactivate schema
+   * @param id - Schema ID
+   * @param version - Optional version number. If not provided, reactivates the latest version
    */
-  async reactivate(id: string): Promise<VCSchemaOperationResponseDTO> {
-    this.logStart("Reactivate schema", id);
+  async reactivate(
+    id: string,
+    version?: number
+  ): Promise<VCSchemaOperationResponseDTO> {
+    this.logStart(
+      "Reactivate schema",
+      `${id}${version ? ` v${version}` : " (latest)"}`
+    );
 
     try {
       // 1. Get schema
-      const schema = await this.getSchemaById(id);
+      const schema = await this.getSchemaById(id, version);
 
       if (schema.isActive) {
         throw new BadRequestError(SCHEMA_CONSTANTS.MESSAGES.ALREADY_ACTIVE);
@@ -391,17 +718,23 @@ class SchemaService {
 
       // 2. Reactivate in database
       const reactivatedSchema = await prisma.vCSchema.update({
-        where: { id },
+        where: {
+          id_version: {
+            id: schema.id,
+            version: schema.version,
+          },
+        },
         data: { isActive: true },
       });
 
       this.logSuccess("Reactivate schema in DB", id);
 
       // 3. Reactivate in blockchain
-      const receipt = await this.blockchainService.reactivateVCSchemaInBlockchain(
-        schema.id,
-        schema.version
-      );
+      const receipt =
+        await this.vcBlockchainService.reactivateVCSchemaInBlockchain(
+          schema.id,
+          schema.version
+        );
 
       this.logSuccess("Reactivate schema in blockchain", `TX: ${receipt.hash}`);
 
@@ -412,13 +745,31 @@ class SchemaService {
       };
     } catch (error: any) {
       // Rollback database if blockchain fails
-      if (error instanceof BadRequestError && error.message.includes("Blockchain")) {
-        logger.warn(`[SchemaService] Rolling back reactivation for schema: ${id}`);
-        await prisma.vCSchema.update({ where: { id }, data: { isActive: false } }).catch(() => {});
+      if (
+        error instanceof BadRequestError &&
+        error.message.includes("Blockchain")
+      ) {
+        const schema = await this.getSchemaById(id, version).catch(() => null);
+        if (schema) {
+          logger.warn(
+            `[SchemaService] Rolling back reactivation for schema: ${id} v${schema.version}`
+          );
+          await prisma.vCSchema
+            .update({
+              where: {
+                id_version: {
+                  id: schema.id,
+                  version: schema.version,
+                },
+              },
+              data: { isActive: false },
+            })
+            .catch(() => {});
+        }
       }
 
       this.logError("Reactivate schema", error);
-      
+
       if (error instanceof BadRequestError) {
         throw error;
       }
@@ -431,10 +782,12 @@ class SchemaService {
 
   /**
    * Delete schema (soft delete - deactivate)
+   * @param id - Schema ID
+   * @param version - Optional version number. If not provided, deletes the latest version
    */
-  async delete(id: string): Promise<SchemaDeleteResponseDTO> {
+  async delete(id: string, version?: number): Promise<SchemaDeleteResponseDTO> {
     try {
-      const result = await this.deactivate(id);
+      const result = await this.deactivate(id, version);
       return {
         message: SCHEMA_CONSTANTS.MESSAGES.DELETED,
         transaction_hash: result.transaction_hash,

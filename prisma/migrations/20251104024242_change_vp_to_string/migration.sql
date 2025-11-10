@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "VPSharing" ALTER COLUMN "VP" SET DATA TYPE TEXT;

@@ -1,7 +1,9 @@
 import BlockchainService from "./blockchain/didBlockchain.service";
+import InstitutionService from "./institution.service";
 import { BadRequestError, NotFoundError } from "../utils/errors/AppError";
 import { PrismaClient } from "@prisma/client";
 import { prisma } from "../config/database";
+import { logger } from "../config";
 
 /**
  * DID Service with Dependency Injection
@@ -76,6 +78,9 @@ class DIDService {
         },
       });
 
+      logger.info(`Queried institution data for email ${email}: ${JSON.stringify(institution)}`);
+
+
       if (!institution) {
         throw new NotFoundError(
           `Institution with email ${email} not found in registration database`
@@ -101,10 +106,22 @@ class DIDService {
         institution.address
       );
 
+      // Insert institution data to Institution table
+      const createdInstitution = await InstitutionService.createInstitution({
+        did: did_string,
+        email,
+        name: institution.name,
+        phone: institution.phone,
+        country: institution.country,
+        website: institution.website,
+        address: institution.address,
+      });
+
       return {
         message: "Institutional DID registered successfully",
         did: did_string,
         institution: {
+          id: createdInstitution.id,
           email,
           name: institution.name,
           phone: institution.phone,
@@ -120,18 +137,24 @@ class DIDService {
 
   /**
    * Check if DID exists
+   * Returns 200 with found status instead of throwing NotFoundError
    */
   async checkDID(did: string) {
     const exists = await this.blockchainService.isDIDRegistered(did);
 
     if (!exists) {
-      throw new NotFoundError("DID not found");
+      return {
+        found: false,
+        error: "Not Found",
+        message: "DID not found on blockchain",
+        did,
+      };
     }
 
     return {
+      found: true,
       message: "DID exists",
       did,
-      exists: true,
     };
   }
 
@@ -149,12 +172,13 @@ class DIDService {
 
   /**
    * Rotate DID key
+   * Returns 200 with found status instead of throwing NotFoundError
    */
   async rotateKey(did: string, newPublicKey: string) {
     // Check if DID exists
     const exists = await this.blockchainService.isDIDRegistered(did);
     if (!exists) {
-      throw new NotFoundError("DID not found");
+      throw new NotFoundError("DID not found on blockchain");
     }
 
     // Rotate key
@@ -173,12 +197,13 @@ class DIDService {
 
   /**
    * Deactivate DID
+   * Throws NotFoundError if DID doesn't exist
    */
   async deactivateDID(did: string) {
     // Check if DID exists
     const exists = await this.blockchainService.isDIDRegistered(did);
     if (!exists) {
-      throw new NotFoundError("DID not found");
+      throw new NotFoundError("DID not found on blockchain");
     }
 
     // Deactivate DID
@@ -196,9 +221,15 @@ class DIDService {
 
   /**
    * Get DID Document
+   * Returns 200 with found status instead of throwing NotFoundError
    */
   async getDIDDocument(did: string) {
     const document = await this.blockchainService.getDIDDocument(did);
+
+    // If DID not found, return the error response with 200 status
+    if (!document.found) {
+      return document;
+    }
 
     return {
       message: "DID document retrieved successfully",

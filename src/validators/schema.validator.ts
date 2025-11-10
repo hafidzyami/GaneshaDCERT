@@ -3,7 +3,7 @@ import { SCHEMA_CONSTANTS, SCHEMA_ERRORS } from "../constants/schema.constants";
 
 /**
  * VC Schema Validators
- * 
+ *
  * PRINCIPLES:
  * - DRY: Reusable validation rules
  * - Clear error messages
@@ -21,6 +21,14 @@ const schemaIdValidation = param("id")
   .withMessage(SCHEMA_ERRORS.VALIDATION.ID_REQUIRED)
   .isUUID()
   .withMessage(SCHEMA_ERRORS.VALIDATION.ID_INVALID_UUID);
+
+const schemaVersionValidation = param("version")
+  .trim()
+  .notEmpty()
+  .withMessage("Version is required")
+  .isInt({ min: 1 })
+  .withMessage("Version must be a positive integer")
+  .toInt();
 
 const schemaNameValidation = (location: "body" | "query") => {
   const validator = location === "body" ? body("name") : query("name");
@@ -51,7 +59,8 @@ const schemaObjectValidation = body("schema")
   });
 
 const issuerDidValidation = (location: "body" | "query") => {
-  const validator = location === "body" ? body("issuer_did") : query("issuerDid");
+  const validator =
+    location === "body" ? body("issuer_did") : query("issuerDid");
   return validator
     .trim()
     .notEmpty()
@@ -66,11 +75,17 @@ const issuerDidOptionalValidation = query("issuerDid")
   .matches(SCHEMA_CONSTANTS.DID_REGEX)
   .withMessage(SCHEMA_ERRORS.VALIDATION.ISSUER_DID_INVALID);
 
-const activeOnlyValidation = query("activeOnly")
+const isActiveValidation = query("isActive")
   .optional()
   .isBoolean()
-  .withMessage(SCHEMA_ERRORS.QUERY.ACTIVE_ONLY_INVALID)
+  .withMessage(SCHEMA_ERRORS.QUERY.IS_ACTIVE_INVALID)
   .toBoolean();
+
+const expiredInValidation = body("expired_in")
+  .optional()
+  .isInt({ min: 0 })
+  .withMessage("expired_in must be a non-negative integer (0 for lifetime)")
+  .toInt();
 
 // ============================================
 // 🔹 QUERY PARAMETER VALIDATORS
@@ -81,7 +96,7 @@ const activeOnlyValidation = query("activeOnly")
  */
 export const getAllVCSchemasValidator = [
   issuerDidOptionalValidation,
-  activeOnlyValidation,
+  isActiveValidation,
 ];
 
 /**
@@ -101,14 +116,30 @@ export const getAllSchemaVersionsValidator = [
 ];
 
 /**
- * Validator for GET /schemas/:id
+ * Validator for GET /schemas/:id/versions
+ */
+export const getAllVersionsByIdValidator = [schemaIdValidation];
+
+/**
+ * Validator for GET /schemas/:id/version/:version
+ */
+export const getSchemaByIdAndVersionValidator = [
+  schemaIdValidation,
+  schemaVersionValidation,
+];
+
+/**
+ * Validator for GET /schemas/:id (deprecated - kept for backward compatibility)
  */
 export const getSchemaByIdValidator = [schemaIdValidation];
 
 /**
- * Validator for GET /schemas/:id/active
+ * Validator for GET /schemas/:id/version/:version/active
  */
-export const isSchemaActiveValidator = [schemaIdValidation];
+export const isSchemaActiveValidator = [
+  schemaIdValidation,
+  schemaVersionValidation,
+];
 
 // ============================================
 // 🔹 REQUEST BODY VALIDATORS
@@ -121,7 +152,14 @@ export const createVCSchemaValidator = [
   schemaNameValidation("body"),
   schemaObjectValidation,
   issuerDidValidation("body"),
+  expiredInValidation,
 ];
+
+const imageLinkValidation = body("image_link")
+  .optional({ nullable: true })
+  .trim()
+  .isURL()
+  .withMessage("image_link must be a valid URL if provided");
 
 /**
  * Validator for PUT /schemas/:id
@@ -129,19 +167,30 @@ export const createVCSchemaValidator = [
 export const updateVCSchemaValidator = [
   schemaIdValidation,
   schemaObjectValidation,
+  expiredInValidation,
+  imageLinkValidation,
 ];
 
 /**
- * Validator for PATCH /schemas/:id/deactivate
+ * Validator for PATCH /schemas/:id/version/:version/deactivate
  */
-export const deactivateVCSchemaValidator = [schemaIdValidation];
+export const deactivateVCSchemaValidator = [
+  schemaIdValidation,
+  schemaVersionValidation,
+];
 
 /**
- * Validator for PATCH /schemas/:id/reactivate
+ * Validator for PATCH /schemas/:id/version/:version/reactivate
  */
-export const reactivateVCSchemaValidator = [schemaIdValidation];
+export const reactivateVCSchemaValidator = [
+  schemaIdValidation,
+  schemaVersionValidation,
+];
 
 /**
- * Validator for DELETE /schemas/:id
+ * Validator for DELETE /schemas/:id/version/:version
  */
-export const deleteVCSchemaValidator = [schemaIdValidation];
+export const deleteVCSchemaValidator = [
+  schemaIdValidation,
+  schemaVersionValidation,
+];

@@ -188,6 +188,7 @@ class VCBlockchainService {
     vcType: string,
     schemaID: string,
     schemaVersion: number,
+    expiredAt: string | undefined,
     hash: string
   ): Promise<TransactionReceipt> {
     try {
@@ -198,6 +199,7 @@ class VCBlockchainService {
         vcType,
         schemaID,
         schemaVersion,
+        expiredAt || "", // Use empty string if undefined
         hash
       );
       const receipt = await tx.wait();
@@ -224,11 +226,11 @@ class VCBlockchainService {
 
   /**
    * Renew VC on Blockchain
-   * Reactivates VC without changing hash
+   * Reactivates VC with new expiration date
    */
-  async renewVCInBlockchain(id: string): Promise<TransactionReceipt> {
+  async renewVCInBlockchain(id: string, expiredAt: string | undefined): Promise<TransactionReceipt> {
     try {
-      const tx = await this.contract.renewVC(id);
+      const tx = await this.contract.renewVC(id, expiredAt || "");
       const receipt = await tx.wait();
 
       if (receipt.status !== 1) {
@@ -250,21 +252,38 @@ class VCBlockchainService {
 
   /**
    * Update VC on Blockchain
-   * Updates hash and reactivates VC
+   * Updates VC with new information and reactivates it
    */
   async updateVCInBlockchain(
-    id: string,
-    newHash: string
+    oldID: string,
+    newID: string,
+    issuerDID: string,
+    holderDID: string,
+    vcType: string,
+    schemaID: string,
+    schemaVersion: number,
+    expiredAt: string | undefined,
+    hash: string
   ): Promise<TransactionReceipt> {
     try {
-      const tx = await this.contract.updateVC(id, newHash);
+      const tx = await this.contract.updateVC(
+        oldID,
+        newID,
+        issuerDID,
+        holderDID,
+        vcType,
+        schemaID,
+        schemaVersion,
+        expiredAt || "", // Use empty string if undefined
+        hash
+      );
       const receipt = await tx.wait();
 
       if (receipt.status !== 1) {
         throw new BlockchainError("Update transaction failed", receipt.hash);
       }
 
-      console.log(`✅ VC updated: ${id} (TX: ${receipt.hash})`);
+      console.log(`✅ VC updated: ${oldID} -> ${newID} (TX: ${receipt.hash})`);
       return receipt;
     } catch (error: any) {
       console.error("❌ Failed to update VC:", error);
