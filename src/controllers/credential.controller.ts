@@ -6,211 +6,282 @@ import { CredentialService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler, RequestWithDID } from "../middlewares";
 import { ResponseHelper } from "../utils/helpers";
-import { CombinedConfirmVCsBatchDTO, ClaimIssuerInitiatedVCsDTO, ConfirmIssuerInitiatedVCsDTO, IssuerRenewVCDTO, IssuerRevokeVCDTO, IssuerUpdateVCDTO, ProcessUpdateVCDTO, IssuerIssueVCDTO,ProcessIssuanceVCDTO, RevokeVCDTO, CredentialRevocationRequestDTO, ProcessRenewalVCDTO, ValidateVCDTO } from "../dtos";
-import { BadRequestError} from "../utils/errors/AppError";
+import {
+  CombinedConfirmVCsBatchDTO,
+  ClaimIssuerInitiatedVCsDTO,
+  ConfirmIssuerInitiatedVCsDTO,
+  IssuerRenewVCDTO,
+  IssuerRevokeVCDTO,
+  IssuerUpdateVCDTO,
+  ProcessUpdateVCDTO,
+  IssuerIssueVCDTO,
+  ProcessIssuanceVCDTO,
+  RevokeVCDTO,
+  CredentialRevocationRequestDTO,
+  ProcessRenewalVCDTO,
+  ValidateVCDTO,
+} from "../dtos";
+import { BadRequestError } from "../utils/errors/AppError";
 /**
  * Request Credential Issuance Controller
  */
 
-export const getHolderCredentialsFromDB = asyncHandler(async (req: Request, res: Response) => {
-  // Validate query parameters
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+export const getHolderCredentialsFromDB = asyncHandler(
+  async (req: Request, res: Response) => {
+    // Validate query parameters
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    // Extract holder_did from query parameters
+    const holderDid = req.query.holder_did as string;
+
+    // Call the service function
+    const credentials = await CredentialService.getHolderCredentialsFromDB(
+      holderDid
+    );
+
+    // Send success response
+    return ResponseHelper.success(
+      res,
+      credentials,
+      `Successfully retrieved ${credentials.length} credentials for holder ${holderDid}.`
+    );
   }
+);
 
-  // Extract holder_did from query parameters
-  const holderDid = req.query.holder_did as string;
+export const processIssuanceVC = asyncHandler(
+  async (req: Request, res: Response) => {
+    // Validate request using the defined validator
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
 
-  // Call the service function
-  const credentials = await CredentialService.getHolderCredentialsFromDB(holderDid);
+    // Cast req.body to the DTO for type safety
+    // DTO 'ProcessIssuanceVCDTO' sekarang sudah diperbarui (lebih ramping)
+    const requestData: ProcessIssuanceVCDTO = req.body;
 
-  // Send success response
-  return ResponseHelper.success(
-    res,
-    credentials,
-    `Successfully retrieved ${credentials.length} credentials for holder ${holderDid}.`
-  );
-});
+    // Call the service method with the validated data
+    // Service akan diubah di langkah berikutnya untuk menangani DTO baru
+    const result = await CredentialService.processIssuanceVC(requestData);
 
-export const processIssuanceVC = asyncHandler(async (req: Request, res: Response) => {
-  // Validate request using the defined validator
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+    // Send a standardized success response
+    return ResponseHelper.success(res, result, result.message);
   }
+);
 
-  // Cast req.body to the DTO for type safety
-  // DTO 'ProcessIssuanceVCDTO' sekarang sudah diperbarui (lebih ramping)
-  const requestData: ProcessIssuanceVCDTO = req.body;
+export const requestCredential = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
 
-  // Call the service method with the validated data
-  // Service akan diubah di langkah berikutnya untuk menangani DTO baru
-  const result = await CredentialService.processIssuanceVC(requestData);
+    const { encrypted_body, issuer_did, holder_did } = req.body;
 
-  // Send a standardized success response
-  return ResponseHelper.success(res, result, result.message);
-});
+    const result = await CredentialService.requestCredentialIssuance({
+      encrypted_body,
+      issuer_did,
+      holder_did,
+    });
 
-export const requestCredential = asyncHandler(async (req: Request, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+    return ResponseHelper.created(
+      res,
+      result,
+      "Credential issuance request created successfully"
+    );
   }
-
-  const { encrypted_body, issuer_did, holder_did } = req.body;
-
-  const result = await CredentialService.requestCredentialIssuance({
-    encrypted_body,
-    issuer_did,
-    holder_did,
-  });
-
-  return ResponseHelper.created(res, result, "Credential issuance request created successfully");
-});
+);
 
 /**
  * Get Credential Requests by Type Controller
  */
-export const getCredentialRequestsByType = asyncHandler(async (req: Request, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+export const getCredentialRequestsByType = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    // --- PERBAIKAN DI SINI ---
+    // Ambil 'holder_did' dari query
+    const { type, issuer_did, holder_did } = req.query;
+
+    const result = await CredentialService.getCredentialRequestsByType(
+      type as RequestType | "ALL",
+      issuer_did as string | undefined,
+      holder_did as string | undefined // <-- Teruskan 'holder_did' ke service
+    );
+
+    // --- PERBAIKAN DI SINI ---
+    // Gunakan 'result.data' dan 'result.message' dari service
+    return ResponseHelper.success(
+      res,
+      result,
+      "Credential requests retrieved successfully"
+    );
   }
-
-  // --- PERBAIKAN DI SINI ---
-  // Ambil 'holder_did' dari query
-  const { type, issuer_did, holder_did } = req.query; 
-
-  const result = await CredentialService.getCredentialRequestsByType(
-    type as (RequestType | "ALL"),
-    issuer_did as string | undefined,
-    holder_did as string | undefined // <-- Teruskan 'holder_did' ke service
-  );
-
-  // --- PERBAIKAN DI SINI ---
-  // Gunakan 'result.data' dan 'result.message' dari service
-  return ResponseHelper.success(res, result, "Credential requests retrieved successfully");
-});
+);
 
 /**
  * Process Credential Response Controller
  */
-export const processCredentialResponse = asyncHandler(async (req: Request, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+export const processCredentialResponse = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { request_id, issuer_did, holder_did, encrypted_body, request_type } =
+      req.body;
+
+    const result = await CredentialService.processCredentialResponse({
+      request_id,
+      issuer_did,
+      holder_did,
+      encrypted_body,
+      request_type,
+    });
+
+    return ResponseHelper.created(
+      res,
+      result,
+      "Credential response processed successfully"
+    );
   }
-
-  const { request_id, issuer_did, holder_did, encrypted_body, request_type } = req.body;
-
-  const result = await CredentialService.processCredentialResponse({
-    request_id,
-    issuer_did,
-    holder_did,
-    encrypted_body,
-    request_type,
-  });
-
-  return ResponseHelper.created(res, result, "Credential response processed successfully");
-});
+);
 
 /**
  * Get Holder VCs Controller
  */
-export const getHolderVCs = asyncHandler(async (req: Request, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+export const getHolderVCs = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { holderDid } = req.query;
+
+    const result = await CredentialService.getHolderVCs(holderDid as string);
+
+    return ResponseHelper.success(
+      res,
+      result,
+      "Holder VCs retrieved successfully"
+    );
   }
-
-  const { holderDid } = req.query;
-
-  const result = await CredentialService.getHolderVCs(holderDid as string);
-
-  return ResponseHelper.success(res, result, "Holder VCs retrieved successfully");
-});
+);
 
 /**
  * Request Credential Update Controller
  */
-export const requestCredentialUpdate = asyncHandler(async (req: Request, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+export const requestCredentialUpdate = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { issuer_did, holder_did, encrypted_body } = req.body;
+
+    const result = await CredentialService.requestCredentialUpdate({
+      issuer_did,
+      holder_did,
+      encrypted_body,
+    });
+
+    return ResponseHelper.created(
+      res,
+      result,
+      "Credential update request created successfully"
+    );
   }
-
-  const { issuer_did, holder_did, encrypted_body } = req.body;
-
-  const result = await CredentialService.requestCredentialUpdate({
-    issuer_did,
-    holder_did,
-    encrypted_body,
-  });
-
-  return ResponseHelper.created(res, result, "Credential update request created successfully");
-});
+);
 
 /**
  * Request Credential Renewal Controller
  */
-export const requestCredentialRenewal = asyncHandler(async (req: Request, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+export const requestCredentialRenewal = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { issuer_did, holder_did, encrypted_body } = req.body;
+
+    const result = await CredentialService.requestCredentialRenewal({
+      issuer_did,
+      holder_did,
+      encrypted_body,
+    });
+
+    return ResponseHelper.created(
+      res,
+      result,
+      "Credential renewal request created successfully"
+    );
   }
-
-  const { issuer_did, holder_did, encrypted_body } = req.body;
-
-  const result = await CredentialService.requestCredentialRenewal({
-    issuer_did,
-    holder_did,
-    encrypted_body,
-  });
-
-  return ResponseHelper.created(res, result, "Credential renewal request created successfully");
-});
+);
 
 /**
  * Request Credential Revocation Controller
  */
-export const requestCredentialRevocation = asyncHandler(async (req: Request, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+export const requestCredentialRevocation = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    // Cast body to the appropriate DTO for creating a request
+    const requestData: CredentialRevocationRequestDTO = req.body;
+
+    // Call the REVERTED service function to create the request
+    const result = await CredentialService.requestCredentialRevocation(
+      requestData
+    );
+
+    // Send success response (use CREATED status code 201)
+    return ResponseHelper.created(
+      res,
+      { request_id: result.request_id },
+      result.message
+    );
   }
-
-  // Cast body to the appropriate DTO for creating a request
-  const requestData: CredentialRevocationRequestDTO = req.body;
-
-  // Call the REVERTED service function to create the request
-  const result = await CredentialService.requestCredentialRevocation(requestData);
-
-  // Send success response (use CREATED status code 201)
-  return ResponseHelper.created(res, { request_id: result.request_id }, result.message);
-});
+);
 
 /**
  * Add VC Status Block Controller
  */
-export const addVCStatusBlock = asyncHandler(async (req: Request, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+export const addVCStatusBlock = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { vc_id, issuer_did, holder_did, status, hash } = req.body;
+
+    const result = await CredentialService.addVCStatusBlock({
+      vc_id,
+      issuer_did,
+      holder_did,
+      status,
+      hash,
+    });
+
+    return ResponseHelper.created(
+      res,
+      result,
+      "VC status block added successfully"
+    );
   }
-
-  const { vc_id, issuer_did, holder_did, status, hash } = req.body;
-
-  const result = await CredentialService.addVCStatusBlock({
-    vc_id,
-    issuer_did,
-    holder_did,
-    status,
-    hash,
-  });
-
-  return ResponseHelper.created(res, result, "VC status block added successfully");
-});
+);
 
 /**
  * Get VC Status Controller
@@ -229,7 +300,11 @@ export const getVCStatus = asyncHandler(async (req: Request, res: Response) => {
   // Call the updated service method (only requires vcId)
   const result = await CredentialService.getVCStatus(vcId);
 
-  return ResponseHelper.success(res, result, `Successfully retrieved status for VC ${vcId}.`);
+  return ResponseHelper.success(
+    res,
+    result,
+    `Successfully retrieved status for VC ${vcId}.`
+  );
 });
 
 export const revokeVC = asyncHandler(async (req: Request, res: Response) => {
@@ -249,39 +324,43 @@ export const revokeVC = asyncHandler(async (req: Request, res: Response) => {
   return ResponseHelper.success(res, result, result.message);
 });
 
-export const processRenewalVC = asyncHandler(async (req: Request, res: Response) => {
-  // Validate request body
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+export const processRenewalVC = asyncHandler(
+  async (req: Request, res: Response) => {
+    // Validate request body
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    // Cast body to DTO
+    const requestData: ProcessRenewalVCDTO = req.body;
+
+    // Call the service function
+    const result = await CredentialService.processRenewalVC(requestData);
+
+    // Send success response
+    return ResponseHelper.success(res, result, result.message);
   }
+);
 
-  // Cast body to DTO
-  const requestData: ProcessRenewalVCDTO = req.body;
+export const processUpdateVC = asyncHandler(
+  async (req: Request, res: Response) => {
+    // Validate request body
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
 
-  // Call the service function
-  const result = await CredentialService.processRenewalVC(requestData);
+    // Cast body to DTO
+    const requestData: ProcessUpdateVCDTO = req.body;
 
-  // Send success response
-  return ResponseHelper.success(res, result, result.message);
-});
+    // Call the service function
+    const result = await CredentialService.processUpdateVC(requestData);
 
-export const processUpdateVC = asyncHandler(async (req: Request, res: Response) => {
-  // Validate request body
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+    // Send success response
+    return ResponseHelper.success(res, result, result.message);
   }
-
-  // Cast body to DTO
-  const requestData: ProcessUpdateVCDTO = req.body;
-
-  // Call the service function
-  const result = await CredentialService.processUpdateVC(requestData);
-
-  // Send success response
-  return ResponseHelper.success(res, result, result.message);
-});
+);
 
 /**
  * Phase 1: Claim VC Controller
@@ -302,11 +381,19 @@ export const claimVC = asyncHandler(async (req: Request, res: Response) => {
 
   // If no VC found, return appropriate response
   if (!vcResponse) {
-    return ResponseHelper.success(res, null, "No pending VCs available for claim.");
+    return ResponseHelper.success(
+      res,
+      null,
+      "No pending VCs available for claim."
+    );
   }
 
   // Send success response with the claimed VC
-  return ResponseHelper.success(res, vcResponse, "VC claimed successfully. Please save it and confirm.");
+  return ResponseHelper.success(
+    res,
+    vcResponse,
+    "VC claimed successfully. Please save it and confirm."
+  );
 });
 
 /**
@@ -334,49 +421,63 @@ export const confirmVC = asyncHandler(async (req: Request, res: Response) => {
  * Phase 1 Batch: Claim multiple VCs Controller
  * Atomically claims multiple pending VCs for the holder
  */
-export const claimVCsBatch = asyncHandler(async (req: Request, res: Response) => {
-  // Validate request
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+export const claimVCsBatch = asyncHandler(
+  async (req: Request, res: Response) => {
+    // Validate request
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    // Extract holder_did and limit from body
+    const { holder_did, limit } = req.body;
+
+    // Call the service function
+    const result = await CredentialService.claimVCsBatch(
+      holder_did,
+      limit || 10
+    );
+
+    // Determine message based on results
+    let message = "No pending VCs available for claim.";
+    if (result.claimed_count > 0) {
+      message = `Successfully claimed ${result.claimed_count} VCs. ${
+        result.has_more
+          ? `${result.remaining_count} more pending.`
+          : "No more pending VCs."
+      }`;
+    }
+
+    // Send success response
+    return ResponseHelper.success(res, result, message);
   }
-
-  // Extract holder_did and limit from body
-  const { holder_did, limit } = req.body;
-
-  // Call the service function
-  const result = await CredentialService.claimVCsBatch(holder_did, limit || 10);
-
-  // Determine message based on results
-  let message = "No pending VCs available for claim.";
-  if (result.claimed_count > 0) {
-    message = `Successfully claimed ${result.claimed_count} VCs. ${result.has_more ? `${result.remaining_count} more pending.` : 'No more pending VCs.'}`;
-  }
-
-  // Send success response
-  return ResponseHelper.success(res, result, message);
-});
+);
 
 /**
  * Phase 2 Batch: Confirm multiple VCs Controller
  * Confirms multiple claimed VCs and soft-deletes them
  */
-export const confirmVCsBatch = asyncHandler(async (req: Request, res: Response) => {
-  // Validate request
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+export const confirmVCsBatch = asyncHandler(
+  async (req: Request, res: Response) => {
+    // Validate request
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    // Extract request_ids and holder_did from body
+    const { request_ids, holder_did } = req.body;
+
+    // Call the service function
+    const result = await CredentialService.confirmVCsBatch(
+      request_ids,
+      holder_did
+    );
+
+    // Send success response
+    return ResponseHelper.success(res, result, result.message);
   }
-
-  // Extract request_ids and holder_did from body
-  const { request_ids, holder_did } = req.body;
-
-  // Call the service function
-  const result = await CredentialService.confirmVCsBatch(request_ids, holder_did);
-
-  // Send success response
-  return ResponseHelper.success(res, result, result.message);
-});
+);
 
 /**
  * Admin: Manual cleanup of stuck PROCESSING VCs
@@ -384,174 +485,226 @@ export const confirmVCsBatch = asyncHandler(async (req: Request, res: Response) 
  *
  * Requires admin authentication
  */
-export const resetStuckVCs = asyncHandler(async (req: Request, res: Response) => {
-  // Validate request
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+export const resetStuckVCs = asyncHandler(
+  async (req: Request, res: Response) => {
+    // Validate request
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    // Extract timeout_minutes from body (optional, defaults to 15)
+    const { timeout_minutes } = req.body;
+
+    // Call the service function
+    const result = await CredentialService.resetStuckProcessingVCs(
+      timeout_minutes || 15
+    );
+
+    // [FIXED] Use the new 'total_reset_count' for the message
+    const message =
+      result.total_reset_count > 0
+        ? `Successfully reset ${result.total_reset_count} total stuck VCs back to PENDING`
+        : "No stuck VCs found to reset";
+
+    // The 'result' object now contains the full breakdown
+    return ResponseHelper.success(res, result, message);
   }
+);
 
-  // Extract timeout_minutes from body (optional, defaults to 15)
-  const { timeout_minutes } = req.body;
+export const getAllIssuerRequests = asyncHandler(
+  async (req: Request, res: Response) => {
+    //
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
 
-  // Call the service function
-  const result = await CredentialService.resetStuckProcessingVCs(timeout_minutes || 15);
+    // Ekstrak query params
+    const issuerDid = req.query.issuer_did as string;
+    // Perbarui tipe cast untuk menyertakan 'ALL'
+    const status = req.query.status as (RequestStatus | "ALL") | undefined;
 
-  // [FIXED] Use the new 'total_reset_count' for the message
-  const message = result.total_reset_count > 0
-    ? `Successfully reset ${result.total_reset_count} total stuck VCs back to PENDING`
-    : "No stuck VCs found to reset";
+    // Panggil metode service yang telah diperbarui
+    const result = await CredentialService.getAllIssuerRequests(
+      issuerDid,
+      status
+    );
 
-  // The 'result' object now contains the full breakdown
-  return ResponseHelper.success(res, result, message);
-});
-
-export const getAllIssuerRequests = asyncHandler(async (req: Request, res: Response) => {
-  //
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+    // Kirim respons sukses
+    return ResponseHelper.success(
+      res,
+      result,
+      `Successfully retrieved ${result.count} requests for issuer.`
+    );
   }
+);
 
-  // Ekstrak query params
-  const issuerDid = req.query.issuer_did as string;
-  // Perbarui tipe cast untuk menyertakan 'ALL'
-  const status = req.query.status as (RequestStatus | 'ALL') | undefined;
+export const issuerIssueVC = asyncHandler(
+  async (req: RequestWithDID, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
 
-  // Panggil metode service yang telah diperbarui
-  const result = await CredentialService.getAllIssuerRequests(issuerDid, status);
+    // Dapatkan DID yang diautentikasi dari middleware
+    const authenticatedDid = req.holderDID; // Diambil dari token JWT issuer
+    if (!authenticatedDid) {
+      // Ini seharusnya tidak terjadi jika middleware auth berjalan
+      throw new BadRequestError(
+        "Authenticated issuer DID not found in request. Make sure JWT token is valid."
+      );
+    }
 
-  // Kirim respons sukses
-  return ResponseHelper.success(
-    res,
-    result,
-    `Successfully retrieved ${result.count} requests for issuer.`
-  );
-});
+    const requestData: IssuerIssueVCDTO = req.body;
 
-export const issuerIssueVC = asyncHandler(async (req: RequestWithDID, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+    // Panggil service, teruskan data dan DID yang diautentikasi
+    const result = await CredentialService.issuerIssueVC(
+      requestData,
+      authenticatedDid
+    );
+
+    // Kirim respons 'Created' (201)
+    return ResponseHelper.created(res, result, result.message);
   }
+);
 
-  // Dapatkan DID yang diautentikasi dari middleware
-  const authenticatedDid = req.holderDID; // Diambil dari token JWT issuer
-  if (!authenticatedDid) {
-    // Ini seharusnya tidak terjadi jika middleware auth berjalan
-    throw new BadRequestError("Authenticated issuer DID not found in request. Make sure JWT token is valid.");
+export const issuerUpdateVC = asyncHandler(
+  async (req: RequestWithDID, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    // Dapatkan DID yang diautentikasi dari middleware
+    const authenticatedDid = req.holderDID;
+    if (!authenticatedDid) {
+      throw new BadRequestError(
+        "Authenticated issuer DID not found in request. Make sure JWT token is valid."
+      );
+    }
+
+    const requestData: IssuerUpdateVCDTO = req.body;
+
+    // Panggil service
+    const result = await CredentialService.issuerUpdateVC(
+      requestData,
+      authenticatedDid
+    );
+
+    // Kirim respons 'Created' (201) karena VC baru dibuat
+    return ResponseHelper.created(res, result, result.message);
   }
+);
 
-  const requestData: IssuerIssueVCDTO = req.body;
+export const issuerRevokeVC = asyncHandler(
+  async (req: RequestWithDID, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
 
-  // Panggil service, teruskan data dan DID yang diautentikasi
-  const result = await CredentialService.issuerIssueVC(requestData, authenticatedDid);
+    // Dapatkan DID yang diautentikasi dari middleware
+    const authenticatedDid = req.holderDID;
+    if (!authenticatedDid) {
+      throw new BadRequestError(
+        "Authenticated issuer DID not found in request. Make sure JWT token is valid."
+      );
+    }
 
-  // Kirim respons 'Created' (201)
-  return ResponseHelper.created(res, result, result.message);
-});
+    const requestData: IssuerRevokeVCDTO = req.body;
 
-export const issuerUpdateVC = asyncHandler(async (req: RequestWithDID, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+    // Panggil service
+    const result = await CredentialService.issuerRevokeVC(
+      requestData,
+      authenticatedDid
+    );
+
+    // Kirim respons 'OK' (200)
+    return ResponseHelper.success(res, result, result.message);
   }
+);
 
-  // Dapatkan DID yang diautentikasi dari middleware
-  const authenticatedDid = req.holderDID;
-  if (!authenticatedDid) {
-    throw new BadRequestError("Authenticated issuer DID not found in request. Make sure JWT token is valid.");
+export const issuerRenewVC = asyncHandler(
+  async (req: RequestWithDID, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const authenticatedDid = req.holderDID;
+    if (!authenticatedDid) {
+      throw new BadRequestError(
+        "Authenticated issuer DID not found in request. Make sure JWT token is valid."
+      );
+    }
+
+    const requestData: IssuerRenewVCDTO = req.body;
+
+    // Panggil service
+    const result = await CredentialService.issuerRenewVC(
+      requestData,
+      authenticatedDid
+    );
+
+    // Kirim respons 'Created' (201) karena record baru dibuat di DB
+    return ResponseHelper.created(res, result, result.message);
   }
+);
 
-  const requestData: IssuerUpdateVCDTO = req.body;
+export const claimIssuerInitiatedVCsBatch = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
 
-  // Panggil service
-  const result = await CredentialService.issuerUpdateVC(requestData, authenticatedDid);
+    // --- PERBAIKAN: Gunakan DTO untuk type casting req.body ---
+    const requestData: ClaimIssuerInitiatedVCsDTO = req.body;
+    const { holder_did, limit } = requestData;
 
-  // Kirim respons 'Created' (201) karena VC baru dibuat
-  return ResponseHelper.created(res, result, result.message);
-});
+    // Panggil service function yang baru
+    const result = await CredentialService.claimIssuerInitiatedVCsBatch(
+      holder_did,
+      limit || 10
+    ); //
 
-export const issuerRevokeVC = asyncHandler(async (req: RequestWithDID, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+    let message = "No pending issuer-initiated VCs available for claim.";
+    if (result.claimed_count > 0) {
+      message = `Successfully claimed ${result.claimed_count} VCs. ${
+        result.has_more
+          ? `${result.remaining_count} more pending.`
+          : "No more pending VCs."
+      }`;
+    }
+
+    return ResponseHelper.success(res, result, message);
   }
-
-  // Dapatkan DID yang diautentikasi dari middleware
-  const authenticatedDid = req.holderDID;
-  if (!authenticatedDid) {
-    throw new BadRequestError("Authenticated issuer DID not found in request. Make sure JWT token is valid.");
-  }
-
-  const requestData: IssuerRevokeVCDTO = req.body;
-
-  // Panggil service
-  const result = await CredentialService.issuerRevokeVC(requestData, authenticatedDid);
-
-  // Kirim respons 'OK' (200)
-  return ResponseHelper.success(res, result, result.message);
-});
-
-export const issuerRenewVC = asyncHandler(async (req: RequestWithDID, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
-  }
-
-  const authenticatedDid = req.holderDID;
-  if (!authenticatedDid) {
-    throw new BadRequestError("Authenticated issuer DID not found in request. Make sure JWT token is valid.");
-  }
-
-  const requestData: IssuerRenewVCDTO = req.body;
-
-  // Panggil service
-  const result = await CredentialService.issuerRenewVC(requestData, authenticatedDid);
-
-  // Kirim respons 'Created' (201) karena record baru dibuat di DB
-  return ResponseHelper.created(res, result, result.message);
-});
-
-export const claimIssuerInitiatedVCsBatch = asyncHandler(async (req: Request, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
-  }
-
-  // --- PERBAIKAN: Gunakan DTO untuk type casting req.body ---
-  const requestData: ClaimIssuerInitiatedVCsDTO = req.body;
-  const { holder_did, limit } = requestData;
-
-  // Panggil service function yang baru
-  const result = await CredentialService.claimIssuerInitiatedVCsBatch(holder_did, limit || 10); //
-
-  let message = "No pending issuer-initiated VCs available for claim.";
-  if (result.claimed_count > 0) {
-    message = `Successfully claimed ${result.claimed_count} VCs. ${result.has_more ? `${result.remaining_count} more pending.` : 'No more pending VCs.'}`;
-  }
-
-  return ResponseHelper.success(res, result, message);
-});
+);
 
 /**
  * Phase 2 Batch (Issuer-Initiated): Confirm multiple VCs Controller
  */
-export const confirmIssuerInitiatedVCsBatch = asyncHandler(async (req: Request, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+export const confirmIssuerInitiatedVCsBatch = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    // --- PERBAIKAN: Gunakan DTO untuk type casting req.body ---
+    const requestData: ConfirmIssuerInitiatedVCsDTO = req.body;
+    const { vc_ids, holder_did } = requestData;
+
+    // Panggil service function yang baru
+    const result = await CredentialService.confirmIssuerInitiatedVCsBatch(
+      vc_ids,
+      holder_did
+    ); //
+
+    return ResponseHelper.success(res, result, result.message);
   }
-
-  // --- PERBAIKAN: Gunakan DTO untuk type casting req.body ---
-  const requestData: ConfirmIssuerInitiatedVCsDTO = req.body;
-  const { vc_ids, holder_did } = requestData;
-
-  // Panggil service function yang baru
-  const result = await CredentialService.confirmIssuerInitiatedVCsBatch(vc_ids, holder_did); //
-
-  return ResponseHelper.success(res, result, result.message);
-});
+);
 
 /**
  * Validate VC JSON Controller
@@ -571,7 +724,7 @@ export const validateVC = asyncHandler(async (req: Request, res: Response) => {
   // Return appropriate message based on validation result
   const message = result.is_valid
     ? "VC validation successful. The credential is valid and belongs to you."
-    : `VC validation failed: ${result.errors.join(', ')}`;
+    : `VC validation failed: ${result.errors.join(", ")}`;
 
   return ResponseHelper.success(res, result, message);
 });
@@ -617,6 +770,54 @@ export const deleteVCDocumentFile = asyncHandler(
 
     // Call service to delete file
     const result = await CredentialService.deleteVCDocumentFile(file_id);
+
+    return ResponseHelper.success(res, result, result.message);
+  }
+);
+
+export const claimCombinedVCsBatch = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { holder_did, limit } = req.body;
+
+    const result = await CredentialService.claimCombinedVCsBatch(
+      holder_did,
+      limit || 10
+    );
+
+    let message = "No pending VCs available for claim.";
+    if (result.claimed_count > 0) {
+      message = `Successfully claimed ${result.claimed_count} VCs. ${
+        result.has_more
+          ? `${result.remaining_count} more pending.`
+          : "No more pending VCs."
+      }`;
+    }
+
+    return ResponseHelper.success(res, result, message);
+  }
+);
+
+/**
+ * [NEW] Phase 2 Batch (Combined): Confirm multiple VCs Controller
+ */
+export const confirmCombinedVCsBatch = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { items, holder_did } = req.body as CombinedConfirmVCsBatchDTO;
+
+    const result = await CredentialService.confirmCombinedVCsBatch(
+      items,
+      holder_did
+    );
 
     return ResponseHelper.success(res, result, result.message);
   }
