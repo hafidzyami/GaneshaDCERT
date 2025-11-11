@@ -42,14 +42,13 @@ import {
   ConfirmIssuerInitiatedVCsResponseDTO,
   ValidateVCDTO,
   VCValidationResult,
-  CombinedClaimVCDTO,
-  CombinedClaimVCsResponseDTO,
-  CombinedClaimConfirmationItemDTO,
-  CombinedConfirmVCsBatchDTO,
-  CombinedConfirmVCsResponseDTO,
+  UploadVCDocumentResponseDTO,
+  DeleteVCDocumentResponseDTO,
 } from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 import NotificationService from "./notification.service";
+import StorageService from "./storage.service";
+import { v4 as uuidv4 } from "uuid";
 
 /**
  * Credential Service with Dependency Injection
@@ -114,17 +113,16 @@ class CredentialService {
     issuerDid?: string,
     holderDid?: string
   ) {
-    
     interface WhereClause {
-        issuer_did?: string;
-        holder_did?: string;
+      issuer_did?: string;
+      holder_did?: string;
     }
 
     const whereClause: WhereClause = {};
     if (issuerDid) {
       whereClause.issuer_did = issuerDid;
     }
-    if (holderDid) { 
+    if (holderDid) {
       whereClause.holder_did = holderDid;
     }
 
@@ -160,42 +158,53 @@ class CredentialService {
 
       // Agregasi hasil
       requests = [
-        ...issuanceRequests.map(req => ({ ...req, request_type: RequestType.ISSUANCE })),
-        ...renewalRequests.map(req => ({ ...req, request_type: RequestType.RENEWAL })),
-        ...updateRequests.map(req => ({ ...req, request_type: RequestType.UPDATE })),
-        ...revokeRequests.map(req => ({ ...req, request_type: RequestType.REVOKE })),
+        ...issuanceRequests.map((req) => ({
+          ...req,
+          request_type: RequestType.ISSUANCE,
+        })),
+        ...renewalRequests.map((req) => ({
+          ...req,
+          request_type: RequestType.RENEWAL,
+        })),
+        ...updateRequests.map((req) => ({
+          ...req,
+          request_type: RequestType.UPDATE,
+        })),
+        ...revokeRequests.map((req) => ({
+          ...req,
+          request_type: RequestType.REVOKE,
+        })),
       ];
 
       // Urutkan berdasarkan tanggal (terbaru dulu)
       requests.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      
     } else {
       // --- Logika switch yang sudah ada ---
       switch (type) {
         case RequestType.ISSUANCE:
           requests = await this.db.vCIssuanceRequest.findMany({
-            where: whereClause, 
+            where: whereClause,
             orderBy: { createdAt: "desc" },
           });
           break;
 
         case RequestType.RENEWAL:
           requests = await this.db.vCRenewalRequest.findMany({
-            where: whereClause, 
+            where: whereClause,
             orderBy: { createdAt: "desc" },
           });
           break;
 
         case RequestType.UPDATE:
           requests = await this.db.vCUpdateRequest.findMany({
-            where: whereClause, 
+            where: whereClause,
             orderBy: { createdAt: "desc" },
           });
           break;
 
         case RequestType.REVOKE:
           requests = await this.db.vCRevokeRequest.findMany({
-            where: whereClause, 
+            where: whereClause,
             orderBy: { createdAt: "desc" },
           });
           break;
@@ -546,9 +555,8 @@ class CredentialService {
 
           for (const existingVC of existingVCs) {
             try {
-              const revokeReceipt = await VCBlockchainService.revokeVCInBlockchain(
-                existingVC.id
-              );
+              const revokeReceipt =
+                await VCBlockchainService.revokeVCInBlockchain(existingVC.id);
               logger.info(
                 `✅ Revoked existing VC ${existingVC.id}. TX: ${revokeReceipt.hash}`
               );
@@ -2506,210 +2514,107 @@ class CredentialService {
     return result;
   }
 
-  async claimCombinedVCsBatch(
-    holderDid: string,
-    limit: number = 10
-  ): Promise<CombinedClaimVCsResponseDTO> {
-    logger.info(
-      `Attempting to claim combined batch of VCs (limit: ${limit}) for holder DID: ${holderDid}`
-    );
+  /**
+   * Upload VC document file to MinIO storage
+   * Generates UUID for filename and stores original filename in response
+   */
+  async uploadVCDocumentFile(
+    fileBuffer: Buffer,
+    originalFilename: string,
+    mimetype: string
+  ): Promise<UploadVCDocumentResponseDTO> {
+    try {
+      // Generate UUID for file
+      const fileId = uuidv4();
 
-    const safeLimit = Math.min(Math.max(limit, 1), 100);
-    const combinedClaims: CombinedClaimVCDTO[] = [];
+      // Get file extension from original filename
+      const extension = originalFilename.includes(".")
+        ? originalFilename.substring(originalFilename.lastIndexOf("."))
+        : "";
 
-    // 1. Try claiming from VCResponse (holder-initiated) first
-    const holderRequestVCs = await this.db.$queryRaw<any[]>`
-      UPDATE "VCResponse"
-      SET status = 'PROCESSING'::"VCResponseStatus",
-          processing_at = NOW(),
-          "updatedAt" = NOW()
-      WHERE id IN (
-        SELECT id
-        FROM "VCResponse"
-        WHERE holder_did = ${holderDid}
-          AND "deletedAt" IS NULL
-          AND (
-            status = 'PENDING'::"VCResponseStatus"
-            OR (
-              status = 'PROCESSING'::"VCResponseStatus"
-              AND processing_at < NOW() - INTERVAL '5 minutes'
-            )
-          )
-        ORDER BY "createdAt" ASC
-        LIMIT ${safeLimit}
-        FOR UPDATE SKIP LOCKED
-      )
-      RETURNING request_id, encrypted_body, request_type, processing_at;
-    `;
+      // Create filename with UUID + extension
+      const uuidFilename = `${fileId}${extension}`;
 
-    // Map results
-    for (const vc of holderRequestVCs) {
-      combinedClaims.push({
-        source: 'HOLDER_REQUEST',
-        claimId: vc.request_id, // Use request_id for confirmation
-        encrypted_body: vc.encrypted_body,
-        request_type: vc.request_type,
-        processing_at: vc.processing_at,
-      });
+      logger.info(
+        `Uploading VC document file: ${originalFilename} as ${uuidFilename}`
+      );
+
+      // Upload to MinIO in vc-document directory with UUID filename
+      const uploadResult = await StorageService.uploadFile(
+        "vc-document",
+        uuidFilename,
+        fileBuffer,
+        mimetype
+      );
+
+      logger.success(
+        `VC document file uploaded successfully: ${uploadResult.filePath}`
+      );
+
+      return {
+        message: "VC document file uploaded successfully",
+        file_id: fileId,
+        file_url: uploadResult.url,
+        size: uploadResult.size,
+      };
+    } catch (error: any) {
+      logger.error(
+        `Failed to upload VC document file: ${originalFilename}`,
+        error
+      );
+      throw new BadRequestError(`File upload failed: ${error.message}`);
     }
-
-    logger.info(`Claimed ${combinedClaims.length} VCs from HOLDER_REQUEST source`);
-
-    // 2. Try claiming from VCinitiatedByIssuer (issuer-initiated) if limit not reached
-    const remainingLimit = safeLimit - combinedClaims.length;
-    if (remainingLimit > 0) {
-      const issuerInitiatedVCs = await this.db.$queryRaw<any[]>`
-        UPDATE "VCinitiatedByIssuer"
-        SET status = 'PROCESSING'::"VCResponseStatus",
-            processing_at = NOW(),
-            "updatedAt" = NOW()
-        WHERE id IN (
-          SELECT id
-          FROM "VCinitiatedByIssuer"
-          WHERE holder_did = ${holderDid}
-            AND "deletedAt" IS NULL
-            AND (
-              status = 'PENDING'::"VCResponseStatus"
-              OR (
-                status = 'PROCESSING'::"VCResponseStatus"
-                AND processing_at < NOW() - INTERVAL '5 minutes'
-              )
-            )
-          ORDER BY "createdAt" ASC
-          LIMIT ${remainingLimit}
-          FOR UPDATE SKIP LOCKED
-        )
-        RETURNING id, encrypted_body, request_type, processing_at;
-      `;
-
-      // Map results
-      for (const vc of issuerInitiatedVCs) {
-        combinedClaims.push({
-          source: 'ISSUER_INITIATED',
-          claimId: vc.id, // Use id for confirmation
-          encrypted_body: vc.encrypted_body,
-          request_type: vc.request_type,
-          processing_at: vc.processing_at,
-        });
-      }
-      logger.info(`Claimed ${issuerInitiatedVCs.length} VCs from ISSUER_INITIATED source`);
-    }
-
-    // 3. Check for remaining VCs
-    const remainingHolderVCs = await this.db.vCResponse.count({
-      where: {
-        holder_did: holderDid,
-        deletedAt: null,
-        OR: [
-          { status: 'PENDING' },
-          { status: 'PROCESSING', processing_at: { lt: new Date(Date.now() - 5 * 60 * 1000) } },
-        ],
-      },
-    });
-
-    const remainingIssuerVCs = await this.db.vCinitiatedByIssuer.count({
-      where: {
-        holder_did: holderDid,
-        deletedAt: null,
-        OR: [
-          { status: 'PENDING' },
-          { status: 'PROCESSING', processing_at: { lt: new Date(Date.now() - 5 * 60 * 1000) } },
-        ],
-      },
-    });
-
-    const totalRemaining = remainingHolderVCs + remainingIssuerVCs;
-
-    logger.success(
-      `Combined batch claimed ${combinedClaims.length} VCs for holder DID: ${holderDid}`
-    );
-
-    return {
-      claimed_vcs: combinedClaims,
-      claimed_count: combinedClaims.length,
-      remaining_count: totalRemaining,
-      has_more: totalRemaining > 0,
-    };
   }
 
   /**
-   * [NEW] Phase 2 Batch (Combined): Confirm VCs from both sources
-   *
-   * This method accepts an array of items, each specifying its source,
-   * and updates the correct table (VCResponse or VCinitiatedByIssuer).
+   * Delete VC document file from MinIO storage by file_id (UUID)
    */
-  async confirmCombinedVCsBatch(
-    items: CombinedClaimConfirmationItemDTO[],
-    holderDid: string
-  ): Promise<CombinedConfirmVCsResponseDTO> {
-    logger.info(
-      `Confirming combined batch of ${items.length} VCs for holder DID: ${holderDid}`
-    );
+  async deleteVCDocumentFile(
+    fileId: string
+  ): Promise<DeleteVCDocumentResponseDTO> {
+    try {
+      logger.info(`Deleting VC document file with ID: ${fileId}`);
 
-    // 1. Separate IDs based on source
-    const holderRequestIds = items
-      .filter((item) => item.source === 'HOLDER_REQUEST')
-      .map((item) => item.claimId);
+      // List files in vc-document directory to find file with matching UUID
+      const files = await StorageService.listFiles("vc-document");
 
-    const issuerInitiatedIds = items
-      .filter((item) => item.source === 'ISSUER_INITIATED')
-      .map((item) => item.claimId);
-
-    let confirmedHolderCount = 0;
-    let confirmedIssuerCount = 0;
-
-    // 2. Confirm VCs from VCResponse (using request_id)
-    if (holderRequestIds.length > 0) {
-      const updatedHolderVCs = await this.db.vCResponse.updateMany({
-        where: {
-          request_id: { in: holderRequestIds },
-          holder_did: holderDid,
-          status: 'PROCESSING',
-        },
-        data: {
-          status: 'CLAIMED',
-          deletedAt: new Date(),
-        },
+      // Find file that starts with the UUID
+      // Extract filename without directory path before checking
+      const targetFile = files.find((file) => {
+        const filename = file.name.split('/').pop() || file.name;
+        return filename.startsWith(fileId);
       });
-      confirmedHolderCount = updatedHolderVCs.count;
-      logger.info(`Confirmed ${confirmedHolderCount}/${holderRequestIds.length} VCs from HOLDER_REQUEST`);
-    }
 
-    // 3. Confirm VCs from VCinitiatedByIssuer (using id)
-    if (issuerInitiatedIds.length > 0) {
-      const updatedIssuerVCs = await this.db.vCinitiatedByIssuer.updateMany({
-        where: {
-          id: { in: issuerInitiatedIds },
-          holder_did: holderDid,
-          status: 'PROCESSING',
-        },
-        data: {
-          status: 'CLAIMED',
-          deletedAt: new Date(),
-        },
-      });
-      confirmedIssuerCount = updatedIssuerVCs.count;
-      logger.info(`Confirmed ${confirmedIssuerCount}/${issuerInitiatedIds.length} VCs from ISSUER_INITIATED`);
-    }
+      if (!targetFile) {
+        throw new NotFoundError(`File with ID ${fileId} not found in storage`);
+      }
 
-    const totalConfirmed = confirmedHolderCount + confirmedIssuerCount;
+      // Extract filename without directory path
+      const filename = targetFile.name.split('/').pop() || targetFile.name;
 
-    if (totalConfirmed === 0 && items.length > 0) {
-      logger.warn(
-        `Combined VC confirmation failed: No VCs found in PROCESSING state for holder ${holderDid}`
+      // Delete from MinIO in vc-document directory
+      await StorageService.deleteFile("vc-document", filename);
+
+      logger.success(
+        `VC document file deleted successfully: ${targetFile.name}`
       );
-      throw new NotFoundError(
-        `No VCs found in PROCESSING state for confirmation.`
+
+      return {
+        message: "VC document file deleted successfully",
+        file_id: fileId,
+      };
+    } catch (error: any) {
+      logger.error(
+        `Failed to delete VC document file with ID: ${fileId}`,
+        error
       );
+
+      if (error instanceof NotFoundError) {
+        throw error;
+      }
+
+      throw new BadRequestError(`File deletion failed: ${error.message}`);
     }
-
-    logger.success(`Combined batch confirmed and soft-deleted ${totalConfirmed} VCs`);
-
-    return {
-      message: `Successfully confirmed ${totalConfirmed} VCs.`,
-      confirmed_count: totalConfirmed,
-      requested_count: items.length,
-    };
   }
 }
 

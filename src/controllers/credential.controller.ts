@@ -576,36 +576,48 @@ export const validateVC = asyncHandler(async (req: Request, res: Response) => {
   return ResponseHelper.success(res, result, message);
 });
 
-export const claimCombinedVCsBatch = asyncHandler(async (req: Request, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+/**
+ * Upload VC document file
+ * POST /credentials/file
+ */
+export const uploadVCDocumentFile = asyncHandler(
+  async (req: Request, res: Response) => {
+    // Check if file exists
+    if (!req.file) {
+      throw new BadRequestError("File is required");
+    }
+
+    const fileBuffer = req.file.buffer;
+    const filename = req.file.originalname;
+    const mimetype = req.file.mimetype;
+
+    // Call service to upload file
+    const result = await CredentialService.uploadVCDocumentFile(
+      fileBuffer,
+      filename,
+      mimetype
+    );
+
+    return ResponseHelper.success(res, result, result.message);
   }
-
-  const { holder_did, limit } = req.body;
-
-  const result = await CredentialService.claimCombinedVCsBatch(holder_did, limit || 10);
-
-  let message = "No pending VCs available for claim.";
-  if (result.claimed_count > 0) {
-    message = `Successfully claimed ${result.claimed_count} VCs. ${result.has_more ? `${result.remaining_count} more pending.` : 'No more pending VCs.'}`;
-  }
-
-  return ResponseHelper.success(res, result, message);
-});
+);
 
 /**
- * [NEW] Phase 2 Batch (Combined): Confirm multiple VCs Controller
+ * Delete VC document file
+ * DELETE /credentials/file
  */
-export const confirmCombinedVCsBatch = asyncHandler(async (req: Request, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ValidationError("Validation error", errors.array());
+export const deleteVCDocumentFile = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { file_id } = req.body;
+
+    // Call service to delete file
+    const result = await CredentialService.deleteVCDocumentFile(file_id);
+
+    return ResponseHelper.success(res, result, result.message);
   }
-
-  const { items, holder_did } = req.body as CombinedConfirmVCsBatchDTO;
-
-  const result = await CredentialService.confirmCombinedVCsBatch(items, holder_did);
-
-  return ResponseHelper.success(res, result, result.message);
-});
+);
