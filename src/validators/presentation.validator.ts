@@ -52,6 +52,11 @@ export const storeVPValidator = [
         throw new Error("VP must be a valid JSON string");
       }
     }),
+
+  body("is_barcode")
+    .optional()
+    .isBoolean()
+    .withMessage("is_barcode must be a boolean"),
 ];
 
 export const getVPValidator = [

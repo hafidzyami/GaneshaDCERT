@@ -815,6 +815,49 @@ export const validateVCValidator = [
     .withMessage("Invalid holder_did format"),
 ];
 
+export const claimCombinedVCsBatchValidator = [
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder_did format"),
+
+  body("limit")
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage("limit must be an integer between 1 and 100"),
+];
+
+/**
+ * [NEW] Validator for Phase 2 Combined Batch: Confirm multiple VCs
+ */
+export const confirmCombinedVCsBatchValidator = [
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder_did format"),
+
+  body("items")
+    .isArray({ min: 1, max: 100 })
+    .withMessage("items must be an array with 1 to 100 objects"),
+
+  body("items.*.claimId")
+    .trim()
+    .notEmpty()
+    .isUUID()
+    .withMessage("Each item's claimId must be a valid UUID"),
+
+  body("items.*.source")
+    .trim()
+    .isIn(["HOLDER_REQUEST", "ISSUER_INITIATED"])
+    .withMessage(
+      "Each item's source must be either 'HOLDER_REQUEST' or 'ISSUER_INITIATED'"
+    ),
+];
+
 /**
  * Validator for DELETE /credentials/file
  * Validates the deletion of VC document file

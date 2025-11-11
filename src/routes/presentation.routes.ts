@@ -203,6 +203,10 @@ router.get(
  *                 type: string
  *                 description: Signed Verifiable Presentation as JSON string
  *                 example: '{"@context":["https://www.w3.org/2018/credentials/v1"],"type":["VerifiablePresentation"],"holder":"did:dcert:holder123","verifiableCredential":[...],"proof":{"type":"DataIntegrityProof","cryptosuite":"eddsa-rdfc-2022","created":"2024-01-01T00:00:00Z","verificationMethod":"did:dcert:holder123#key-1","proofPurpose":"authentication","proofValue":"z..."}}'
+ *               is_barcode:
+ *                 type: boolean
+ *                 description: Indicates whether the VP sharing is from a barcode scan (optional, defaults to false)
+ *                 example: true
  *     responses:
  *       201:
  *         description: VP stored successfully
@@ -314,15 +318,19 @@ router.get("/:vpId", getVPValidator, vp.getVP);
  * @swagger
  * /presentations/{vpId}/verify:
  *   get:
- *     summary: Verify Verifiable Presentation (One-Time Use)
+ *     summary: Verify Verifiable Presentation
  *     description: |
  *       Verify the authenticity and integrity of a VP and its contained VCs (requires DID authentication).
  *
- *       **One-Time Use**: After verification (regardless of valid or invalid result), the VP will be soft-deleted
- *       to prevent reuse. This ensures that each VP can only be verified once.
+ *       **Conditional Behavior based on is_barcode**:
+ *       - **is_barcode = false**: One-time use VP. After verification (regardless of valid or invalid result),
+ *         the VP will be soft-deleted to prevent reuse. Calling this endpoint again will return 404
+ *         "VP not found or already verified".
+ *       - **is_barcode = true**: Reusable VP for barcode scanning scenarios. The VP will never be deleted
+ *         and can be verified multiple times.
  *
- *       **Idempotent**: Calling this endpoint multiple times on an already-verified VP will return 404
- *       "VP not found or already verified".
+ *       This allows barcode-based VPs to be scanned and verified repeatedly while maintaining
+ *       security for traditional one-time VP sharing.
  *     tags:
  *       - Verification & Presentation (VP) Flow
  *     parameters:
@@ -335,7 +343,7 @@ router.get("/:vpId", getVPValidator, vp.getVP);
  *         description: ID of the VP to verify
  *     responses:
  *       200:
- *         description: VP verification completed (VP is now soft-deleted regardless of result)
+ *         description: VP verification completed (one-time VPs are soft-deleted, barcode VPs remain reusable)
  *         content:
  *           application/json:
  *             schema:
@@ -374,7 +382,7 @@ router.get("/:vpId", getVPValidator, vp.getVP);
  *       401:
  *         description: Unauthorized - invalid or missing JWT token
  *       404:
- *         description: VP not found or already verified (one-time use)
+ *         description: VP not found, or already verified and deleted (for one-time use VPs only)
  *       500:
  *         description: Internal server error
  */

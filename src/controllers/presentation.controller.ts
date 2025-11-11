@@ -57,11 +57,12 @@ export const storeVP = asyncHandler(async (req: RequestWithDID, res: Response) =
     throw new ValidationError("Holder DID not found in authentication token", []);
   }
 
-  const { vp } = req.body;
+  const { vp, is_barcode } = req.body;
 
   const result = await PresentationService.storeVP({
     holder_did,
     vp,
+    is_barcode,
   });
 
   // Return only vp_id

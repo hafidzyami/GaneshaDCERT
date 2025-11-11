@@ -42,6 +42,11 @@ import {
   ConfirmIssuerInitiatedVCsResponseDTO,
   ValidateVCDTO,
   VCValidationResult,
+  CombinedClaimVCDTO,
+  CombinedClaimVCsResponseDTO,
+  CombinedClaimConfirmationItemDTO,
+  CombinedConfirmVCsBatchDTO,
+  CombinedConfirmVCsResponseDTO,
   UploadVCDocumentResponseDTO,
   DeleteVCDocumentResponseDTO,
 } from "../dtos";
@@ -615,9 +620,9 @@ class CredentialService {
       try {
         updatedRequest = await this.db.vCIssuanceRequest.update({
           where: { id: request_id },
-          data: { 
+          data: {
             status: RequestStatus.APPROVED,
-            vc_id: vc_id // <-- SIMPAN VC_ID DI SINI
+            vc_id: vc_id, // <-- SIMPAN VC_ID DI SINI
           },
         });
 
@@ -803,9 +808,9 @@ class CredentialService {
           await this.db.vCRevokeRequest.update({
             // Still update request status
             where: { id: request_id },
-            data: { 
+            data: {
               status: RequestStatus.APPROVED,
-              vc_id: vc_id // <-- SIMPAN VC_ID DI SINI
+              vc_id: vc_id, // <-- SIMPAN VC_ID DI SINI
             },
           });
           throw new BadRequestError(
@@ -854,9 +859,9 @@ class CredentialService {
       // --- Update DB Status ---
       const updatedRequest = await this.db.vCRevokeRequest.update({
         where: { id: request_id },
-        data: { 
+        data: {
           status: RequestStatus.APPROVED,
-          vc_id: vc_id // <-- SIMPAN VC_ID DI SINI
+          vc_id: vc_id, // <-- SIMPAN VC_ID DI SINI
         },
       });
       logger.info(
@@ -1006,9 +1011,9 @@ class CredentialService {
         // Update renewal request status
         const updatedRequest = await tx.vCRenewalRequest.update({
           where: { id: request_id },
-          data: { 
+          data: {
             status: RequestStatus.APPROVED,
-            vc_id: vc_id // <-- SIMPAN VC_ID DI SINI
+            vc_id: vc_id, // <-- SIMPAN VC_ID DI SINI
           },
         });
 
@@ -1225,9 +1230,9 @@ class CredentialService {
         // Update update request status
         const updatedRequest = await tx.vCUpdateRequest.update({
           where: { id: request_id },
-          data: { 
+          data: {
             status: RequestStatus.APPROVED,
-            vc_id: new_vc_id // <-- SIMPAN NEW_VC_ID DI SINI
+            vc_id: new_vc_id, // <-- SIMPAN NEW_VC_ID DI SINI
           },
         });
 
@@ -1495,13 +1500,13 @@ class CredentialService {
    */
   async resetStuckProcessingVCs(timeoutMinutes: number = 15) {
     logger.info(
-      `Running cleanup job: resetting VCs stuck in PROCESSING for >${timeoutMinutes} minutes`
+      `Running cleanup job: resetting VCs stuck in PROCESSING for >${timeoutMinutes} minutes from all sources`
     );
 
     const cutoffTime = new Date(Date.now() - timeoutMinutes * 60 * 1000);
 
-    // Find and reset stuck PROCESSING VCs atomically
-    const result = await this.db.$queryRaw<any[]>`
+    // [NEW] Create a promise for the VCResponse table
+    const resetVCResponsePromise = this.db.$queryRaw<any[]>`
       UPDATE "VCResponse"
       SET status = 'PENDING'::"VCResponseStatus",
           processing_at = NULL,
@@ -1512,24 +1517,68 @@ class CredentialService {
       RETURNING id, holder_did, processing_at;
     `;
 
-    const resetCount = result?.length || 0;
+    // [NEW] Create a promise for the VCinitiatedByIssuer table
+    const resetVCinitiatedPromise = this.db.$queryRaw<any[]>`
+      UPDATE "VCinitiatedByIssuer"
+      SET status = 'PENDING'::"VCResponseStatus",
+          processing_at = NULL,
+          "updatedAt" = NOW()
+      WHERE status = 'PROCESSING'::"VCResponseStatus"
+        AND processing_at < ${cutoffTime}
+        AND "deletedAt" IS NULL
+      RETURNING id, holder_did, processing_at;
+    `;
 
-    if (resetCount > 0) {
+    // [NEW] Execute both cleanup queries in parallel
+    const [resultVCResponse, resultVCinitiated] = await Promise.all([
+      resetVCResponsePromise,
+      resetVCinitiatedPromise,
+    ]);
+
+    const resetCountVCResponse = resultVCResponse?.length || 0;
+    const resetCountVCinitiated = resultVCinitiated?.length || 0;
+    const totalResetCount = resetCountVCResponse + resetCountVCinitiated;
+
+    // [NEW] Updated logging for combined results
+    if (totalResetCount > 0) {
       logger.warn(
-        `Cleanup job reset ${resetCount} stuck PROCESSING VCs back to PENDING`
+        `[Scheduler] Cleanup job reset ${totalResetCount} total stuck PROCESSING VCs back to PENDING`
       );
-      // Log the affected VCs for debugging
-      result.forEach((vc: any) => {
+
+      // Log details for VCResponse
+      if (resetCountVCResponse > 0) {
         logger.debug(
-          `Reset VC ${vc.id} for holder ${vc.holder_did}, stuck since ${vc.processing_at}`
+          `  - Reset ${resetCountVCResponse} VCs from VCResponse (holder-initiated)`
         );
-      });
+        resultVCResponse.forEach((vc: any) => {
+          logger.debug(
+            `    - Reset VCResponse ${vc.id} for holder ${vc.holder_did}, stuck since ${vc.processing_at}`
+          );
+        });
+      }
+
+      // Log details for VCinitiatedByIssuer
+      if (resetCountVCinitiated > 0) {
+        logger.debug(
+          `  - Reset ${resetCountVCinitiated} VCs from VCinitiatedByIssuer (issuer-initiated)`
+        );
+        resultVCinitiated.forEach((vc: any) => {
+          logger.debug(
+            `    - Reset VCinitiated ${vc.id} for holder ${vc.holder_did}, stuck since ${vc.processing_at}`
+          );
+        });
+      }
     } else {
-      logger.info(`Cleanup job completed: no stuck PROCESSING VCs found`);
+      logger.info(
+        `[Scheduler] Cleanup job completed: no stuck PROCESSING VCs found in either table`
+      );
     }
 
+    // [NEW] Return a more detailed object with the breakdown
     return {
-      reset_count: resetCount,
+      total_reset_count: totalResetCount,
+      vc_response_reset_count: resetCountVCResponse,
+      vc_initiated_reset_count: resetCountVCinitiated,
       timeout_minutes: timeoutMinutes,
       cutoff_time: cutoffTime,
     };
@@ -1537,17 +1586,21 @@ class CredentialService {
 
   async getAllIssuerRequests(
     issuerDid: string,
-    status?: RequestStatus | 'ALL'
+    status?: RequestStatus | "ALL"
   ): Promise<AllIssuerRequestsResponseDTO> {
-    
-    logger.info(`Fetching all requests for issuer: ${issuerDid}, status: ${status || 'ALL'}`);
+    logger.info(
+      `Fetching all requests for issuer: ${issuerDid}, status: ${
+        status || "ALL"
+      }`
+    );
 
     // 1. Definisikan klausa 'where' untuk tabel Request
-    const whereClauseRequests: { issuer_did: string; status?: RequestStatus } = {
-      issuer_did: issuerDid,
-    };
+    const whereClauseRequests: { issuer_did: string; status?: RequestStatus } =
+      {
+        issuer_did: issuerDid,
+      };
 
-    if (status && status !== 'ALL') {
+    if (status && status !== "ALL") {
       whereClauseRequests.status = status;
     }
 
@@ -1560,12 +1613,12 @@ class CredentialService {
       vc_id: true,
       createdAt: true,
     };
-    
+
     // 2. Definisikan klausa 'where' untuk tabel Log
     const whereClauseLogs: { issuer_did: string } = {
       issuer_did: issuerDid,
     };
-    
+
     const selectFieldsLogs = {
       id: true,
       action_type: true,
@@ -1583,76 +1636,94 @@ class CredentialService {
       renewalRequests,
       updateRequests,
       revokeRequests,
-      issuerLogs
+      issuerLogs,
     ] = await Promise.all([
-      this.db.vCIssuanceRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
-      this.db.vCRenewalRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
-      this.db.vCUpdateRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
-      this.db.vCRevokeRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
-      
-      (status === 'ALL' || !status)
-        ? this.db.issuerActionLog.findMany({ where: whereClauseLogs, select: selectFieldsLogs, orderBy: { createdAt: "desc" } })
-        : Promise.resolve([]) 
+      this.db.vCIssuanceRequest.findMany({
+        where: whereClauseRequests,
+        select: selectFieldsRequests,
+      }),
+      this.db.vCRenewalRequest.findMany({
+        where: whereClauseRequests,
+        select: selectFieldsRequests,
+      }),
+      this.db.vCUpdateRequest.findMany({
+        where: whereClauseRequests,
+        select: selectFieldsRequests,
+      }),
+      this.db.vCRevokeRequest.findMany({
+        where: whereClauseRequests,
+        select: selectFieldsRequests,
+      }),
+
+      status === "ALL" || !status
+        ? this.db.issuerActionLog.findMany({
+            where: whereClauseLogs,
+            select: selectFieldsLogs,
+            orderBy: { createdAt: "desc" },
+          })
+        : Promise.resolve([]),
     ]);
 
     // 4. Petakan (map) hasil query Request ke DTO
     //    --- PERUBAHAN UTAMA ADA DI SINI: "as 'REQUEST'" ---
     const mappedRequests: AggregatedRequestDTO[] = [
-      ...issuanceRequests.map(req => ({ 
-        ...req, 
-        request_type: RequestType.ISSUANCE, 
-        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
+      ...issuanceRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.ISSUANCE,
+        history_type: "REQUEST" as "REQUEST", // <-- PERBAIKAN
         new_vc_id: null,
         transaction_hash: null,
-        holder_did: req.holder_did 
+        holder_did: req.holder_did,
       })),
-      ...renewalRequests.map(req => ({ 
-        ...req, 
-        request_type: RequestType.RENEWAL, 
-        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
+      ...renewalRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.RENEWAL,
+        history_type: "REQUEST" as "REQUEST", // <-- PERBAIKAN
         new_vc_id: null,
         transaction_hash: null,
-        holder_did: req.holder_did
+        holder_did: req.holder_did,
       })),
-      ...updateRequests.map(req => ({ 
-        ...req, 
-        request_type: RequestType.UPDATE, 
-        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
-        new_vc_id: req.vc_id, 
+      ...updateRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.UPDATE,
+        history_type: "REQUEST" as "REQUEST", // <-- PERBAIKAN
+        new_vc_id: req.vc_id,
         transaction_hash: null,
-        holder_did: req.holder_did
+        holder_did: req.holder_did,
       })),
-      ...revokeRequests.map(req => ({ 
-        ...req, 
-        request_type: RequestType.REVOKE, 
-        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
+      ...revokeRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.REVOKE,
+        history_type: "REQUEST" as "REQUEST", // <-- PERBAIKAN
         new_vc_id: null,
         transaction_hash: null,
-        holder_did: req.holder_did
+        holder_did: req.holder_did,
       })),
     ];
 
     // 5. Petakan (map) hasil query Log ke DTO
     //    --- "as 'DIRECT_ACTION'" ---
-    const mappedLogs: AggregatedRequestDTO[] = issuerLogs.map(log => ({
+    const mappedLogs: AggregatedRequestDTO[] = issuerLogs.map((log) => ({
       id: log.id,
       request_type: log.action_type,
       issuer_did: log.issuer_did,
       holder_did: log.holder_did,
-      status: null, 
-      encrypted_body: null, 
+      status: null,
+      encrypted_body: null,
       vc_id: log.vc_id,
       new_vc_id: log.new_vc_id,
       transaction_hash: log.transaction_hash,
       createdAt: log.createdAt,
-      history_type: 'DIRECT_ACTION' as 'DIRECT_ACTION', // <-- PERBAIKAN
+      history_type: "DIRECT_ACTION" as "DIRECT_ACTION", // <-- PERBAIKAN
     }));
 
     // 6. Gabungkan dan urutkan
     const allHistory = [...mappedRequests, ...mappedLogs];
     allHistory.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    
-    logger.success(`Found ${allHistory.length} total history items for issuer: ${issuerDid}`);
+
+    logger.success(
+      `Found ${allHistory.length} total history items for issuer: ${issuerDid}`
+    );
 
     return {
       count: allHistory.length,
@@ -1737,7 +1808,7 @@ class CredentialService {
           holder_did: holder_did,
           vc_id: vc_id, // Log VC ID yang baru
           transaction_hash: blockchainReceipt.hash,
-        }
+        },
       });
 
       logger.success(
@@ -1889,10 +1960,10 @@ class CredentialService {
           action_type: RequestType.UPDATE,
           issuer_did: issuer_did,
           holder_did: holder_did,
-          vc_id: old_vc_id,     // Log VC ID lama
+          vc_id: old_vc_id, // Log VC ID lama
           new_vc_id: new_vc_id, // Log VC ID baru
           transaction_hash: blockchainReceipt.hash,
-        }
+        },
       });
 
       logger.success(
@@ -2042,29 +2113,32 @@ class CredentialService {
         );
       }
       try {
-      await this.db.issuerActionLog.create({
-        data: {
-          action_type: RequestType.REVOKE,
-          issuer_did: issuer_did,
-          holder_did: holder_did, // Gunakan holder_did yang didapat dari pre-check
-          vc_id: vc_id,
-          transaction_hash: blockchainReceipt.hash,
-        }
-      });
-      logger.success(`Issuer action REVOKE logged for VC: ${vc_id}`);
-    } catch (logError: any) {
-      // Jangan gagalkan seluruh proses jika logging error
-      logger.error(`Failed to log issuer action for REVOKE VC ${vc_id}:`, logError);
-    }
-    // --- AKHIR LOGGING AUDIT ---
+        await this.db.issuerActionLog.create({
+          data: {
+            action_type: RequestType.REVOKE,
+            issuer_did: issuer_did,
+            holder_did: holder_did, // Gunakan holder_did yang didapat dari pre-check
+            vc_id: vc_id,
+            transaction_hash: blockchainReceipt.hash,
+          },
+        });
+        logger.success(`Issuer action REVOKE logged for VC: ${vc_id}`);
+      } catch (logError: any) {
+        // Jangan gagalkan seluruh proses jika logging error
+        logger.error(
+          `Failed to log issuer action for REVOKE VC ${vc_id}:`,
+          logError
+        );
+      }
+      // --- AKHIR LOGGING AUDIT ---
 
-    // 5. Kirim respons
-    return {
-      message: "VC revoked directly on blockchain.",
-      vc_id: vc_id,
-      transaction_hash: blockchainReceipt.hash,
-      block_number: blockchainReceipt.blockNumber,
-    };
+      // 5. Kirim respons
+      return {
+        message: "VC revoked directly on blockchain.",
+        vc_id: vc_id,
+        transaction_hash: blockchainReceipt.hash,
+        block_number: blockchainReceipt.blockNumber,
+      };
     }
 
     // 5. Kirim respons
@@ -2165,7 +2239,7 @@ class CredentialService {
           holder_did: holder_did,
           vc_id: vc_id, // Log VC ID yang diperbarui
           transaction_hash: blockchainReceipt.hash,
-        }
+        },
       });
 
       logger.success(
@@ -2470,6 +2544,228 @@ class CredentialService {
     return result;
   }
 
+  async claimCombinedVCsBatch(
+    holderDid: string,
+    limit: number = 10
+  ): Promise<CombinedClaimVCsResponseDTO> {
+    logger.info(
+      `Attempting to claim combined batch of VCs (limit: ${limit}) for holder DID: ${holderDid}`
+    );
+
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const combinedClaims: CombinedClaimVCDTO[] = [];
+
+    // 1. Try claiming from VCResponse (holder-initiated) first
+    const holderRequestVCs = await this.db.$queryRaw<any[]>`
+      UPDATE "VCResponse"
+      SET status = 'PROCESSING'::"VCResponseStatus",
+          processing_at = NOW(),
+          "updatedAt" = NOW()
+      WHERE id IN (
+        SELECT id
+        FROM "VCResponse"
+        WHERE holder_did = ${holderDid}
+          AND "deletedAt" IS NULL
+          AND (
+            status = 'PENDING'::"VCResponseStatus"
+            OR (
+              status = 'PROCESSING'::"VCResponseStatus"
+              AND processing_at < NOW() - INTERVAL '5 minutes'
+            )
+          )
+        ORDER BY "createdAt" ASC
+        LIMIT ${safeLimit}
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING request_id, encrypted_body, request_type, processing_at;
+    `;
+
+    // Map results
+    for (const vc of holderRequestVCs) {
+      combinedClaims.push({
+        source: "HOLDER_REQUEST",
+        claimId: vc.request_id, // Use request_id for confirmation
+        encrypted_body: vc.encrypted_body,
+        request_type: vc.request_type,
+        processing_at: vc.processing_at,
+      });
+    }
+
+    logger.info(
+      `Claimed ${combinedClaims.length} VCs from HOLDER_REQUEST source`
+    );
+
+    // 2. Try claiming from VCinitiatedByIssuer (issuer-initiated) if limit not reached
+    const remainingLimit = safeLimit - combinedClaims.length;
+    if (remainingLimit > 0) {
+      const issuerInitiatedVCs = await this.db.$queryRaw<any[]>`
+        UPDATE "VCinitiatedByIssuer"
+        SET status = 'PROCESSING'::"VCResponseStatus",
+            processing_at = NOW(),
+            "updatedAt" = NOW()
+        WHERE id IN (
+          SELECT id
+          FROM "VCinitiatedByIssuer"
+          WHERE holder_did = ${holderDid}
+            AND "deletedAt" IS NULL
+            AND (
+              status = 'PENDING'::"VCResponseStatus"
+              OR (
+                status = 'PROCESSING'::"VCResponseStatus"
+                AND processing_at < NOW() - INTERVAL '5 minutes'
+              )
+            )
+          ORDER BY "createdAt" ASC
+          LIMIT ${remainingLimit}
+          FOR UPDATE SKIP LOCKED
+        )
+        RETURNING id, encrypted_body, request_type, processing_at;
+      `;
+
+      // Map results
+      for (const vc of issuerInitiatedVCs) {
+        combinedClaims.push({
+          source: "ISSUER_INITIATED",
+          claimId: vc.id, // Use id for confirmation
+          encrypted_body: vc.encrypted_body,
+          request_type: vc.request_type,
+          processing_at: vc.processing_at,
+        });
+      }
+      logger.info(
+        `Claimed ${issuerInitiatedVCs.length} VCs from ISSUER_INITIATED source`
+      );
+    }
+
+    // 3. Check for remaining VCs
+    const remainingHolderVCs = await this.db.vCResponse.count({
+      where: {
+        holder_did: holderDid,
+        deletedAt: null,
+        OR: [
+          { status: "PENDING" },
+          {
+            status: "PROCESSING",
+            processing_at: { lt: new Date(Date.now() - 5 * 60 * 1000) },
+          },
+        ],
+      },
+    });
+
+    const remainingIssuerVCs = await this.db.vCinitiatedByIssuer.count({
+      where: {
+        holder_did: holderDid,
+        deletedAt: null,
+        OR: [
+          { status: "PENDING" },
+          {
+            status: "PROCESSING",
+            processing_at: { lt: new Date(Date.now() - 5 * 60 * 1000) },
+          },
+        ],
+      },
+    });
+
+    const totalRemaining = remainingHolderVCs + remainingIssuerVCs;
+
+    logger.success(
+      `Combined batch claimed ${combinedClaims.length} VCs for holder DID: ${holderDid}`
+    );
+
+    return {
+      claimed_vcs: combinedClaims,
+      claimed_count: combinedClaims.length,
+      remaining_count: totalRemaining,
+      has_more: totalRemaining > 0,
+    };
+  }
+
+  /**
+   * [NEW] Phase 2 Batch (Combined): Confirm VCs from both sources
+   *
+   * This method accepts an array of items, each specifying its source,
+   * and updates the correct table (VCResponse or VCinitiatedByIssuer).
+   */
+  async confirmCombinedVCsBatch(
+    items: CombinedClaimConfirmationItemDTO[],
+    holderDid: string
+  ): Promise<CombinedConfirmVCsResponseDTO> {
+    logger.info(
+      `Confirming combined batch of ${items.length} VCs for holder DID: ${holderDid}`
+    );
+
+    // 1. Separate IDs based on source
+    const holderRequestIds = items
+      .filter((item) => item.source === "HOLDER_REQUEST")
+      .map((item) => item.claimId);
+
+    const issuerInitiatedIds = items
+      .filter((item) => item.source === "ISSUER_INITIATED")
+      .map((item) => item.claimId);
+
+    let confirmedHolderCount = 0;
+    let confirmedIssuerCount = 0;
+
+    // 2. Confirm VCs from VCResponse (using request_id)
+    if (holderRequestIds.length > 0) {
+      const updatedHolderVCs = await this.db.vCResponse.updateMany({
+        where: {
+          request_id: { in: holderRequestIds },
+          holder_did: holderDid,
+          status: "PROCESSING",
+        },
+        data: {
+          status: "CLAIMED",
+          deletedAt: new Date(),
+        },
+      });
+      confirmedHolderCount = updatedHolderVCs.count;
+      logger.info(
+        `Confirmed ${confirmedHolderCount}/${holderRequestIds.length} VCs from HOLDER_REQUEST`
+      );
+    }
+
+    // 3. Confirm VCs from VCinitiatedByIssuer (using id)
+    if (issuerInitiatedIds.length > 0) {
+      const updatedIssuerVCs = await this.db.vCinitiatedByIssuer.updateMany({
+        where: {
+          id: { in: issuerInitiatedIds },
+          holder_did: holderDid,
+          status: "PROCESSING",
+        },
+        data: {
+          status: "CLAIMED",
+          deletedAt: new Date(),
+        },
+      });
+      confirmedIssuerCount = updatedIssuerVCs.count;
+      logger.info(
+        `Confirmed ${confirmedIssuerCount}/${issuerInitiatedIds.length} VCs from ISSUER_INITIATED`
+      );
+    }
+
+    const totalConfirmed = confirmedHolderCount + confirmedIssuerCount;
+
+    if (totalConfirmed === 0 && items.length > 0) {
+      logger.warn(
+        `Combined VC confirmation failed: No VCs found in PROCESSING state for holder ${holderDid}`
+      );
+      throw new NotFoundError(
+        `No VCs found in PROCESSING state for confirmation.`
+      );
+    }
+
+    logger.success(
+      `Combined batch confirmed and soft-deleted ${totalConfirmed} VCs`
+    );
+
+    return {
+      message: `Successfully confirmed ${totalConfirmed} VCs.`,
+      confirmed_count: totalConfirmed,
+      requested_count: items.length,
+    };
+  }
+
   /**
    * Upload VC document file to MinIO storage
    * Generates UUID for filename and stores original filename in response
@@ -2537,7 +2833,7 @@ class CredentialService {
       // Find file that starts with the UUID
       // Extract filename without directory path before checking
       const targetFile = files.find((file) => {
-        const filename = file.name.split('/').pop() || file.name;
+        const filename = file.name.split("/").pop() || file.name;
         return filename.startsWith(fileId);
       });
 
@@ -2546,7 +2842,7 @@ class CredentialService {
       }
 
       // Extract filename without directory path
-      const filename = targetFile.name.split('/').pop() || targetFile.name;
+      const filename = targetFile.name.split("/").pop() || targetFile.name;
 
       // Delete from MinIO in vc-document directory
       await StorageService.deleteFile("vc-document", filename);
