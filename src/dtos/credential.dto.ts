@@ -292,3 +292,40 @@ export interface VCValidationResult {
   expired_at?: string | null;
   is_expired?: boolean;
 }
+
+export interface CombinedClaimVCDTO {
+  source: 'HOLDER_REQUEST' | 'ISSUER_INITIATED'; // Which table it came from
+  claimId: string; // The ID to be used for confirmation.
+                   // This will be VCResponse.request_id OR VCinitiatedByIssuer.id
+  encrypted_body: string;
+  request_type: RequestType;
+  processing_at: Date;
+  // ... any other common fields you want to return
+}
+
+// DTO for the response of the new combined claim endpoint
+export interface CombinedClaimVCsResponseDTO {
+  claimed_vcs: CombinedClaimVCDTO[];
+  claimed_count: number;
+  remaining_count: number;
+  has_more: boolean;
+}
+
+// DTO for an item in the new combined confirm request
+export interface CombinedClaimConfirmationItemDTO {
+  claimId: string; // The ID from CombinedClaimVCDTO (either request_id or id)
+  source: 'HOLDER_REQUEST' | 'ISSUER_INITIATED'; // The source from CombinedClaimVCDTO
+}
+
+// DTO for the request body of the new combined confirm endpoint
+export interface CombinedConfirmVCsBatchDTO {
+  items: CombinedClaimConfirmationItemDTO[];
+  holder_did: string;
+}
+
+// DTO for the response of the new combined confirm endpoint
+export interface CombinedConfirmVCsResponseDTO {
+  message: string;
+  confirmed_count: number;
+  requested_count: number;
+}

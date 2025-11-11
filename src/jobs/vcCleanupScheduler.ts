@@ -27,9 +27,9 @@ export const scheduleVCCleanup = () => {
         logger.info("[Scheduler] Starting VC cleanup job");
         const result = await CredentialService.resetStuckProcessingVCs(15); // 15 minute timeout
 
-        if (result.reset_count > 0) {
+        if (result.total_reset_count > 0) {
           logger.warn(
-            `[Scheduler] VC cleanup completed: ${result.reset_count} VCs reset to PENDING`
+            `[Scheduler] VC cleanup completed: ${result.total_reset_count} total VCs reset to PENDING (${result.vc_response_reset_count} from VCResponse, ${result.vc_initiated_reset_count} from VCinitiatedByIssuer)`
           );
         } else {
           logger.info("[Scheduler] VC cleanup completed: no stuck VCs found");
