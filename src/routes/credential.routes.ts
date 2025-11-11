@@ -27,6 +27,8 @@ import {
   claimIssuerInitiatedVCsBatchValidator,
   confirmIssuerInitiatedVCsBatchValidator,
   validateVCValidator,
+  claimCombinedVCsBatchValidator,
+  confirmCombinedVCsBatchValidator,
 } from "../validators/credential.validator";
 
 const router: Router = express.Router();
@@ -2043,6 +2045,182 @@ router.post(
   verifyDIDSignature,
   validateVCValidator,
   credentialController.validateVC
+);
+
+/**
+ * @swagger
+ * /credentials/claim-combined-batch:
+ *   post:
+ *     summary: Claim multiple pending VCs (Combined)
+ *     description: Atomically claims up to N pending VCs for the holder from ALL sources. This endpoint combines claim-batch (holder-initiated) and claim-vc/issuer-init (issuer-initiated). It prioritizes holder-initiated VCs first, then fills the batch with issuer-initiated VCs.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - holder_did
+ *             properties:
+ *               holder_did:
+ *                 type: string
+ *                 example: "did:dcert:u..."
+ *                 description: DID of the credential holder
+ *               limit:
+ *                 type: integer
+ *                 example: 10
+ *                 minimum: 1
+ *                 maximum: 100
+ *                 default: 10
+ *                 description: Maximum VCs to claim (default 10, max 100)
+ *     responses:
+ *       200:
+ *         description: VCs claimed successfully (status set to PROCESSING)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Successfully claimed 10 VCs from combined sources."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     claimed_vcs:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           source:
+ *                             type: string
+ *                             enum: [HOLDER_REQUEST, ISSUER_INITIATED]
+ *                           claimId:
+ *                             type: string
+ *                             format: uuid
+ *                             description: ID to be used for confirmation (VCResponse.request_id or VCinitiatedByIssuer.id)
+ *                           encrypted_body:
+ *                             type: string
+ *                           request_type:
+ *                             type: string
+ *                             enum: [ISSUANCE, RENEWAL, UPDATE]
+ *                     claimed_count:
+ *                       type: integer
+ *                       example: 10
+ *                     remaining_count:
+ *                       type: integer
+ *                       example: 5
+ *                     has_more:
+ *                       type: boolean
+ *                       example: true
+ *       400:
+ *         description: Validation error.
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token).
+ *       500:
+ *         description: Internal server error.
+ */
+router.post(
+  "/claim-combined-batch",
+  verifyDIDSignature,
+  claimCombinedVCsBatchValidator,
+  credentialController.claimCombinedVCsBatch
+);
+
+/**
+ * @swagger
+ * /credentials/confirm-combined-batch:
+ *   post:
+ *     summary: Confirm multiple VC claims (Combined)
+ *     description: Confirms that the holder has saved multiple VCs locally from ALL sources. This endpoint combines confirm-batch and confirm-vc/issuer-init. The request body must include the claimId and source returned from the /claim-combined-batch endpoint.
+ *     tags:
+ *       - Verifiable Credential (VC) Lifecycle
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - items
+ *               - holder_did
+ *             properties:
+ *               items:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 100
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - claimId
+ *                     - source
+ *                   properties:
+ *                     claimId:
+ *                       type: string
+ *                       format: uuid
+ *                       description: The ID from the claim-combined-batch response
+ *                     source:
+ *                       type: string
+ *                       enum: [HOLDER_REQUEST, ISSUER_INITIATED]
+ *                       description: The source from the claim-combined-batch response
+ *                 example:
+ *                   - claimId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *                     source: "HOLDER_REQUEST"
+ *                   - claimId: "e5f6g7h8-i9j0-1234-5678-90abcdef1234"
+ *                     source: "ISSUER_INITIATED"
+ *               holder_did:
+ *                 type: string
+ *                 example: "did:dcert:u..."
+ *                 description: DID of the credential holder
+ *     responses:
+ *       200:
+ *         description: VCs confirmed and soft-deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Successfully confirmed 2 VCs."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: "VCs confirmed and marked as claimed."
+ *                     confirmed_count:
+ *                       type: integer
+ *                       example: 2
+ *                     requested_count:
+ *                       type: integer
+ *                       example: 2
+ *       400:
+ *         description: Validation error (e.g., no items provided, invalid source).
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token).
+ *       404:
+ *         description: No VCs found in PROCESSING state for confirmation.
+ *       500:
+ *         description: Internal server error.
+ */
+router.post(
+  "/confirm-combined-batch",
+  verifyDIDSignature,
+  confirmCombinedVCsBatchValidator,
+  credentialController.confirmCombinedVCsBatch
 );
 
 export default router;

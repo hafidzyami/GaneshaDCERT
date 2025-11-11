@@ -6,7 +6,7 @@ import { CredentialService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler, RequestWithDID } from "../middlewares";
 import { ResponseHelper } from "../utils/helpers";
-import { ClaimIssuerInitiatedVCsDTO, ConfirmIssuerInitiatedVCsDTO, IssuerRenewVCDTO, IssuerRevokeVCDTO, IssuerUpdateVCDTO, ProcessUpdateVCDTO, IssuerIssueVCDTO,ProcessIssuanceVCDTO, RevokeVCDTO, CredentialRevocationRequestDTO, ProcessRenewalVCDTO, ValidateVCDTO } from "../dtos";
+import { CombinedConfirmVCsBatchDTO, ClaimIssuerInitiatedVCsDTO, ConfirmIssuerInitiatedVCsDTO, IssuerRenewVCDTO, IssuerRevokeVCDTO, IssuerUpdateVCDTO, ProcessUpdateVCDTO, IssuerIssueVCDTO,ProcessIssuanceVCDTO, RevokeVCDTO, CredentialRevocationRequestDTO, ProcessRenewalVCDTO, ValidateVCDTO } from "../dtos";
 import { BadRequestError} from "../utils/errors/AppError";
 /**
  * Request Credential Issuance Controller
@@ -397,12 +397,12 @@ export const resetStuckVCs = asyncHandler(async (req: Request, res: Response) =>
   // Call the service function
   const result = await CredentialService.resetStuckProcessingVCs(timeout_minutes || 15);
 
-  // Prepare message
-  const message = result.reset_count > 0
-    ? `Successfully reset ${result.reset_count} stuck VCs back to PENDING`
+  // [FIXED] Use the new 'total_reset_count' for the message
+  const message = result.total_reset_count > 0
+    ? `Successfully reset ${result.total_reset_count} total stuck VCs back to PENDING`
     : "No stuck VCs found to reset";
 
-  // Send success response
+  // The 'result' object now contains the full breakdown
   return ResponseHelper.success(res, result, message);
 });
 
@@ -574,4 +574,38 @@ export const validateVC = asyncHandler(async (req: Request, res: Response) => {
     : `VC validation failed: ${result.errors.join(', ')}`;
 
   return ResponseHelper.success(res, result, message);
+});
+
+export const claimCombinedVCsBatch = asyncHandler(async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  const { holder_did, limit } = req.body;
+
+  const result = await CredentialService.claimCombinedVCsBatch(holder_did, limit || 10);
+
+  let message = "No pending VCs available for claim.";
+  if (result.claimed_count > 0) {
+    message = `Successfully claimed ${result.claimed_count} VCs. ${result.has_more ? `${result.remaining_count} more pending.` : 'No more pending VCs.'}`;
+  }
+
+  return ResponseHelper.success(res, result, message);
+});
+
+/**
+ * [NEW] Phase 2 Batch (Combined): Confirm multiple VCs Controller
+ */
+export const confirmCombinedVCsBatch = asyncHandler(async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  const { items, holder_did } = req.body as CombinedConfirmVCsBatchDTO;
+
+  const result = await CredentialService.confirmCombinedVCsBatch(items, holder_did);
+
+  return ResponseHelper.success(res, result, result.message);
 });
