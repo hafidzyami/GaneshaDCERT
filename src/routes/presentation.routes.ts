@@ -378,6 +378,6 @@ router.get("/:vpId", getVPValidator, vp.getVP);
  *       500:
  *         description: Internal server error
  */
-router.get("/:vpId/verify", verifyDIDSignature, verifyVPValidator, vp.verifyVP);
+router.get("/:vpId/verify", verifyVPValidator, vp.verifyVP);
 
 export default router;
