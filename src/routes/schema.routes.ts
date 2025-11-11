@@ -14,7 +14,7 @@ import {
   deleteVCSchemaValidator,
   isSchemaActiveValidator,
 } from "../validators/schema.validator";
-import { uploadOptionalImage } from "../middlewares/upload.middleware";
+import { uploadOptionalImage, requireImageFile, requireImageOrLink } from "../middlewares/upload.middleware";
 import { parseSchemaJson } from "../middlewares/parseMultipartJson.middleware";
 import { verifyDIDSignature } from "../middlewares";
 
@@ -478,6 +478,7 @@ router.get(
  *               - name
  *               - schema
  *               - issuer_did
+ *               - image
  *             properties:
  *               name:
  *                 type: string
@@ -492,7 +493,9 @@ router.get(
  *               image:
  *                 type: string
  *                 format: binary
- *                 description: Optional background image for the VC schema (JPEG, PNG, GIF, WEBP, max 5MB)
+ *                 description: |
+ *                   **Required** background image for the VC schema (JPEG, PNG, GIF, WEBP, max 5MB).
+ *                   This image will be used as the credential background.
  *               issuer_did:
  *                 type: string
  *                 pattern: '^did:dcert:i[a-zA-Z0-9_-]{44}$'
@@ -662,6 +665,7 @@ router.get(
 router.post(
   "/",
   uploadOptionalImage,
+  requireImageFile, // Require image for POST
   parseSchemaJson,
   verifyDIDSignature,
   createVCSchemaValidator,
@@ -714,20 +718,22 @@ router.post(
  *                 type: string
  *                 format: binary
  *                 description: |
- *                   Optional new background image for the VC schema (JPEG, PNG, GIF, WEBP, max 5MB).
+ *                   Background image for the VC schema (JPEG, PNG, GIF, WEBP, max 5MB).
  *                   **Image Management (for versioning):**
  *                   - **Keep existing background:** Send only `image_link` (no `image` file) - reuses same image for new version
  *                   - **Change background:** Send only `image` file (no `image_link`) - uploads new image for new version (old image kept for previous version)
- *                   - **Remove background:** Send neither `image` nor `image_link` - new version has no background (old image kept for previous version)
  *
+ *                   **Important:** Either `image` or `image_link` must be provided. You cannot update a schema without specifying a background.
  *                   **Note:** Old images are preserved in MinIO because they belong to previous schema versions.
  *               image_link:
  *                 type: string
  *                 format: uri
  *                 description: |
- *                   Optional URL of the existing background image to keep.
+ *                   URL of the existing background image to keep.
  *                   Provide this (without sending `image` file) to keep the current background image.
  *                   This helps manage MinIO storage efficiently by avoiding unnecessary uploads.
+ *
+ *                   **Important:** Either `image` or `image_link` must be provided.
  *                 example: "https://dev-dcert.ganeshait.com/dcert-storage/background/550e8400-e29b-41d4-a716-446655440000?X-Amz-Algorithm=..."
  *           examples:
  *             addHonorsField:
@@ -764,9 +770,11 @@ router.post(
  *                 type: string
  *                 format: uri
  *                 description: |
- *                   Optional URL of the existing background image to keep.
+ *                   **Required** URL of the existing background image to keep when using application/json.
  *                   **Note:** When using application/json (not multipart/form-data), you can only manage existing images via image_link.
  *                   To upload a new image, use multipart/form-data instead.
+ *
+ *                   **Important:** This field is required when using application/json content type.
  *                 example: "https://dev-dcert.ganeshait.com/dcert-storage/background/550e8400-e29b-41d4-a716-446655440000?X-Amz-Algorithm=..."
  *           examples:
  *             addHonorsField:
@@ -827,6 +835,7 @@ router.post(
 router.put(
   "/:id",
   uploadOptionalImage,
+  requireImageOrLink, // Require either image or image_link for UPDATE
   parseSchemaJson,
   verifyDIDSignature,
   updateVCSchemaValidator,

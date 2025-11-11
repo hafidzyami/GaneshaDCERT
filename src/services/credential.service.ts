@@ -47,9 +47,13 @@ import {
   CombinedClaimConfirmationItemDTO,
   CombinedConfirmVCsBatchDTO,
   CombinedConfirmVCsResponseDTO,
+  UploadVCDocumentResponseDTO,
+  DeleteVCDocumentResponseDTO,
 } from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 import NotificationService from "./notification.service";
+import StorageService from "./storage.service";
+import { v4 as uuidv4 } from "uuid";
 
 /**
  * Credential Service with Dependency Injection
@@ -114,17 +118,16 @@ class CredentialService {
     issuerDid?: string,
     holderDid?: string
   ) {
-    
     interface WhereClause {
-        issuer_did?: string;
-        holder_did?: string;
+      issuer_did?: string;
+      holder_did?: string;
     }
 
     const whereClause: WhereClause = {};
     if (issuerDid) {
       whereClause.issuer_did = issuerDid;
     }
-    if (holderDid) { 
+    if (holderDid) {
       whereClause.holder_did = holderDid;
     }
 
@@ -160,42 +163,53 @@ class CredentialService {
 
       // Agregasi hasil
       requests = [
-        ...issuanceRequests.map(req => ({ ...req, request_type: RequestType.ISSUANCE })),
-        ...renewalRequests.map(req => ({ ...req, request_type: RequestType.RENEWAL })),
-        ...updateRequests.map(req => ({ ...req, request_type: RequestType.UPDATE })),
-        ...revokeRequests.map(req => ({ ...req, request_type: RequestType.REVOKE })),
+        ...issuanceRequests.map((req) => ({
+          ...req,
+          request_type: RequestType.ISSUANCE,
+        })),
+        ...renewalRequests.map((req) => ({
+          ...req,
+          request_type: RequestType.RENEWAL,
+        })),
+        ...updateRequests.map((req) => ({
+          ...req,
+          request_type: RequestType.UPDATE,
+        })),
+        ...revokeRequests.map((req) => ({
+          ...req,
+          request_type: RequestType.REVOKE,
+        })),
       ];
 
       // Urutkan berdasarkan tanggal (terbaru dulu)
       requests.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      
     } else {
       // --- Logika switch yang sudah ada ---
       switch (type) {
         case RequestType.ISSUANCE:
           requests = await this.db.vCIssuanceRequest.findMany({
-            where: whereClause, 
+            where: whereClause,
             orderBy: { createdAt: "desc" },
           });
           break;
 
         case RequestType.RENEWAL:
           requests = await this.db.vCRenewalRequest.findMany({
-            where: whereClause, 
+            where: whereClause,
             orderBy: { createdAt: "desc" },
           });
           break;
 
         case RequestType.UPDATE:
           requests = await this.db.vCUpdateRequest.findMany({
-            where: whereClause, 
+            where: whereClause,
             orderBy: { createdAt: "desc" },
           });
           break;
 
         case RequestType.REVOKE:
           requests = await this.db.vCRevokeRequest.findMany({
-            where: whereClause, 
+            where: whereClause,
             orderBy: { createdAt: "desc" },
           });
           break;
@@ -546,9 +560,8 @@ class CredentialService {
 
           for (const existingVC of existingVCs) {
             try {
-              const revokeReceipt = await VCBlockchainService.revokeVCInBlockchain(
-                existingVC.id
-              );
+              const revokeReceipt =
+                await VCBlockchainService.revokeVCInBlockchain(existingVC.id);
               logger.info(
                 `✅ Revoked existing VC ${existingVC.id}. TX: ${revokeReceipt.hash}`
               );
@@ -607,9 +620,9 @@ class CredentialService {
       try {
         updatedRequest = await this.db.vCIssuanceRequest.update({
           where: { id: request_id },
-          data: { 
+          data: {
             status: RequestStatus.APPROVED,
-            vc_id: vc_id // <-- SIMPAN VC_ID DI SINI
+            vc_id: vc_id, // <-- SIMPAN VC_ID DI SINI
           },
         });
 
@@ -799,7 +812,7 @@ class CredentialService {
           // [MODIFICATION] Still update request status even if already revoked
           await this.db.vCRevokeRequest.update({
             where: { id: request_id },
-            data: { 
+            data: {
               status: RequestStatus.APPROVED,
               vc_id: vc_id 
             },
@@ -1040,9 +1053,9 @@ class CredentialService {
         // Update renewal request status
         const updatedRequest = await tx.vCRenewalRequest.update({
           where: { id: request_id },
-          data: { 
+          data: {
             status: RequestStatus.APPROVED,
-            vc_id: vc_id // <-- SIMPAN VC_ID DI SINI
+            vc_id: vc_id, // <-- SIMPAN VC_ID DI SINI
           },
         });
 
@@ -1259,9 +1272,9 @@ class CredentialService {
         // Update update request status
         const updatedRequest = await tx.vCUpdateRequest.update({
           where: { id: request_id },
-          data: { 
+          data: {
             status: RequestStatus.APPROVED,
-            vc_id: new_vc_id // <-- SIMPAN NEW_VC_ID DI SINI
+            vc_id: new_vc_id, // <-- SIMPAN NEW_VC_ID DI SINI
           },
         });
 
@@ -1615,17 +1628,21 @@ class CredentialService {
 
   async getAllIssuerRequests(
     issuerDid: string,
-    status?: RequestStatus | 'ALL'
+    status?: RequestStatus | "ALL"
   ): Promise<AllIssuerRequestsResponseDTO> {
-    
-    logger.info(`Fetching all requests for issuer: ${issuerDid}, status: ${status || 'ALL'}`);
+    logger.info(
+      `Fetching all requests for issuer: ${issuerDid}, status: ${
+        status || "ALL"
+      }`
+    );
 
     // 1. Definisikan klausa 'where' untuk tabel Request
-    const whereClauseRequests: { issuer_did: string; status?: RequestStatus } = {
-      issuer_did: issuerDid,
-    };
+    const whereClauseRequests: { issuer_did: string; status?: RequestStatus } =
+      {
+        issuer_did: issuerDid,
+      };
 
-    if (status && status !== 'ALL') {
+    if (status && status !== "ALL") {
       whereClauseRequests.status = status;
     }
 
@@ -1638,12 +1655,12 @@ class CredentialService {
       vc_id: true,
       createdAt: true,
     };
-    
+
     // 2. Definisikan klausa 'where' untuk tabel Log
     const whereClauseLogs: { issuer_did: string } = {
       issuer_did: issuerDid,
     };
-    
+
     const selectFieldsLogs = {
       id: true,
       action_type: true,
@@ -1661,76 +1678,94 @@ class CredentialService {
       renewalRequests,
       updateRequests,
       revokeRequests,
-      issuerLogs
+      issuerLogs,
     ] = await Promise.all([
-      this.db.vCIssuanceRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
-      this.db.vCRenewalRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
-      this.db.vCUpdateRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
-      this.db.vCRevokeRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
-      
-      (status === 'ALL' || !status)
-        ? this.db.issuerActionLog.findMany({ where: whereClauseLogs, select: selectFieldsLogs, orderBy: { createdAt: "desc" } })
-        : Promise.resolve([]) 
+      this.db.vCIssuanceRequest.findMany({
+        where: whereClauseRequests,
+        select: selectFieldsRequests,
+      }),
+      this.db.vCRenewalRequest.findMany({
+        where: whereClauseRequests,
+        select: selectFieldsRequests,
+      }),
+      this.db.vCUpdateRequest.findMany({
+        where: whereClauseRequests,
+        select: selectFieldsRequests,
+      }),
+      this.db.vCRevokeRequest.findMany({
+        where: whereClauseRequests,
+        select: selectFieldsRequests,
+      }),
+
+      status === "ALL" || !status
+        ? this.db.issuerActionLog.findMany({
+            where: whereClauseLogs,
+            select: selectFieldsLogs,
+            orderBy: { createdAt: "desc" },
+          })
+        : Promise.resolve([]),
     ]);
 
     // 4. Petakan (map) hasil query Request ke DTO
     //    --- PERUBAHAN UTAMA ADA DI SINI: "as 'REQUEST'" ---
     const mappedRequests: AggregatedRequestDTO[] = [
-      ...issuanceRequests.map(req => ({ 
-        ...req, 
-        request_type: RequestType.ISSUANCE, 
-        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
+      ...issuanceRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.ISSUANCE,
+        history_type: "REQUEST" as "REQUEST", // <-- PERBAIKAN
         new_vc_id: null,
         transaction_hash: null,
-        holder_did: req.holder_did 
+        holder_did: req.holder_did,
       })),
-      ...renewalRequests.map(req => ({ 
-        ...req, 
-        request_type: RequestType.RENEWAL, 
-        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
+      ...renewalRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.RENEWAL,
+        history_type: "REQUEST" as "REQUEST", // <-- PERBAIKAN
         new_vc_id: null,
         transaction_hash: null,
-        holder_did: req.holder_did
+        holder_did: req.holder_did,
       })),
-      ...updateRequests.map(req => ({ 
-        ...req, 
-        request_type: RequestType.UPDATE, 
-        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
-        new_vc_id: req.vc_id, 
+      ...updateRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.UPDATE,
+        history_type: "REQUEST" as "REQUEST", // <-- PERBAIKAN
+        new_vc_id: req.vc_id,
         transaction_hash: null,
-        holder_did: req.holder_did
+        holder_did: req.holder_did,
       })),
-      ...revokeRequests.map(req => ({ 
-        ...req, 
-        request_type: RequestType.REVOKE, 
-        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
+      ...revokeRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.REVOKE,
+        history_type: "REQUEST" as "REQUEST", // <-- PERBAIKAN
         new_vc_id: null,
         transaction_hash: null,
-        holder_did: req.holder_did
+        holder_did: req.holder_did,
       })),
     ];
 
     // 5. Petakan (map) hasil query Log ke DTO
     //    --- "as 'DIRECT_ACTION'" ---
-    const mappedLogs: AggregatedRequestDTO[] = issuerLogs.map(log => ({
+    const mappedLogs: AggregatedRequestDTO[] = issuerLogs.map((log) => ({
       id: log.id,
       request_type: log.action_type,
       issuer_did: log.issuer_did,
       holder_did: log.holder_did,
-      status: null, 
-      encrypted_body: null, 
+      status: null,
+      encrypted_body: null,
       vc_id: log.vc_id,
       new_vc_id: log.new_vc_id,
       transaction_hash: log.transaction_hash,
       createdAt: log.createdAt,
-      history_type: 'DIRECT_ACTION' as 'DIRECT_ACTION', // <-- PERBAIKAN
+      history_type: "DIRECT_ACTION" as "DIRECT_ACTION", // <-- PERBAIKAN
     }));
 
     // 6. Gabungkan dan urutkan
     const allHistory = [...mappedRequests, ...mappedLogs];
     allHistory.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    
-    logger.success(`Found ${allHistory.length} total history items for issuer: ${issuerDid}`);
+
+    logger.success(
+      `Found ${allHistory.length} total history items for issuer: ${issuerDid}`
+    );
 
     return {
       count: allHistory.length,
@@ -1815,7 +1850,7 @@ class CredentialService {
           holder_did: holder_did,
           vc_id: vc_id, // Log VC ID yang baru
           transaction_hash: blockchainReceipt.hash,
-        }
+        },
       });
 
       logger.success(
@@ -1967,10 +2002,10 @@ class CredentialService {
           action_type: RequestType.UPDATE,
           issuer_did: issuer_did,
           holder_did: holder_did,
-          vc_id: old_vc_id,     // Log VC ID lama
+          vc_id: old_vc_id, // Log VC ID lama
           new_vc_id: new_vc_id, // Log VC ID baru
           transaction_hash: blockchainReceipt.hash,
-        }
+        },
       });
 
       logger.success(
@@ -2262,7 +2297,7 @@ class CredentialService {
           holder_did: holder_did,
           vc_id: vc_id, // Log VC ID yang diperbarui
           transaction_hash: blockchainReceipt.hash,
-        }
+        },
       });
 
       logger.success(
@@ -2606,7 +2641,7 @@ class CredentialService {
     // Map results
     for (const vc of holderRequestVCs) {
       combinedClaims.push({
-        source: 'HOLDER_REQUEST',
+        source: "HOLDER_REQUEST",
         claimId: vc.request_id, // Use request_id for confirmation
         encrypted_body: vc.encrypted_body,
         request_type: vc.request_type,
@@ -2614,7 +2649,9 @@ class CredentialService {
       });
     }
 
-    logger.info(`Claimed ${combinedClaims.length} VCs from HOLDER_REQUEST source`);
+    logger.info(
+      `Claimed ${combinedClaims.length} VCs from HOLDER_REQUEST source`
+    );
 
     // 2. Try claiming from VCinitiatedByIssuer (issuer-initiated) if limit not reached
     const remainingLimit = safeLimit - combinedClaims.length;
@@ -2646,14 +2683,16 @@ class CredentialService {
       // Map results
       for (const vc of issuerInitiatedVCs) {
         combinedClaims.push({
-          source: 'ISSUER_INITIATED',
+          source: "ISSUER_INITIATED",
           claimId: vc.id, // Use id for confirmation
           encrypted_body: vc.encrypted_body,
           request_type: vc.request_type,
           processing_at: vc.processing_at,
         });
       }
-      logger.info(`Claimed ${issuerInitiatedVCs.length} VCs from ISSUER_INITIATED source`);
+      logger.info(
+        `Claimed ${issuerInitiatedVCs.length} VCs from ISSUER_INITIATED source`
+      );
     }
 
     // 3. Check for remaining VCs
@@ -2662,8 +2701,11 @@ class CredentialService {
         holder_did: holderDid,
         deletedAt: null,
         OR: [
-          { status: 'PENDING' },
-          { status: 'PROCESSING', processing_at: { lt: new Date(Date.now() - 5 * 60 * 1000) } },
+          { status: "PENDING" },
+          {
+            status: "PROCESSING",
+            processing_at: { lt: new Date(Date.now() - 5 * 60 * 1000) },
+          },
         ],
       },
     });
@@ -2673,8 +2715,11 @@ class CredentialService {
         holder_did: holderDid,
         deletedAt: null,
         OR: [
-          { status: 'PENDING' },
-          { status: 'PROCESSING', processing_at: { lt: new Date(Date.now() - 5 * 60 * 1000) } },
+          { status: "PENDING" },
+          {
+            status: "PROCESSING",
+            processing_at: { lt: new Date(Date.now() - 5 * 60 * 1000) },
+          },
         ],
       },
     });
@@ -2709,11 +2754,11 @@ class CredentialService {
 
     // 1. Separate IDs based on source
     const holderRequestIds = items
-      .filter((item) => item.source === 'HOLDER_REQUEST')
+      .filter((item) => item.source === "HOLDER_REQUEST")
       .map((item) => item.claimId);
 
     const issuerInitiatedIds = items
-      .filter((item) => item.source === 'ISSUER_INITIATED')
+      .filter((item) => item.source === "ISSUER_INITIATED")
       .map((item) => item.claimId);
 
     let confirmedHolderCount = 0;
@@ -2725,15 +2770,17 @@ class CredentialService {
         where: {
           request_id: { in: holderRequestIds },
           holder_did: holderDid,
-          status: 'PROCESSING',
+          status: "PROCESSING",
         },
         data: {
-          status: 'CLAIMED',
+          status: "CLAIMED",
           deletedAt: new Date(),
         },
       });
       confirmedHolderCount = updatedHolderVCs.count;
-      logger.info(`Confirmed ${confirmedHolderCount}/${holderRequestIds.length} VCs from HOLDER_REQUEST`);
+      logger.info(
+        `Confirmed ${confirmedHolderCount}/${holderRequestIds.length} VCs from HOLDER_REQUEST`
+      );
     }
 
     // 3. Confirm VCs from VCinitiatedByIssuer (using id)
@@ -2742,15 +2789,17 @@ class CredentialService {
         where: {
           id: { in: issuerInitiatedIds },
           holder_did: holderDid,
-          status: 'PROCESSING',
+          status: "PROCESSING",
         },
         data: {
-          status: 'CLAIMED',
+          status: "CLAIMED",
           deletedAt: new Date(),
         },
       });
       confirmedIssuerCount = updatedIssuerVCs.count;
-      logger.info(`Confirmed ${confirmedIssuerCount}/${issuerInitiatedIds.length} VCs from ISSUER_INITIATED`);
+      logger.info(
+        `Confirmed ${confirmedIssuerCount}/${issuerInitiatedIds.length} VCs from ISSUER_INITIATED`
+      );
     }
 
     const totalConfirmed = confirmedHolderCount + confirmedIssuerCount;
@@ -2764,13 +2813,118 @@ class CredentialService {
       );
     }
 
-    logger.success(`Combined batch confirmed and soft-deleted ${totalConfirmed} VCs`);
+    logger.success(
+      `Combined batch confirmed and soft-deleted ${totalConfirmed} VCs`
+    );
 
     return {
       message: `Successfully confirmed ${totalConfirmed} VCs.`,
       confirmed_count: totalConfirmed,
       requested_count: items.length,
     };
+  }
+
+  /**
+   * Upload VC document file to MinIO storage
+   * Generates UUID for filename and stores original filename in response
+   */
+  async uploadVCDocumentFile(
+    fileBuffer: Buffer,
+    originalFilename: string,
+    mimetype: string
+  ): Promise<UploadVCDocumentResponseDTO> {
+    try {
+      // Generate UUID for file
+      const fileId = uuidv4();
+
+      // Get file extension from original filename
+      const extension = originalFilename.includes(".")
+        ? originalFilename.substring(originalFilename.lastIndexOf("."))
+        : "";
+
+      // Create filename with UUID + extension
+      const uuidFilename = `${fileId}${extension}`;
+
+      logger.info(
+        `Uploading VC document file: ${originalFilename} as ${uuidFilename}`
+      );
+
+      // Upload to MinIO in vc-document directory with UUID filename
+      const uploadResult = await StorageService.uploadFile(
+        "vc-document",
+        uuidFilename,
+        fileBuffer,
+        mimetype
+      );
+
+      logger.success(
+        `VC document file uploaded successfully: ${uploadResult.filePath}`
+      );
+
+      return {
+        message: "VC document file uploaded successfully",
+        file_id: fileId,
+        file_url: uploadResult.url,
+        size: uploadResult.size,
+      };
+    } catch (error: any) {
+      logger.error(
+        `Failed to upload VC document file: ${originalFilename}`,
+        error
+      );
+      throw new BadRequestError(`File upload failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Delete VC document file from MinIO storage by file_id (UUID)
+   */
+  async deleteVCDocumentFile(
+    fileId: string
+  ): Promise<DeleteVCDocumentResponseDTO> {
+    try {
+      logger.info(`Deleting VC document file with ID: ${fileId}`);
+
+      // List files in vc-document directory to find file with matching UUID
+      const files = await StorageService.listFiles("vc-document");
+
+      // Find file that starts with the UUID
+      // Extract filename without directory path before checking
+      const targetFile = files.find((file) => {
+        const filename = file.name.split("/").pop() || file.name;
+        return filename.startsWith(fileId);
+      });
+
+      if (!targetFile) {
+        throw new NotFoundError(`File with ID ${fileId} not found in storage`);
+      }
+
+      // Extract filename without directory path
+      const filename = targetFile.name.split("/").pop() || targetFile.name;
+
+      // Delete from MinIO in vc-document directory
+      await StorageService.deleteFile("vc-document", filename);
+
+      logger.success(
+        `VC document file deleted successfully: ${targetFile.name}`
+      );
+
+      return {
+        message: "VC document file deleted successfully",
+        file_id: fileId,
+      };
+    } catch (error: any) {
+      logger.error(
+        `Failed to delete VC document file with ID: ${fileId}`,
+        error
+      );
+
+      if (error instanceof NotFoundError) {
+        throw error;
+      }
+
+      throw new BadRequestError(`File deletion failed: ${error.message}`);
+    }
   }
 }
 

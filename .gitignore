@@ -63,3 +63,5 @@ keys/
 
 /src/generated/prisma
 .claude/
+
+nginx/

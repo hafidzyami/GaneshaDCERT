@@ -138,6 +138,7 @@ class PresentationService {
   async storeVP(data: {
     holder_did: string;
     vp: string; // VP is a JSON string
+    is_barcode?: boolean; // Optional: indicates if VP sharing is from barcode scan
   }): Promise<{ vp_id: string; message: string }> {
     // Validate that VP is valid JSON
     try {
@@ -150,11 +151,13 @@ class PresentationService {
       data: {
         holder_did: data.holder_did,
         VP: data.vp, // Store as string
+        is_barcode: data.is_barcode ?? false, // Default to false if not provided
       },
     });
 
     logger.success(`VP stored: ${sharedVp.id}`);
     logger.info(`Holder: ${data.holder_did}`);
+    logger.info(`Is Barcode: ${sharedVp.is_barcode}`);
 
     return {
       vp_id: sharedVp.id,
@@ -262,6 +265,52 @@ class PresentationService {
   }
 
   /**
+   * Helper: Convert hex public key to ECDSA P-256 public key object
+   */
+  private hexToECDSAPublicKey(publicKeyHex: string): crypto.KeyObject {
+    // Remove '0x' prefix if present
+    const cleanHex = publicKeyHex.startsWith('0x')
+      ? publicKeyHex.substring(2)
+      : publicKeyHex;
+
+    // ECDSA P-256 uncompressed public key is 65 bytes (04 + 32 bytes X + 32 bytes Y)
+    // or 64 bytes without the 04 prefix
+    let publicKeyBuffer: Buffer;
+
+    if (cleanHex.length === 130) {
+      // 65 bytes with 04 prefix
+      publicKeyBuffer = Buffer.from(cleanHex, 'hex');
+      if (publicKeyBuffer[0] !== 0x04) {
+        throw new Error('Invalid ECDSA P-256 public key: expected 04 prefix for uncompressed key');
+      }
+    } else if (cleanHex.length === 128) {
+      // 64 bytes without prefix, add 04 prefix
+      publicKeyBuffer = Buffer.concat([Buffer.from([0x04]), Buffer.from(cleanHex, 'hex')]);
+    } else {
+      throw new Error(`Invalid ECDSA P-256 public key length: expected 128 or 130 hex chars, got ${cleanHex.length}`);
+    }
+
+    // Create ECDSA P-256 public key in DER format (SPKI)
+    // ASN.1 structure for ECDSA P-256 public key
+    const derHeader = Buffer.from([
+      0x30, 0x59, // SEQUENCE, length 89
+      0x30, 0x13, // SEQUENCE, length 19
+      0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, // OID: 1.2.840.10045.2.1 (ecPublicKey)
+      0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, // OID: 1.2.840.10045.3.1.7 (P-256)
+      0x03, 0x42, 0x00 // BIT STRING, length 66, 0 unused bits
+    ]);
+
+    const derKey = Buffer.concat([derHeader, publicKeyBuffer]);
+
+    // Create public key object
+    return crypto.createPublicKey({
+      key: derKey,
+      format: 'der',
+      type: 'spki'
+    });
+  }
+
+  /**
    * Helper: Verify EdDSA signature for a credential or presentation
    */
   private async verifyEdDSASignature(
@@ -298,6 +347,58 @@ class PresentationService {
       return isValid;
     } catch (error) {
       logger.error('Error verifying EdDSA signature:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Helper: Verify ECDSA P-256 signature with SHA256 for a credential or presentation
+   */
+  private async verifyECDSASignature(
+    data: any,
+    proof: DataIntegrityProof,
+    publicKeyHex: string
+  ): Promise<boolean> {
+    try {
+      // 1. Remove proof from data
+      const { proof: _, ...dataWithoutProof } = data;
+
+      // 2. Canonicalize the data (simple JSON stringification for now)
+      // Note: For production, use RDF Dataset Canonicalization (RDFC 1.0)
+      const canonicalData = JSON.stringify(dataWithoutProof, Object.keys(dataWithoutProof).sort());
+
+      // 3. Create message buffer
+      const messageBuffer = Buffer.from(canonicalData, 'utf8');
+
+      // 4. Decode signature from multibase (or handle raw signature)
+      let signatureBuffer: Buffer;
+      try {
+        signatureBuffer = this.decodeMultibase(proof.proofValue);
+      } catch (error) {
+        // If multibase decoding fails, try to decode as hex or base64
+        if (proof.proofValue.startsWith('0x')) {
+          signatureBuffer = Buffer.from(proof.proofValue.substring(2), 'hex');
+        } else {
+          // Try as base64
+          signatureBuffer = Buffer.from(proof.proofValue, 'base64');
+        }
+      }
+
+      // 5. Convert public key hex to ECDSA P-256 KeyObject
+      const publicKey = this.hexToECDSAPublicKey(publicKeyHex);
+
+      // 6. Verify signature using ECDSA with SHA256
+      const isValid = crypto.verify(
+        'sha256', // Use SHA256 hash algorithm
+        messageBuffer,
+        publicKey,
+        signatureBuffer
+      );
+
+      logger.debug(`ECDSA P-256 signature verification result: ${isValid}`);
+      return isValid;
+    } catch (error) {
+      logger.error('Error verifying ECDSA signature:', error);
       return false;
     }
   }
@@ -344,8 +445,8 @@ class PresentationService {
         };
       }
 
-      // Verify VC proof
-      const isValid = await this.verifyEdDSASignature(vc, vc.proof, publicKeyHex);
+      // Verify VC proof using ECDSA P-256 with SHA256
+      const isValid = await this.verifyECDSASignature(vc, vc.proof, publicKeyHex);
 
       return {
         vc_id: vc.id,
@@ -365,21 +466,30 @@ class PresentationService {
   }
 
   /**
-   * Verify Verifiable Presentation (One-Time Use)
+   * Verify Verifiable Presentation
+   * Uses ECDSA P-256 curve with SHA256 for signature verification
+   *
+   * Behavior based on is_barcode:
+   * - is_barcode = false: One-time use, soft deleted after verification
+   * - is_barcode = true: Reusable, never deleted (for barcode scanning scenarios)
+   *
+   * Steps:
    * 1. Verify VP signature with holder's public key
    * 2. Verify each VC's proof with issuer's public key
-   * 3. Soft delete VP after verification regardless of result (idempotent)
+   * 3. Conditionally soft delete based on is_barcode value
    */
   async verifyVP(vpId: string): Promise<VPVerificationResult> {
-    // Find VP in VPSharing (exclude soft-deleted for first verification)
-    const sharedVp = await this.db.vPSharing.findFirst({
-      where: {
-        id: vpId,
-        deletedAt: null
-      },
+    // Find VP in VPSharing
+    const sharedVp = await this.db.vPSharing.findUnique({
+      where: { id: vpId },
     });
 
     if (!sharedVp) {
+      throw new NotFoundError("VP not found");
+    }
+
+    // Check if VP is one-time use and already verified
+    if (!sharedVp.is_barcode && sharedVp.deletedAt !== null) {
       throw new NotFoundError("VP not found or already verified");
     }
 
@@ -418,8 +528,8 @@ class PresentationService {
             result.vp_valid = false;
             result.vp_error = 'Public key not found in holder DID document';
           } else {
-            // Verify VP signature
-            const isValid = await this.verifyEdDSASignature(vp, vp.proof, publicKeyHex);
+            // Verify VP signature using ECDSA P-256 with SHA256
+            const isValid = await this.verifyECDSASignature(vp, vp.proof, publicKeyHex);
             result.vp_valid = isValid;
             if (!isValid) {
               result.vp_error = 'VP signature verification failed';
@@ -451,24 +561,29 @@ class PresentationService {
     logger.info(`VP valid: ${result.vp_valid}`);
     logger.info(`VCs verified: ${result.credentials_verification.length}`);
     logger.info(`VCs valid: ${result.credentials_verification.filter(r => r.valid).length}`);
+    logger.info(`Is barcode VP: ${sharedVp.is_barcode}`);
 
-    // Step 3: Soft delete VP after verification (idempotent)
-    // Always soft delete regardless of verification result (one-time use)
-    try {
-      // Soft delete - idempotent operation
-      await this.db.vPSharing.updateMany({
-        where: {
-          id: vpId,
-          deletedAt: null // Only update if not already deleted
-        },
-        data: {
-          deletedAt: new Date()
-        }
-      });
-      logger.success(`VP ${vpId} soft deleted after verification (one-time use)`);
-    } catch (error) {
-      // Don't fail the verification if soft delete fails
-      logger.error(`Failed to soft delete VP ${vpId}:`, error);
+    // Step 3: Conditionally soft delete VP based on is_barcode value
+    if (!sharedVp.is_barcode) {
+      // One-time use VP: soft delete after verification
+      try {
+        await this.db.vPSharing.updateMany({
+          where: {
+            id: vpId,
+            deletedAt: null // Only update if not already deleted
+          },
+          data: {
+            deletedAt: new Date()
+          }
+        });
+        logger.success(`VP ${vpId} soft deleted after verification (one-time use)`);
+      } catch (error) {
+        // Don't fail the verification if soft delete fails
+        logger.error(`Failed to soft delete VP ${vpId}:`, error);
+      }
+    } else {
+      // Barcode VP: reusable, don't delete
+      logger.info(`VP ${vpId} is a barcode VP - not deleted (reusable)`);
     }
 
     return result;

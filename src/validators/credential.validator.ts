@@ -859,7 +859,7 @@ export const confirmCombinedVCsBatchValidator = [
     .withMessage("holder_did is required")
     .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder_did format"),
-  
+
   body("items")
     .isArray({ min: 1, max: 100 })
     .withMessage("items must be an array with 1 to 100 objects"),
@@ -872,6 +872,21 @@ export const confirmCombinedVCsBatchValidator = [
 
   body("items.*.source")
     .trim()
-    .isIn(['HOLDER_REQUEST', 'ISSUER_INITIATED'])
-    .withMessage("Each item's source must be either 'HOLDER_REQUEST' or 'ISSUER_INITIATED'"),
+    .isIn(["HOLDER_REQUEST", "ISSUER_INITIATED"])
+    .withMessage(
+      "Each item's source must be either 'HOLDER_REQUEST' or 'ISSUER_INITIATED'"
+    ),
+];
+
+/**
+ * Validator for DELETE /credentials/file
+ * Validates the deletion of VC document file
+ */
+export const deleteVCDocumentValidator = [
+  body("file_id")
+    .trim()
+    .notEmpty()
+    .withMessage("file_id is required")
+    .isUUID()
+    .withMessage("file_id must be a valid UUID"),
 ];

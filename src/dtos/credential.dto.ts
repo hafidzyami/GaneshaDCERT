@@ -165,7 +165,7 @@ export interface AggregatedRequestDTO {
   new_vc_id: string | null; // Ditambahkan untuk log UPDATE
   transaction_hash: string | null; // Ditambahkan untuk log
   createdAt: Date;
-  history_type: 'REQUEST' | 'DIRECT_ACTION'; // Field baru untuk membedakan
+  history_type: "REQUEST" | "DIRECT_ACTION"; // Field baru untuk membedakan
 }
 
 // Response DTO for the new endpoint
@@ -189,9 +189,9 @@ export interface IssuerIssueVCDTO {
 export interface IssuerUpdateVCDTO {
   issuer_did: string;
   holder_did: string;
-  
+
   old_vc_id: string; // ID VC lama yang akan diganti
-  
+
   // Detail VC baru
   new_vc_id: string; // ID unik untuk VC yang baru (diperbarui)
   vc_type: string;
@@ -236,9 +236,9 @@ export interface IssuerRevokeVCResponseDTO {
 export interface IssuerRenewVCDTO {
   issuer_did: string;
   holder_did: string;
-  vc_id: string;          // ID dari VC on-chain yang akan diperbarui (renew)
+  vc_id: string; // ID dari VC on-chain yang akan diperbarui (renew)
   encrypted_body: string; // Body VC BARU (sudah dienkripsi) yang akan disimpan di DB
-  expiredAt: string;      // <-- TAMBAHKAN BARIS INI
+  expiredAt: string; // <-- TAMBAHKAN BARIS INI
 }
 
 // Response body DTO for POST /credentials/issuer/renew-vc
@@ -295,10 +295,32 @@ export interface VCValidationResult {
   is_expired?: boolean;
 }
 
+/**
+ * DTO for uploading VC document file
+ */
+export interface UploadVCDocumentResponseDTO {
+  message: string;
+  file_id: string; // UUID generated for the file
+  file_url: string;
+  size: number;
+}
+
+/**
+ * DTO for deleting VC document file
+ */
+export interface DeleteVCDocumentDTO {
+  file_id: string; // UUID of the file to delete
+}
+
+export interface DeleteVCDocumentResponseDTO {
+  message: string;
+  file_id: string;
+}
+
 export interface CombinedClaimVCDTO {
-  source: 'HOLDER_REQUEST' | 'ISSUER_INITIATED'; // Which table it came from
+  source: "HOLDER_REQUEST" | "ISSUER_INITIATED"; // Which table it came from
   claimId: string; // The ID to be used for confirmation.
-                   // This will be VCResponse.request_id OR VCinitiatedByIssuer.id
+  // This will be VCResponse.request_id OR VCinitiatedByIssuer.id
   encrypted_body: string;
   request_type: RequestType;
   processing_at: Date;
@@ -316,7 +338,7 @@ export interface CombinedClaimVCsResponseDTO {
 // DTO for an item in the new combined confirm request
 export interface CombinedClaimConfirmationItemDTO {
   claimId: string; // The ID from CombinedClaimVCDTO (either request_id or id)
-  source: 'HOLDER_REQUEST' | 'ISSUER_INITIATED'; // The source from CombinedClaimVCDTO
+  source: "HOLDER_REQUEST" | "ISSUER_INITIATED"; // The source from CombinedClaimVCDTO
 }
 
 // DTO for the request body of the new combined confirm endpoint

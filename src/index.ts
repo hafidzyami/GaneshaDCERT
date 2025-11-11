@@ -37,7 +37,47 @@ const PORT: number = env.PORT;
 
 // Middleware untuk parsing JSON
 app.use(express.json());
-app.use(cors());
+
+// CORS Configuration
+const corsOptions = {
+  origin: (
+    origin: string | undefined,
+    callback: (err: Error | null, allow?: boolean) => void
+  ) => {
+    // Allow requests with no origin (like mobile apps or Postman)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // List of allowed origins
+    const allowedOrigins = [
+      env.FRONTEND_URL, // From environment variable
+      "http://localhost:3000", // Local development
+      "http://localhost:5173", // Vite dev server
+      "https://dev-dcert.ganeshait.com", // Dev frontend
+      "https://dcert.ganeshait.com", // Production frontend
+    ];
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      logger.warn(`CORS blocked origin: ${origin}`);
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true, // Allow cookies and authorization headers
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Accept",
+  ],
+  exposedHeaders: ["Content-Range", "X-Content-Range"],
+  maxAge: 86400, // 24 hours
+};
+
+app.use(cors(corsOptions));
 
 // Request logger (before all routes)
 app.use(requestLogger);
@@ -72,7 +112,7 @@ const swaggerOptions: swaggerJsdoc.Options = {
         description: "Production Server",
       },
       // {
-      //   url: "http://192.168.55.114:3069/api/v1",
+      //   url: "http://192.168.55.115:3069/api/v1",
       //   description: "Local Server",
       // },
     ],
@@ -91,6 +131,12 @@ const swaggerOptions: swaggerJsdoc.Options = {
           description: "Enter JWT token for admin authentication",
         },
         HolderBearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+          description: "Enter JWT token for holder authentication",
+        },
+        VerifierBearerAuth: {
           type: "http",
           scheme: "bearer",
           bearerFormat: "JWT",
