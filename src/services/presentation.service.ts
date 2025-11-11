@@ -138,6 +138,7 @@ class PresentationService {
   async storeVP(data: {
     holder_did: string;
     vp: string; // VP is a JSON string
+    is_barcode?: boolean; // Optional: indicates if VP sharing is from barcode scan
   }): Promise<{ vp_id: string; message: string }> {
     // Validate that VP is valid JSON
     try {
@@ -150,11 +151,13 @@ class PresentationService {
       data: {
         holder_did: data.holder_did,
         VP: data.vp, // Store as string
+        is_barcode: data.is_barcode ?? false, // Default to false if not provided
       },
     });
 
     logger.success(`VP stored: ${sharedVp.id}`);
     logger.info(`Holder: ${data.holder_did}`);
+    logger.info(`Is Barcode: ${sharedVp.is_barcode}`);
 
     return {
       vp_id: sharedVp.id,
@@ -463,22 +466,30 @@ class PresentationService {
   }
 
   /**
-   * Verify Verifiable Presentation (One-Time Use)
+   * Verify Verifiable Presentation
    * Uses ECDSA P-256 curve with SHA256 for signature verification
+   *
+   * Behavior based on is_barcode:
+   * - is_barcode = false: One-time use, soft deleted after verification
+   * - is_barcode = true: Reusable, never deleted (for barcode scanning scenarios)
+   *
+   * Steps:
    * 1. Verify VP signature with holder's public key
    * 2. Verify each VC's proof with issuer's public key
-   * 3. Soft delete VP after verification regardless of result (idempotent)
+   * 3. Conditionally soft delete based on is_barcode value
    */
   async verifyVP(vpId: string): Promise<VPVerificationResult> {
-    // Find VP in VPSharing (exclude soft-deleted for first verification)
-    const sharedVp = await this.db.vPSharing.findFirst({
-      where: {
-        id: vpId,
-        deletedAt: null
-      },
+    // Find VP in VPSharing
+    const sharedVp = await this.db.vPSharing.findUnique({
+      where: { id: vpId },
     });
 
     if (!sharedVp) {
+      throw new NotFoundError("VP not found");
+    }
+
+    // Check if VP is one-time use and already verified
+    if (!sharedVp.is_barcode && sharedVp.deletedAt !== null) {
       throw new NotFoundError("VP not found or already verified");
     }
 
@@ -550,24 +561,29 @@ class PresentationService {
     logger.info(`VP valid: ${result.vp_valid}`);
     logger.info(`VCs verified: ${result.credentials_verification.length}`);
     logger.info(`VCs valid: ${result.credentials_verification.filter(r => r.valid).length}`);
+    logger.info(`Is barcode VP: ${sharedVp.is_barcode}`);
 
-    // Step 3: Soft delete VP after verification (idempotent)
-    // Always soft delete regardless of verification result (one-time use)
-    try {
-      // Soft delete - idempotent operation
-      await this.db.vPSharing.updateMany({
-        where: {
-          id: vpId,
-          deletedAt: null // Only update if not already deleted
-        },
-        data: {
-          deletedAt: new Date()
-        }
-      });
-      logger.success(`VP ${vpId} soft deleted after verification (one-time use)`);
-    } catch (error) {
-      // Don't fail the verification if soft delete fails
-      logger.error(`Failed to soft delete VP ${vpId}:`, error);
+    // Step 3: Conditionally soft delete VP based on is_barcode value
+    if (!sharedVp.is_barcode) {
+      // One-time use VP: soft delete after verification
+      try {
+        await this.db.vPSharing.updateMany({
+          where: {
+            id: vpId,
+            deletedAt: null // Only update if not already deleted
+          },
+          data: {
+            deletedAt: new Date()
+          }
+        });
+        logger.success(`VP ${vpId} soft deleted after verification (one-time use)`);
+      } catch (error) {
+        // Don't fail the verification if soft delete fails
+        logger.error(`Failed to soft delete VP ${vpId}:`, error);
+      }
+    } else {
+      // Barcode VP: reusable, don't delete
+      logger.info(`VP ${vpId} is a barcode VP - not deleted (reusable)`);
     }
 
     return result;

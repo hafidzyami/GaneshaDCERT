@@ -1495,13 +1495,13 @@ class CredentialService {
    */
   async resetStuckProcessingVCs(timeoutMinutes: number = 15) {
     logger.info(
-      `Running cleanup job: resetting VCs stuck in PROCESSING for >${timeoutMinutes} minutes`
+      `Running cleanup job: resetting VCs stuck in PROCESSING for >${timeoutMinutes} minutes from all sources`
     );
 
     const cutoffTime = new Date(Date.now() - timeoutMinutes * 60 * 1000);
 
-    // Find and reset stuck PROCESSING VCs atomically
-    const result = await this.db.$queryRaw<any[]>`
+    // [NEW] Create a promise for the VCResponse table
+    const resetVCResponsePromise = this.db.$queryRaw<any[]>`
       UPDATE "VCResponse"
       SET status = 'PENDING'::"VCResponseStatus",
           processing_at = NULL,
@@ -1512,24 +1512,68 @@ class CredentialService {
       RETURNING id, holder_did, processing_at;
     `;
 
-    const resetCount = result?.length || 0;
+    // [NEW] Create a promise for the VCinitiatedByIssuer table
+    const resetVCinitiatedPromise = this.db.$queryRaw<any[]>`
+      UPDATE "VCinitiatedByIssuer"
+      SET status = 'PENDING'::"VCResponseStatus",
+          processing_at = NULL,
+          "updatedAt" = NOW()
+      WHERE status = 'PROCESSING'::"VCResponseStatus"
+        AND processing_at < ${cutoffTime}
+        AND "deletedAt" IS NULL
+      RETURNING id, holder_did, processing_at;
+    `;
 
-    if (resetCount > 0) {
+    // [NEW] Execute both cleanup queries in parallel
+    const [resultVCResponse, resultVCinitiated] = await Promise.all([
+      resetVCResponsePromise,
+      resetVCinitiatedPromise,
+    ]);
+
+    const resetCountVCResponse = resultVCResponse?.length || 0;
+    const resetCountVCinitiated = resultVCinitiated?.length || 0;
+    const totalResetCount = resetCountVCResponse + resetCountVCinitiated;
+
+    // [NEW] Updated logging for combined results
+    if (totalResetCount > 0) {
       logger.warn(
-        `Cleanup job reset ${resetCount} stuck PROCESSING VCs back to PENDING`
+        `[Scheduler] Cleanup job reset ${totalResetCount} total stuck PROCESSING VCs back to PENDING`
       );
-      // Log the affected VCs for debugging
-      result.forEach((vc: any) => {
+
+      // Log details for VCResponse
+      if (resetCountVCResponse > 0) {
         logger.debug(
-          `Reset VC ${vc.id} for holder ${vc.holder_did}, stuck since ${vc.processing_at}`
+          `  - Reset ${resetCountVCResponse} VCs from VCResponse (holder-initiated)`
         );
-      });
+        resultVCResponse.forEach((vc: any) => {
+          logger.debug(
+            `    - Reset VCResponse ${vc.id} for holder ${vc.holder_did}, stuck since ${vc.processing_at}`
+          );
+        });
+      }
+
+      // Log details for VCinitiatedByIssuer
+      if (resetCountVCinitiated > 0) {
+        logger.debug(
+          `  - Reset ${resetCountVCinitiated} VCs from VCinitiatedByIssuer (issuer-initiated)`
+        );
+        resultVCinitiated.forEach((vc: any) => {
+          logger.debug(
+            `    - Reset VCinitiated ${vc.id} for holder ${vc.holder_did}, stuck since ${vc.processing_at}`
+          );
+        });
+      }
     } else {
-      logger.info(`Cleanup job completed: no stuck PROCESSING VCs found`);
+      logger.info(
+        `[Scheduler] Cleanup job completed: no stuck PROCESSING VCs found in either table`
+      );
     }
 
+    // [NEW] Return a more detailed object with the breakdown
     return {
-      reset_count: resetCount,
+      total_reset_count: totalResetCount,
+      vc_response_reset_count: resetCountVCResponse,
+      vc_initiated_reset_count: resetCountVCinitiated,
       timeout_minutes: timeoutMinutes,
       cutoff_time: cutoffTime,
     };

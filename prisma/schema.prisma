@@ -100,6 +100,7 @@ model VPSharing {
   id         String    @id @default(uuid())
   holder_did String
   VP         String
+  is_barcode Boolean   @default(false)
   createdAt  DateTime  @default(now())
   deletedAt  DateTime?
 }

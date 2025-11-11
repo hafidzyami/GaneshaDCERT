@@ -6,7 +6,7 @@ import { CredentialService } from "../services";
 import { ValidationError } from "../utils";
 import { asyncHandler, RequestWithDID } from "../middlewares";
 import { ResponseHelper } from "../utils/helpers";
-import { ClaimIssuerInitiatedVCsDTO, ConfirmIssuerInitiatedVCsDTO, IssuerRenewVCDTO, IssuerRevokeVCDTO, IssuerUpdateVCDTO, ProcessUpdateVCDTO, IssuerIssueVCDTO,ProcessIssuanceVCDTO, RevokeVCDTO, CredentialRevocationRequestDTO, ProcessRenewalVCDTO, ValidateVCDTO } from "../dtos";
+import { CombinedConfirmVCsBatchDTO, ClaimIssuerInitiatedVCsDTO, ConfirmIssuerInitiatedVCsDTO, IssuerRenewVCDTO, IssuerRevokeVCDTO, IssuerUpdateVCDTO, ProcessUpdateVCDTO, IssuerIssueVCDTO,ProcessIssuanceVCDTO, RevokeVCDTO, CredentialRevocationRequestDTO, ProcessRenewalVCDTO, ValidateVCDTO } from "../dtos";
 import { BadRequestError} from "../utils/errors/AppError";
 /**
  * Request Credential Issuance Controller
@@ -397,12 +397,12 @@ export const resetStuckVCs = asyncHandler(async (req: Request, res: Response) =>
   // Call the service function
   const result = await CredentialService.resetStuckProcessingVCs(timeout_minutes || 15);
 
-  // Prepare message
-  const message = result.reset_count > 0
-    ? `Successfully reset ${result.reset_count} stuck VCs back to PENDING`
+  // [FIXED] Use the new 'total_reset_count' for the message
+  const message = result.total_reset_count > 0
+    ? `Successfully reset ${result.total_reset_count} total stuck VCs back to PENDING`
     : "No stuck VCs found to reset";
 
-  // Send success response
+  // The 'result' object now contains the full breakdown
   return ResponseHelper.success(res, result, message);
 });
 
