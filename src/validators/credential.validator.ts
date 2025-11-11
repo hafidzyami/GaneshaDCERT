@@ -706,7 +706,27 @@ export const issuerRevokeVCValidator = [
     .matches(/^did:dcert:i(?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/) // Harus 'i' (institution)
     .withMessage("Invalid issuer DID format (must be an institution DID)"),
 
+  // [NEW] Add validator for holder_did
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Holder DID is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder DID format")
+    .custom((value, { req }) => {
+      if (value === req.body.issuer_did) {
+        throw new Error("Issuer DID and Holder DID cannot be the same.");
+      }
+      return true;
+    }),
+
   body("vc_id").trim().notEmpty().withMessage("vc_id is required"),
+  
+  // [NEW] Add validator for encrypted_body
+  body("encrypted_body")
+    .trim()
+    .notEmpty()
+    .withMessage("Encrypted body (reason) is required"),
 ];
 
 export const issuerRenewVCValidator = [
