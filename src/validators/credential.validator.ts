@@ -64,8 +64,8 @@ export const processIssuanceVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("vc_hash is required when action is APPROVED")
-    .matches(/^[a-fA-F0-9]{64}$/) // Example validation for Keccak256 hash
-    .withMessage("Invalid vc_hash format (must be a 64-character)"),
+    .matches(/^[a-fA-F0-9]{64}$/)
+    .withMessage("Invalid vc_hash format (must be a 64-character hex string)"),
 
   body("encrypted_body")
     .if(body("action").equals(RequestStatus.APPROVED))
@@ -456,9 +456,9 @@ export const processUpdateVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("new_vc_hash is required when action is APPROVED")
-    .matches(/^0x[a-fA-F0-9]{64}$/)
+    .matches(/^[a-fA-F0-9]{64}$/) // [MODIFIED] Removed 0x
     .withMessage(
-      "Invalid new_vc_hash format (must be a 64-character hex string starting with 0x)"
+      "Invalid new_vc_hash format (must be a 64-character hex string)" // [MODIFIED]
     ),
 
   body("encrypted_body")
@@ -614,9 +614,9 @@ export const issuerIssueVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("vc_hash is required")
-    .matches(/^0x[a-fA-F0-9]{64}$/) // Asumsi hash 64 char hex
+    .matches(/^[a-fA-F0-9]{64}$/) // [MODIFIED] Removed 0x
     .withMessage(
-      "Invalid vc_hash format (must be a 64-character hex string starting with 0x)"
+      "Invalid vc_hash format (must be a 64-character hex string)" // [MODIFIED]
     ),
 
   body("encrypted_body")
@@ -680,9 +680,9 @@ export const issuerUpdateVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("new_vc_hash is required")
-    .matches(/^0x[a-fA-F0-9]{64}$/)
+    .matches(/^[a-fA-F0-9]{64}$/) // [MODIFIED] Removed 0x
     .withMessage(
-      "Invalid new_vc_hash format (must be a 64-character hex string starting with 0x)"
+      "Invalid new_vc_hash format (must be a 64-character hex string)" // [MODIFIED]
     ),
 
   body("encrypted_body")
