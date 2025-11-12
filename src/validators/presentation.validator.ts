@@ -19,14 +19,39 @@ export const requestVPValidator = [
     .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid verifier DID format"),
 
-  body("list_schema_id")
-    .isArray({ min: 1 })
-    .withMessage("list_schema_id must be a non-empty array"),
-
-  body("list_schema_id.*")
+  body("verifier_name")
     .trim()
     .notEmpty()
-    .withMessage("Each schema ID must not be empty"),
+    .withMessage("Verifier name is required")
+    .isLength({ min: 1, max: 255 })
+    .withMessage("Verifier name must be between 1 and 255 characters"),
+
+  body("purpose")
+    .trim()
+    .notEmpty()
+    .withMessage("Purpose is required")
+    .isLength({ min: 1, max: 500 })
+    .withMessage("Purpose must be between 1 and 500 characters"),
+
+  body("requested_credentials")
+    .isArray({ min: 1 })
+    .withMessage("requested_credentials must be a non-empty array"),
+
+  body("requested_credentials.*.schema_id")
+    .trim()
+    .notEmpty()
+    .withMessage("schema_id is required for each requested credential")
+    .isUUID()
+    .withMessage("schema_id must be a valid UUID"),
+
+  body("requested_credentials.*.schema_name")
+    .trim()
+    .notEmpty()
+    .withMessage("schema_name is required for each requested credential"),
+
+  body("requested_credentials.*.schema_version")
+    .isInt({ min: 1 })
+    .withMessage("schema_version must be a positive integer"),
 ];
 
 export const getVPRequestDetailsValidator = [

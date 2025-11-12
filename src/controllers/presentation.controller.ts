@@ -9,18 +9,20 @@ import { RequestWithDID } from "../middlewares/didAuth.middleware";
 /**
  * Request VP Controller
  */
-export const requestVP = asyncHandler(async (req: Request, res: Response) => {
+export const requestVP = asyncHandler(async (req: RequestWithDID, res: Response) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     throw new ValidationError("Validation error", errors.array());
   }
 
-  const { holder_did, verifier_did, list_schema_id } = req.body;
+  const { holder_did, verifier_did, verifier_name, purpose, requested_credentials } = req.body;
 
   const result = await PresentationService.requestVP({
     holder_did,
     verifier_did,
-    list_schema_id,
+    verifier_name,
+    purpose,
+    requested_credentials,
   });
 
   return ResponseHelper.created(res, result, "VP request created successfully");
@@ -40,6 +42,93 @@ export const getVPRequestDetails = asyncHandler(async (req: Request, res: Respon
   const result = await PresentationService.getVPRequestDetails(vpReqId);
 
   return ResponseHelper.success(res, result, "VP request details retrieved successfully");
+});
+
+/**
+ * Get VP Requests with Filtering Controller
+ */
+export const getVPRequests = asyncHandler(async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  const { verifier_did, holder_did, status } = req.query;
+
+  const result = await PresentationService.getVPRequests({
+    verifier_did: verifier_did as string,
+    holder_did: holder_did as string,
+    status: status as string,
+  });
+
+  return ResponseHelper.success(res, { requests: result }, "VP requests retrieved successfully");
+});
+
+/**
+ * Accept VP Request Controller
+ */
+export const acceptVPRequest = asyncHandler(async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  const { vpReqId, vpId } = req.query;
+
+  if (!vpReqId || !vpId) {
+    throw new ValidationError("vpReqId and vpId are required", []);
+  }
+
+  const result = await PresentationService.acceptVPRequest({
+    vpReqId: vpReqId as string,
+    vpId: vpId as string,
+  });
+
+  return ResponseHelper.success(res, result, "VP request accepted successfully");
+});
+
+/**
+ * Decline VP Request Controller
+ */
+export const declineVPRequest = asyncHandler(async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  const { vpReqId } = req.query;
+
+  if (!vpReqId) {
+    throw new ValidationError("vpReqId is required", []);
+  }
+
+  const result = await PresentationService.declineVPRequest({
+    vpReqId: vpReqId as string,
+  });
+
+  return ResponseHelper.success(res, result, "VP request declined successfully");
+});
+
+/**
+ * Claim VP Controller (for Verifier)
+ */
+export const claimVP = asyncHandler(async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  const { verifier_did } = req.body;
+
+  if (!verifier_did) {
+    throw new ValidationError("verifier_did is required", []);
+  }
+
+  const result = await PresentationService.claimVP({
+    verifier_did,
+  });
+
+  return ResponseHelper.success(res, result, "VPs claimed successfully");
 });
 
 /**

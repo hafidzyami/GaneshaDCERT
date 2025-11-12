@@ -344,6 +344,7 @@ class VCBlockchainService {
 
   /**
    * Get All VCs from Blockchain
+   * Note: This method may be expensive for large number of VCs
    */
   async getAllVCsFromBlockchain(): Promise<any[]> {
     try {

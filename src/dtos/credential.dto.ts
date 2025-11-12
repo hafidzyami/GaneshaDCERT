@@ -317,6 +317,18 @@ export interface DeleteVCDocumentResponseDTO {
   file_id: string;
 }
 
+export interface VCSchemaData {
+  id: string;
+  version: number;
+  name: string;
+  schema: any;
+  issuer_did: string;
+  issuer_name: string | null;
+  image_link: string | null;
+  expired_in: number | null;
+  isActive: boolean;
+}
+
 export interface CombinedClaimVCDTO {
   source: "HOLDER_REQUEST" | "ISSUER_INITIATED"; // Which table it came from
   claimId: string; // The ID to be used for confirmation.
@@ -324,6 +336,7 @@ export interface CombinedClaimVCDTO {
   encrypted_body: string;
   request_type: RequestType;
   processing_at: Date;
+  schema_data?: VCSchemaData | null;
   // ... any other common fields you want to return
 }
 
