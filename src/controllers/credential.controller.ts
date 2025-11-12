@@ -164,9 +164,9 @@ export const getHolderVCs = asyncHandler(
       throw new ValidationError("Validation error", errors.array());
     }
 
-    const { holderDid } = req.query;
+    const { holder_did } = req.query;
 
-    const result = await CredentialService.getHolderVCs(holderDid as string);
+    const result = await CredentialService.getHolderVCs(holder_did as string);
 
     return ResponseHelper.success(
       res,
@@ -818,6 +818,45 @@ export const confirmCombinedVCsBatch = asyncHandler(
       items,
       holder_did
     );
+
+    return ResponseHelper.success(res, result, result.message);
+  }
+);
+
+/**
+ * Store Issuer VC Data Controller
+ */
+export const storeIssuerVCData = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { issuer_did, encrypted_body } = req.body;
+
+    const result = await CredentialService.storeIssuerVCData({
+      issuer_did,
+      encrypted_body,
+    });
+
+    return ResponseHelper.created(res, result.data, result.message);
+  }
+);
+
+/**
+ * Get Issuer VC Data Controller
+ */
+export const getIssuerVCData = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { issuer_did } = req.params;
+
+    const result = await CredentialService.getIssuerVCData(issuer_did);
 
     return ResponseHelper.success(res, result, result.message);
   }

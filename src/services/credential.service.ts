@@ -49,10 +49,12 @@ import {
   CombinedConfirmVCsResponseDTO,
   UploadVCDocumentResponseDTO,
   DeleteVCDocumentResponseDTO,
+  VCSchemaData,
 } from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 import NotificationService from "./notification.service";
 import StorageService from "./storage.service";
+import SchemaService from "./schema.service";
 import { v4 as uuidv4 } from "uuid";
 
 /**
@@ -260,33 +262,57 @@ class CredentialService {
   /**
    * Get holder's VCs from blockchain
    */
+  /**
+   * Get all active VCs for a holder
+   * Query blockchain and return only active (not revoked) credentials
+   * Note: This uses getAllVCs which may fail for large number of VCs
+   */
   async getHolderVCs(holderDid: string) {
-    // TODO: Implement blockchain query to get all VCs for holder
-    logger.info(`Fetching VCs for holder DID: ${holderDid}`);
+    logger.info(`Fetching active VCs for holder DID: ${holderDid}`);
 
-    // Placeholder data
-    const placeholderVCs = [
-      {
-        vc_id: "vc:hid:11111",
-        schema_id: "sch:hid:22222",
-        issuer_did: "did:example:b34ca6cd37bbf23",
-        hash: "0x123abc...",
-        status: true,
-      },
-      {
-        vc_id: "vc:hid:33333",
-        schema_id: "sch:hid:44444",
-        issuer_did: "did:example:c56ef89abce56",
-        hash: "0x456def...",
-        status: true,
-      },
-    ];
+    try {
+      // Query all VCs from blockchain
+      const allVCs = await VCBlockchainService.getAllVCsFromBlockchain();
 
-    return {
-      message: `Successfully retrieved VCs for holder ${holderDid}.`,
-      count: placeholderVCs.length,
-      data: placeholderVCs,
-    };
+      // Filter VCs by holder_did and active status
+      const activeVCs = allVCs
+        .filter((vc: any) => {
+          const isHolder = vc.holderDID === holderDid;
+          const isActive = !vc.revoked;
+          return isHolder && isActive;
+        })
+        .map((vc: any) => ({
+          vc_id: vc.id,
+          holder_did: vc.holderDID,
+          issuer_did: vc.issuerDID,
+          schema_id: vc.schemaID,
+          hash: vc.hashValue,
+          revoked: vc.revoked,
+          issued_at: new Date(Number(vc.issuedAt) * 1000).toISOString(),
+          expires_at: vc.expiresAt && Number(vc.expiresAt) > 0
+            ? new Date(Number(vc.expiresAt) * 1000).toISOString()
+            : null,
+        }));
+
+      logger.success(`Found ${activeVCs.length} active VCs for holder ${holderDid}`);
+
+      return {
+        message: `Successfully retrieved active VCs for holder ${holderDid}`,
+        count: activeVCs.length,
+        credentials: activeVCs,
+      };
+    } catch (error) {
+      logger.error(`Error fetching VCs for holder ${holderDid}:`, error);
+
+      // If blockchain query fails (e.g., out of gas), return empty array
+      logger.warn(`Returning empty credentials array due to blockchain error`);
+      return {
+        message: `Unable to retrieve VCs from blockchain. Please try again later.`,
+        count: 0,
+        credentials: [],
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
   }
 
   /**
@@ -2580,14 +2606,94 @@ class CredentialService {
       RETURNING request_id, encrypted_body, request_type, processing_at;
     `;
 
-    // Map results
+    // Map results and fetch schema data for HOLDER_REQUEST
     for (const vc of holderRequestVCs) {
+      let schema_data: VCSchemaData | null = null;
+
+      try {
+        // Get vc_id from the appropriate request table based on request_type
+        let vcId: string | null = null;
+
+        switch (vc.request_type) {
+          case "ISSUANCE": {
+            const request = await this.db.vCIssuanceRequest.findUnique({
+              where: { id: vc.request_id },
+              select: { vc_id: true },
+            });
+            vcId = request?.vc_id || null;
+            break;
+          }
+          case "RENEWAL": {
+            const request = await this.db.vCRenewalRequest.findUnique({
+              where: { id: vc.request_id },
+              select: { vc_id: true },
+            });
+            vcId = request?.vc_id || null;
+            break;
+          }
+          case "UPDATE": {
+            const request = await this.db.vCUpdateRequest.findUnique({
+              where: { id: vc.request_id },
+              select: { vc_id: true },
+            });
+            vcId = request?.vc_id || null;
+            break;
+          }
+          case "REVOKE": {
+            const request = await this.db.vCRevokeRequest.findUnique({
+              where: { id: vc.request_id },
+              select: { vc_id: true },
+            });
+            vcId = request?.vc_id || null;
+            break;
+          }
+        }
+
+        // If vc_id exists, parse it and fetch schema
+        if (vcId) {
+          // Parse vc_id format: "schema_id:schema_version:holder_did:timestamp"
+          const parts = vcId.split(":");
+          if (parts.length >= 2) {
+            const schema_id = parts[0];
+            const schema_version = parseInt(parts[1], 10);
+
+            if (schema_id && !isNaN(schema_version)) {
+              const schema = await SchemaService.getSchemaByIdAndVersion(
+                schema_id,
+                schema_version
+              );
+
+              if (schema) {
+                schema_data = {
+                  id: schema.id,
+                  version: schema.version,
+                  name: schema.name,
+                  schema: schema.schema,
+                  issuer_did: schema.issuer_did,
+                  issuer_name: schema.issuer_name,
+                  image_link: schema.image_link,
+                  expired_in: schema.expired_in,
+                  isActive: schema.isActive,
+                };
+              }
+            }
+          }
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.warn(
+          `Failed to fetch schema data for request_id ${vc.request_id}: ${errorMessage}`
+        );
+        // Continue without schema_data
+      }
+
       combinedClaims.push({
         source: "HOLDER_REQUEST",
         claimId: vc.request_id, // Use request_id for confirmation
         encrypted_body: vc.encrypted_body,
         request_type: vc.request_type,
         processing_at: vc.processing_at,
+        schema_data,
       });
     }
 
@@ -2622,7 +2728,7 @@ class CredentialService {
         RETURNING id, encrypted_body, request_type, processing_at;
       `;
 
-      // Map results
+      // Map results - ISSUER_INITIATED doesn't have schema_data
       for (const vc of issuerInitiatedVCs) {
         combinedClaims.push({
           source: "ISSUER_INITIATED",
@@ -2630,6 +2736,7 @@ class CredentialService {
           encrypted_body: vc.encrypted_body,
           request_type: vc.request_type,
           processing_at: vc.processing_at,
+          schema_data: null, // No schema data for issuer-initiated VCs
         });
       }
       logger.info(
@@ -2866,6 +2973,76 @@ class CredentialService {
       }
 
       throw new BadRequestError(`File deletion failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Store Issuer VC Data
+   * Create a new record with issuer_did and encrypted_body
+   */
+  async storeIssuerVCData(data: {
+    issuer_did: string;
+    encrypted_body: string;
+  }): Promise<{ message: string; data: any }> {
+    logger.info(`Storing VC data for issuer: ${data.issuer_did}`);
+
+    try {
+      const issuerVCData = await this.db.issuerVCData.create({
+        data: {
+          issuer_did: data.issuer_did,
+          encrypted_body: data.encrypted_body,
+        },
+      });
+
+      logger.success(`Issuer VC data stored successfully`);
+
+      return {
+        message: "Issuer VC data stored successfully",
+        data: issuerVCData,
+      };
+    } catch (error: any) {
+      logger.error(`Failed to store issuer VC data:`, error);
+
+      // Check for unique constraint violation (duplicate)
+      if (error.code === 'P2002') {
+        throw new BadRequestError("This VC data already exists for the issuer");
+      }
+
+      throw new InternalServerError(`Failed to store issuer VC data: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get Issuer VC Data by issuer_did
+   * Retrieve all VC data for a specific issuer
+   */
+  async getIssuerVCData(issuer_did: string): Promise<{
+    message: string;
+    count: number;
+    data: any[];
+  }> {
+    logger.info(`Fetching VC data for issuer: ${issuer_did}`);
+
+    try {
+      const issuerVCData = await this.db.issuerVCData.findMany({
+        where: {
+          issuer_did,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      logger.success(`Found ${issuerVCData.length} VC data records for issuer ${issuer_did}`);
+
+      return {
+        message: `Successfully retrieved VC data for issuer ${issuer_did}`,
+        count: issuerVCData.length,
+        data: issuerVCData,
+      };
+    } catch (error: any) {
+      logger.error(`Failed to fetch issuer VC data:`, error);
+      throw new InternalServerError(`Failed to fetch issuer VC data: ${error.message}`);
     }
   }
 }

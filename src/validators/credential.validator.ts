@@ -212,7 +212,7 @@ export const processCredentialResponseValidator = [
 ];
 
 export const getHolderVCsValidator = [
-  query("holderDid")
+  query("holder_did")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
@@ -869,4 +869,37 @@ export const deleteVCDocumentValidator = [
     .withMessage("file_id is required")
     .isUUID()
     .withMessage("file_id must be a valid UUID"),
+];
+
+/**
+ * Validator for POST /credentials/issuer/vc
+ * Validates storing issuer VC data
+ */
+export const storeIssuerVCDataValidator = [
+  body("issuer_did")
+    .trim()
+    .notEmpty()
+    .withMessage("issuer_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid issuer DID format"),
+
+  body("encrypted_body")
+    .trim()
+    .notEmpty()
+    .withMessage("encrypted_body is required")
+    .isLength({ min: 1 })
+    .withMessage("encrypted_body must not be empty"),
+];
+
+/**
+ * Validator for GET /credentials/issuer/vc/:issuer_did
+ * Validates retrieving issuer VC data
+ */
+export const getIssuerVCDataValidator = [
+  param("issuer_did")
+    .trim()
+    .notEmpty()
+    .withMessage("issuer_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid issuer DID format"),
 ];

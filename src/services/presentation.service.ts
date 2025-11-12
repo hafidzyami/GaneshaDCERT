@@ -90,20 +90,29 @@ class PresentationService {
   async requestVP(data: {
     holder_did: string;
     verifier_did: string;
-    list_schema_id: string[];
+    verifier_name: string;
+    purpose: string;
+    requested_credentials: Array<{
+      schema_id: string;
+      schema_name: string;
+      schema_version: number;
+    }>;
   }): Promise<{ vp_request_id: string; message: string }> {
     const vpRequest = await this.db.vPRequest.create({
       data: {
         holder_did: data.holder_did,
         verifier_did: data.verifier_did,
-        list_schema_id: data.list_schema_id,
+        verifier_name: data.verifier_name,
+        purpose: data.purpose,
+        requested_credentials: data.requested_credentials,
       },
     });
 
     // TODO: Add Message Queue using RabbitMQ to notify holder
     logger.success(`VP request created: ${vpRequest.id}`);
-    logger.info(`From: ${data.verifier_did}`);
+    logger.info(`From: ${data.verifier_did} (${data.verifier_name})`);
     logger.info(`To: ${data.holder_did}`);
+    logger.info(`Purpose: ${data.purpose}`);
 
     return {
       vp_request_id: vpRequest.id,
@@ -112,12 +121,9 @@ class PresentationService {
   }
 
   /**
-   * Get VP request details
+   * Get VP request details by ID
    */
-  async getVPRequestDetails(vpReqId: string): Promise<{
-    verifier_did: string;
-    list_schema_id: string[];
-  }> {
+  async getVPRequestDetails(vpReqId: string) {
     const vpRequest = await this.db.vPRequest.findUnique({
       where: { id: vpReqId },
     });
@@ -126,9 +132,176 @@ class PresentationService {
       throw new NotFoundError("VP Request not found");
     }
 
+    return vpRequest;
+  }
+
+  /**
+   * Get VP requests with filtering
+   * @param filters - verifier_did OR holder_did (one must be provided), optional status filter
+   */
+  async getVPRequests(filters: {
+    verifier_did?: string;
+    holder_did?: string;
+    status?: string;
+  }) {
+    // Validate: at least one of verifier_did or holder_did must be provided
+    if (!filters.verifier_did && !filters.holder_did) {
+      throw new Error("Either verifier_did or holder_did must be provided");
+    }
+
+    // Build where clause
+    const where: any = {};
+
+    if (filters.verifier_did) {
+      where.verifier_did = filters.verifier_did;
+    }
+
+    if (filters.holder_did) {
+      where.holder_did = filters.holder_did;
+    }
+
+    if (filters.status) {
+      where.status = filters.status;
+    }
+
+    const vpRequests = await this.db.vPRequest.findMany({
+      where,
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    return vpRequests;
+  }
+
+  /**
+   * Accept VP Request
+   * Holder accepts VP request and provides vp_id
+   */
+  async acceptVPRequest(data: {
+    vpReqId: string;
+    vpId: string;
+  }): Promise<{ message: string }> {
+    // Check if VP request exists
+    const vpRequest = await this.db.vPRequest.findUnique({
+      where: { id: data.vpReqId },
+    });
+
+    if (!vpRequest) {
+      throw new NotFoundError("VP Request not found");
+    }
+
+    if (vpRequest.status !== 'PENDING') {
+      throw new Error(`Cannot accept VP request with status: ${vpRequest.status}`);
+    }
+
+    // Update VP request status to ACCEPT and set vp_id
+    await this.db.vPRequest.update({
+      where: { id: data.vpReqId },
+      data: {
+        status: 'ACCEPT',
+        vp_id: data.vpId,
+      },
+    });
+
+    logger.success(`VP request ${data.vpReqId} accepted with VP ${data.vpId}`);
+
     return {
-      verifier_did: vpRequest.verifier_did,
-      list_schema_id: vpRequest.list_schema_id,
+      message: "VP request accepted successfully",
+    };
+  }
+
+  /**
+   * Decline VP Request
+   * Holder declines VP request
+   */
+  async declineVPRequest(data: {
+    vpReqId: string;
+  }): Promise<{ message: string }> {
+    // Check if VP request exists
+    const vpRequest = await this.db.vPRequest.findUnique({
+      where: { id: data.vpReqId },
+    });
+
+    if (!vpRequest) {
+      throw new NotFoundError("VP Request not found");
+    }
+
+    if (vpRequest.status !== 'PENDING') {
+      throw new Error(`Cannot decline VP request with status: ${vpRequest.status}`);
+    }
+
+    // Update VP request status to DECLINE
+    await this.db.vPRequest.update({
+      where: { id: data.vpReqId },
+      data: {
+        status: 'DECLINE',
+      },
+    });
+
+    logger.success(`VP request ${data.vpReqId} declined`);
+
+    return {
+      message: "VP request declined successfully",
+    };
+  }
+
+  /**
+   * Claim VP by Verifier
+   * Only verifier with matching verifier_did can claim
+   */
+  async claimVP(data: {
+    verifier_did: string;
+  }): Promise<{
+    vp_sharings: Array<{
+      vp_id: string;
+      holder_did: string;
+      vp: any;
+      created_at: Date;
+    }>;
+  }> {
+    // Find VPSharings with matching verifier_did that haven't been claimed yet
+    const vpSharings = await this.db.vPSharing.findMany({
+      where: {
+        verifier_did: data.verifier_did,
+        hasClaim: false,
+        deletedAt: null,
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    if (vpSharings.length === 0) {
+      return {
+        vp_sharings: []
+      };
+    }
+
+    // Mark all as claimed
+    await this.db.vPSharing.updateMany({
+      where: {
+        verifier_did: data.verifier_did,
+        hasClaim: false,
+        deletedAt: null,
+      },
+      data: {
+        hasClaim: true,
+      },
+    });
+
+    logger.success(`Verifier ${data.verifier_did} claimed ${vpSharings.length} VPs`);
+
+    // Parse VPs and return
+    const result = vpSharings.map(vp => ({
+      vp_id: vp.id,
+      holder_did: vp.holder_did,
+      vp: JSON.parse(vp.VP),
+      created_at: vp.createdAt,
+    }));
+
+    return {
+      vp_sharings: result,
     };
   }
 
@@ -138,6 +311,7 @@ class PresentationService {
   async storeVP(data: {
     holder_did: string;
     vp: string; // VP is a JSON string
+    verifier_did?: string; // Optional: if provided, VP is initiated by verifier request
     is_barcode?: boolean; // Optional: indicates if VP sharing is from barcode scan
   }): Promise<{ vp_id: string; message: string }> {
     // Validate that VP is valid JSON
@@ -151,12 +325,15 @@ class PresentationService {
       data: {
         holder_did: data.holder_did,
         VP: data.vp, // Store as string
+        verifier_did: data.verifier_did, // NULL if initiated by holder, has value if initiated by verifier
         is_barcode: data.is_barcode ?? false, // Default to false if not provided
+        hasClaim: false, // Default to not claimed
       },
     });
 
     logger.success(`VP stored: ${sharedVp.id}`);
     logger.info(`Holder: ${data.holder_did}`);
+    logger.info(`Verifier: ${data.verifier_did || 'N/A (initiated by holder)'}`);
     logger.info(`Is Barcode: ${sharedVp.is_barcode}`);
 
     return {
@@ -563,7 +740,37 @@ class PresentationService {
     logger.info(`VCs valid: ${result.credentials_verification.filter(r => r.valid).length}`);
     logger.info(`Is barcode VP: ${sharedVp.is_barcode}`);
 
-    // Step 3: Conditionally soft delete VP based on is_barcode value
+    // Step 3: Update VPRequest verify_status if this VP is linked to a request
+    try {
+      // Check if there's a VPRequest with this vp_id
+      const vpRequest = await this.db.vPRequest.findFirst({
+        where: { vp_id: vpId }
+      });
+
+      if (vpRequest) {
+        // Determine verify_status based on verification result
+        // VALID if VP signature is valid AND all VCs are valid
+        // INVALID otherwise
+        const allVCsValid = result.credentials_verification.every(vc => vc.valid);
+        const isValid = result.vp_valid && allVCsValid;
+
+        const verify_status = isValid ? 'VALID_VERIFICATION' : 'INVALID_VERIFICATION';
+
+        await this.db.vPRequest.update({
+          where: { id: vpRequest.id },
+          data: { verify_status }
+        });
+
+        logger.success(`VPRequest ${vpRequest.id} verify_status updated to: ${verify_status}`);
+      } else {
+        logger.info(`No VPRequest found for VP ${vpId} - skipping verify_status update`);
+      }
+    } catch (error) {
+      // Don't fail the verification if VPRequest update fails
+      logger.error(`Failed to update VPRequest verify_status for VP ${vpId}:`, error);
+    }
+
+    // Step 4: Conditionally soft delete VP based on is_barcode value
     if (!sharedVp.is_barcode) {
       // One-time use VP: soft delete after verification
       try {
