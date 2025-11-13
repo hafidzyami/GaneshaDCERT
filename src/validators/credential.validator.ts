@@ -64,8 +64,8 @@ export const processIssuanceVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("vc_hash is required when action is APPROVED")
-    .matches(/^[a-fA-F0-9]{64}$/) // Example validation for Keccak256 hash
-    .withMessage("Invalid vc_hash format (must be a 64-character)"),
+    .matches(/^[a-fA-F0-9]{64}$/)
+    .withMessage("Invalid vc_hash format (must be a 64-character hex string)"),
 
   body("encrypted_body")
     .if(body("action").equals(RequestStatus.APPROVED))
@@ -463,9 +463,9 @@ export const processUpdateVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("new_vc_hash is required when action is APPROVED")
-    .matches(/^0x[a-fA-F0-9]{64}$/)
+    .matches(/^[a-fA-F0-9]{64}$/) // [MODIFIED] Removed 0x
     .withMessage(
-      "Invalid new_vc_hash format (must be a 64-character hex string starting with 0x)"
+      "Invalid new_vc_hash format (must be a 64-character hex string)" // [MODIFIED]
     ),
 
   body("encrypted_body")
@@ -621,9 +621,9 @@ export const issuerIssueVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("vc_hash is required")
-    .matches(/^0x[a-fA-F0-9]{64}$/) // Asumsi hash 64 char hex
+    .matches(/^[a-fA-F0-9]{64}$/) // [MODIFIED] Removed 0x
     .withMessage(
-      "Invalid vc_hash format (must be a 64-character hex string starting with 0x)"
+      "Invalid vc_hash format (must be a 64-character hex string)" // [MODIFIED]
     ),
 
   body("encrypted_body")
@@ -687,9 +687,9 @@ export const issuerUpdateVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("new_vc_hash is required")
-    .matches(/^0x[a-fA-F0-9]{64}$/)
+    .matches(/^[a-fA-F0-9]{64}$/) // [MODIFIED] Removed 0x
     .withMessage(
-      "Invalid new_vc_hash format (must be a 64-character hex string starting with 0x)"
+      "Invalid new_vc_hash format (must be a 64-character hex string)" // [MODIFIED]
     ),
 
   body("encrypted_body")
@@ -713,7 +713,27 @@ export const issuerRevokeVCValidator = [
     .matches(/^did:dcert:i(?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/) // Harus 'i' (institution)
     .withMessage("Invalid issuer DID format (must be an institution DID)"),
 
+  // [NEW] Add validator for holder_did
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Holder DID is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder DID format")
+    .custom((value, { req }) => {
+      if (value === req.body.issuer_did) {
+        throw new Error("Issuer DID and Holder DID cannot be the same.");
+      }
+      return true;
+    }),
+
   body("vc_id").trim().notEmpty().withMessage("vc_id is required"),
+  
+  // [NEW] Add validator for encrypted_body
+  body("encrypted_body")
+    .trim()
+    .notEmpty()
+    .withMessage("Encrypted body (reason) is required"),
 ];
 
 export const issuerRenewVCValidator = [
