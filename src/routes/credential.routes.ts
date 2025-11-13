@@ -33,6 +33,7 @@ import {
   confirmCombinedVCsBatchValidator,
   storeIssuerVCDataValidator,
   getIssuerVCDataValidator,
+  updateIssuerVCDataValidator,
 } from "../validators/credential.validator";
 
 const router: Router = express.Router();
@@ -2484,6 +2485,79 @@ router.get(
   "/issuer/vc/:issuer_did",
   getIssuerVCDataValidator,
   credentialController.getIssuerVCData
+);
+
+/**
+ * @swagger
+ * /credentials/issuer/vc:
+ *   put:
+ *     summary: Update issuer VC data
+ *     description: Replace old encrypted VC body with new one for an issuer. This is useful when issuer updates, renews, or revokes a VC and the encrypted_body changes.
+ *     tags: [Verifiable Credential (VC) Lifecycle]
+ *     security:
+ *       - HolderBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - issuer_did
+ *               - old_encrypted_body
+ *               - new_encrypted_body
+ *             properties:
+ *               issuer_did:
+ *                 type: string
+ *                 example: "did:dcert:i..."
+ *                 description: DID Issuer
+ *               old_encrypted_body:
+ *                 type: string
+ *                 description: Current encrypted VC body to be replaced
+ *               new_encrypted_body:
+ *                 type: string
+ *                 description: New encrypted VC body
+ *     responses:
+ *       200:
+ *         description: Issuer VC data updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Issuer VC data updated successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     issuer_did:
+ *                       type: string
+ *                     encrypted_body:
+ *                       type: string
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *       400:
+ *         description: Validation error or new encrypted_body already exists
+ *       404:
+ *         description: Old VC data not found for this issuer
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+router.put(
+  "/issuer/vc",
+  verifyDIDSignature,
+  updateIssuerVCDataValidator,
+  credentialController.updateIssuerVCData
 );
 
 export default router;

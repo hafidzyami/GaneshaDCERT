@@ -114,10 +114,10 @@ const swaggerOptions: swaggerJsdoc.Options = {
         url: "https://api-dcert.ganeshait.com/api/v1",
         description: "Production Server",
       },
-      {
-        url: "http://192.168.55.113:3069/api/v1",
-        description: "Local Server",
-      },
+      // {
+      //   url: "http://192.168.55.113:3069/api/v1",
+      //   description: "Local Server",
+      // },
     ],
     components: {
       securitySchemes: {
