@@ -736,6 +736,9 @@ router.get(
  *               vc_id:
  *                 type: string
  *                 description: The ID of the actual VC to revoke (Required only if action is APPROVED).
+ *               encrypted_body:
+ *                 type: string
+ *                 description: Encrypted VC body to be sent to holder for verification (Required only if action is APPROVED).
  *     responses:
  *       200:
  *         description: Revocation request processed successfully (Approved or Rejected).

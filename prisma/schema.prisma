@@ -229,7 +229,8 @@ model VPRequest {
   verifier_name         String
   purpose               String
   status                VPRequestStatus @default(PENDING)
-  requested_credentials Json            // [{schema_id, schema_name, schema_version, vc_id}]
+  requested_credentials Json            // [{schema_id, schema_name, schema_version}] - What verifier requests
+  credentials           Json?           // [{schema_id, schema_name, schema_version}] - What holder actually provides
   vp_id                 String?         // NULL for DECLINE, has value for ACCEPT
   verify_status         VPVerifyStatus  @default(NOT_VERIFIED)
   createdAt             DateTime        @default(now())

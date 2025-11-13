@@ -1,6 +1,6 @@
 import { VPRequest, VPSharing, PrismaClient } from "@prisma/client";
 import { prisma } from "../config/database";
-import { NotFoundError } from "../utils/errors/AppError";
+import { NotFoundError, BadRequestError } from "../utils/errors/AppError";
 import logger from "../config/logger";
 import * as crypto from "crypto";
 import DIDService from "./did.service";
@@ -176,11 +176,16 @@ class PresentationService {
 
   /**
    * Accept VP Request
-   * Holder accepts VP request and provides vp_id
+   * Holder accepts VP request and provides vp_id and credentials
    */
   async acceptVPRequest(data: {
     vpReqId: string;
     vpId: string;
+    credentials: Array<{
+      schema_id: string;
+      schema_name: string;
+      schema_version: number;
+    }>;
   }): Promise<{ message: string }> {
     // Check if VP request exists
     const vpRequest = await this.db.vPRequest.findUnique({
@@ -195,16 +200,30 @@ class PresentationService {
       throw new Error(`Cannot accept VP request with status: ${vpRequest.status}`);
     }
 
-    // Update VP request status to ACCEPT and set vp_id
+    // Update VP request status to ACCEPT and set vp_id and credentials
     await this.db.vPRequest.update({
       where: { id: data.vpReqId },
       data: {
         status: 'ACCEPT',
         vp_id: data.vpId,
+        credentials: data.credentials,
       },
     });
 
-    logger.success(`VP request ${data.vpReqId} accepted with VP ${data.vpId}`);
+    // Update VPSharing.verifier_did based on VPRequest.verifier_did
+    await this.db.vPSharing.updateMany({
+      where: {
+        id: data.vpId,
+        verifier_did: null, // Only update if verifier_did is still null
+      },
+      data: {
+        verifier_did: vpRequest.verifier_did,
+      },
+    });
+
+    logger.success(
+      `VP request ${data.vpReqId} accepted with VP ${data.vpId}. VPSharing updated with verifier_did: ${vpRequest.verifier_did}`
+    );
 
     return {
       message: "VP request accepted successfully",
@@ -256,7 +275,12 @@ class PresentationService {
     vp_sharings: Array<{
       vp_id: string;
       holder_did: string;
-      vp: any;
+      vp_request_id: string | null;
+      credentials: Array<{
+        schema_id: string;
+        schema_name: string;
+        schema_version: number;
+      }> | null;
       created_at: Date;
     }>;
   }> {
@@ -278,9 +302,63 @@ class PresentationService {
       };
     }
 
-    // Mark all as claimed
-    await this.db.vPSharing.updateMany({
+    // Note: hasClaim is NOT updated here
+    // Verifier must call /presentations/confirm to mark VPs as claimed after saving to local storage
+    logger.success(`Verifier ${data.verifier_did} claimed ${vpSharings.length} VPs (pending confirmation)`);
+
+    // Fetch VPRequest data for each VPSharing
+    const result = await Promise.all(
+      vpSharings.map(async (vp) => {
+        // Find VPRequest where vp_id matches VPSharing.id
+        const vpRequest = await this.db.vPRequest.findFirst({
+          where: {
+            vp_id: vp.id,
+          },
+          select: {
+            id: true,
+            credentials: true, // Changed from requested_credentials to credentials
+          },
+        });
+
+        return {
+          vp_id: vp.id,
+          holder_did: vp.holder_did,
+          vp_request_id: vpRequest?.id || null,
+          credentials: vpRequest?.credentials as Array<{
+            schema_id: string;
+            schema_name: string;
+            schema_version: number;
+          }> | null,
+          created_at: vp.createdAt,
+        };
+      })
+    );
+
+    return {
+      vp_sharings: result,
+    };
+  }
+
+  /**
+   * Confirm VPs after verifier saves to local storage
+   * Updates hasClaim to true for specified vp_ids
+   */
+  async confirmVP(data: {
+    verifier_did: string;
+    vp_ids: string[];
+  }): Promise<{
+    message: string;
+    confirmed_count: number;
+  }> {
+    if (!data.vp_ids || data.vp_ids.length === 0) {
+      throw new BadRequestError("vp_ids array is required and cannot be empty");
+    }
+
+    // Update hasClaim to true for specified VPs
+    // Only update VPs that belong to the verifier and haven't been claimed yet
+    const updateResult = await this.db.vPSharing.updateMany({
       where: {
+        id: { in: data.vp_ids },
         verifier_did: data.verifier_did,
         hasClaim: false,
         deletedAt: null,
@@ -290,18 +368,13 @@ class PresentationService {
       },
     });
 
-    logger.success(`Verifier ${data.verifier_did} claimed ${vpSharings.length} VPs`);
-
-    // Parse VPs and return
-    const result = vpSharings.map(vp => ({
-      vp_id: vp.id,
-      holder_did: vp.holder_did,
-      vp: JSON.parse(vp.VP),
-      created_at: vp.createdAt,
-    }));
+    logger.success(
+      `Verifier ${data.verifier_did} confirmed ${updateResult.count} VPs out of ${data.vp_ids.length} requested`
+    );
 
     return {
-      vp_sharings: result,
+      message: `Successfully confirmed ${updateResult.count} VP(s)`,
+      confirmed_count: updateResult.count,
     };
   }
 

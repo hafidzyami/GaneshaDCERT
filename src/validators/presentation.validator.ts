@@ -101,3 +101,45 @@ export const verifyVPValidator = [
     .isUUID()
     .withMessage("Invalid VP ID format"),
 ];
+
+export const acceptVPRequestValidator = [
+  body("credentials")
+    .isArray({ min: 1 })
+    .withMessage("credentials must be a non-empty array"),
+
+  body("credentials.*.schema_id")
+    .trim()
+    .notEmpty()
+    .withMessage("schema_id is required for each credential")
+    .isUUID()
+    .withMessage("schema_id must be a valid UUID"),
+
+  body("credentials.*.schema_name")
+    .trim()
+    .notEmpty()
+    .withMessage("schema_name is required for each credential"),
+
+  body("credentials.*.schema_version")
+    .isInt({ min: 1 })
+    .withMessage("schema_version must be a positive integer"),
+];
+
+export const confirmVPValidator = [
+  body("verifier_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Verifier DID is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid verifier DID format"),
+
+  body("vp_ids")
+    .isArray({ min: 1 })
+    .withMessage("vp_ids must be a non-empty array"),
+
+  body("vp_ids.*")
+    .trim()
+    .notEmpty()
+    .withMessage("Each vp_id is required")
+    .isUUID()
+    .withMessage("Each vp_id must be a valid UUID"),
+];
