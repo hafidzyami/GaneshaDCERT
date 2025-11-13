@@ -861,3 +861,25 @@ export const getIssuerVCData = asyncHandler(
     return ResponseHelper.success(res, result, result.message);
   }
 );
+
+/**
+ * Update Issuer VC Data Controller
+ */
+export const updateIssuerVCData = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { issuer_did, old_encrypted_body, new_encrypted_body } = req.body;
+
+    const result = await CredentialService.updateIssuerVCData({
+      issuer_did,
+      old_encrypted_body,
+      new_encrypted_body,
+    });
+
+    return ResponseHelper.success(res, result.data, result.message);
+  }
+);

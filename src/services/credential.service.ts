@@ -3083,6 +3083,80 @@ class CredentialService {
       throw new InternalServerError(`Failed to fetch issuer VC data: ${error.message}`);
     }
   }
+
+  /**
+   * Update Issuer VC Data
+   * Replace old encrypted_body with new encrypted_body for an issuer
+   * This is useful when issuer updates/renews/revokes a VC
+   */
+  async updateIssuerVCData(data: {
+    issuer_did: string;
+    old_encrypted_body: string;
+    new_encrypted_body: string;
+  }): Promise<{ message: string; data: any }> {
+    logger.info(`Updating VC data for issuer: ${data.issuer_did}`);
+
+    try {
+      // Use transaction to ensure atomicity
+      const result = await this.db.$transaction(async (tx) => {
+        // Check if old record exists
+        const oldRecord = await tx.issuerVCData.findUnique({
+          where: {
+            issuer_did_encrypted_body: {
+              issuer_did: data.issuer_did,
+              encrypted_body: data.old_encrypted_body,
+            },
+          },
+        });
+
+        if (!oldRecord) {
+          throw new NotFoundError(
+            "Old VC data not found for this issuer"
+          );
+        }
+
+        // Delete old record
+        await tx.issuerVCData.delete({
+          where: {
+            issuer_did_encrypted_body: {
+              issuer_did: data.issuer_did,
+              encrypted_body: data.old_encrypted_body,
+            },
+          },
+        });
+
+        // Create new record
+        const newRecord = await tx.issuerVCData.create({
+          data: {
+            issuer_did: data.issuer_did,
+            encrypted_body: data.new_encrypted_body,
+          },
+        });
+
+        return newRecord;
+      });
+
+      logger.success(`Issuer VC data updated successfully`);
+
+      return {
+        message: "Issuer VC data updated successfully",
+        data: result,
+      };
+    } catch (error: any) {
+      logger.error(`Failed to update issuer VC data:`, error);
+
+      if (error instanceof NotFoundError) {
+        throw error;
+      }
+
+      // Check for unique constraint violation (new_encrypted_body already exists)
+      if (error.code === 'P2002') {
+        throw new BadRequestError("The new VC data already exists for the issuer");
+      }
+
+      throw new InternalServerError(`Failed to update issuer VC data: ${error.message}`);
+    }
+  }
 }
 
 // Export singleton instance for backward compatibility

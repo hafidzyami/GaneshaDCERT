@@ -930,3 +930,30 @@ export const getIssuerVCDataValidator = [
     .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid issuer DID format"),
 ];
+
+/**
+ * Validator for PUT /credentials/issuer/vc
+ * Validates updating issuer VC data (replacing old encrypted_body with new one)
+ */
+export const updateIssuerVCDataValidator = [
+  body("issuer_did")
+    .trim()
+    .notEmpty()
+    .withMessage("issuer_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid issuer DID format"),
+
+  body("old_encrypted_body")
+    .trim()
+    .notEmpty()
+    .withMessage("old_encrypted_body is required")
+    .isLength({ min: 1 })
+    .withMessage("old_encrypted_body must not be empty"),
+
+  body("new_encrypted_body")
+    .trim()
+    .notEmpty()
+    .withMessage("new_encrypted_body is required")
+    .isLength({ min: 1 })
+    .withMessage("new_encrypted_body must not be empty"),
+];
