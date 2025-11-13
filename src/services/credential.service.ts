@@ -888,20 +888,7 @@ class CredentialService {
           `Blockchain revocation failed: ${blockchainError.message}`
         );
       }
-      
-      // --- [NEW] Database Updates (Transaction) ---
-      let updatedRequest;
-      let newVCResponse;
-      try {
-        const result = await this.db.$transaction(async (tx) => {
-          // Update the original VCRevokeRequest
-          const updatedReq = await tx.vCRevokeRequest.update({
-            where: { id: request_id },
-            data: { 
-              status: RequestStatus.APPROVED,
-              vc_id: vc_id 
-            },
-          });
+      // ---------------------------------
 
       // --- Update DB Status and Create VCResponse ---
       const updatedRequest = await this.db.vCRevokeRequest.update({
@@ -930,22 +917,20 @@ class CredentialService {
       );
       // ------------------------
 
-      // ... (push notification logic remains the same) ...
-      // NOTE: You might want to change this notification, since the holder
-      // now has to "claim" the revocation message.
+      // Send push notification to holder
       try {
         await NotificationService.sendVCStatusNotification(
           holder_did,
-          "Credential Revocation Notice", // [MODIFIED] Title
-          "A notice regarding your credential revocation is ready to be claimed.", // [MODIFIED] Body
+          "Credential Revoked",
+          "Your verifiable credential has been revoked and is no longer valid.",
           {
-            type: "VC_REVOKE_NOTICE_PENDING", // [MODIFIED] Type
-            vc_response_id: newVCResponse.id,
+            type: "VC_REVOKED",
             request_id: request_id,
             request_type: RequestType.REVOKE,
+            transaction_hash: blockchainReceipt?.hash,
           }
         );
-        logger.success(`Push notification (for claim) sent to holder: ${holder_did}`);
+        logger.success(`Push notification sent to holder: ${holder_did}`);
       } catch (notifError: any) {
         logger.error(
           `Failed to send push notification to ${holder_did}:`,
@@ -955,10 +940,9 @@ class CredentialService {
 
       return {
         message:
-          "Verifiable Credential revocation request approved. Revocation notice is pending claim by holder.",
+          "Verifiable Credential revocation request approved and VC revoked on blockchain.",
         request_id: updatedRequest.id,
         status: updatedRequest.status,
-        vc_response_id: newVCResponse.id, // [NEW] Return the new ID
         transaction_hash: blockchainReceipt?.hash,
         block_number: blockchainReceipt?.blockNumber,
       };
