@@ -21,7 +21,7 @@ interface DataIntegrityProof {
  * Verifiable Credential Structure
  */
 interface VerifiableCredential {
-  '@context': string[];
+  "@context": string[];
   id: string;
   type: string[];
   issuer: string;
@@ -38,7 +38,7 @@ interface VerifiableCredential {
  * Verifiable Presentation Structure
  */
 interface VerifiablePresentation {
-  '@context': string[];
+  "@context": string[];
   type: string[];
   holder?: string;
   verifiableCredential: VerifiableCredential[];
@@ -78,9 +78,7 @@ class PresentationService {
    * Constructor with dependency injection
    * @param dependencies - Optional dependencies for testing
    */
-  constructor(dependencies?: {
-    db?: PrismaClient;
-  }) {
+  constructor(dependencies?: { db?: PrismaClient }) {
     this.db = dependencies?.db || prisma;
   }
 
@@ -167,8 +165,8 @@ class PresentationService {
     const vpRequests = await this.db.vPRequest.findMany({
       where,
       orderBy: {
-        createdAt: 'desc'
-      }
+        createdAt: "desc",
+      },
     });
 
     return vpRequests;
@@ -196,15 +194,17 @@ class PresentationService {
       throw new NotFoundError("VP Request not found");
     }
 
-    if (vpRequest.status !== 'PENDING') {
-      throw new Error(`Cannot accept VP request with status: ${vpRequest.status}`);
+    if (vpRequest.status !== "PENDING") {
+      throw new Error(
+        `Cannot accept VP request with status: ${vpRequest.status}`
+      );
     }
 
     // Update VP request status to ACCEPT and set vp_id and credentials
     await this.db.vPRequest.update({
       where: { id: data.vpReqId },
       data: {
-        status: 'ACCEPT',
+        status: "ACCEPT",
         vp_id: data.vpId,
         credentials: data.credentials,
       },
@@ -246,15 +246,17 @@ class PresentationService {
       throw new NotFoundError("VP Request not found");
     }
 
-    if (vpRequest.status !== 'PENDING') {
-      throw new Error(`Cannot decline VP request with status: ${vpRequest.status}`);
+    if (vpRequest.status !== "PENDING") {
+      throw new Error(
+        `Cannot decline VP request with status: ${vpRequest.status}`
+      );
     }
 
     // Update VP request status to DECLINE
     await this.db.vPRequest.update({
       where: { id: data.vpReqId },
       data: {
-        status: 'DECLINE',
+        status: "DECLINE",
       },
     });
 
@@ -269,9 +271,7 @@ class PresentationService {
    * Claim VP by Verifier
    * Only verifier with matching verifier_did can claim
    */
-  async claimVP(data: {
-    verifier_did: string;
-  }): Promise<{
+  async claimVP(data: { verifier_did: string }): Promise<{
     vp_sharings: Array<{
       vp_id: string;
       holder_did: string;
@@ -292,19 +292,21 @@ class PresentationService {
         deletedAt: null,
       },
       orderBy: {
-        createdAt: 'desc'
-      }
+        createdAt: "desc",
+      },
     });
 
     if (vpSharings.length === 0) {
       return {
-        vp_sharings: []
+        vp_sharings: [],
       };
     }
 
     // Note: hasClaim is NOT updated here
     // Verifier must call /presentations/confirm to mark VPs as claimed after saving to local storage
-    logger.success(`Verifier ${data.verifier_did} claimed ${vpSharings.length} VPs (pending confirmation)`);
+    logger.success(
+      `Verifier ${data.verifier_did} claimed ${vpSharings.length} VPs (pending confirmation)`
+    );
 
     // Fetch VPRequest data for each VPSharing
     const result = await Promise.all(
@@ -343,10 +345,7 @@ class PresentationService {
    * Confirm VPs after verifier saves to local storage
    * Updates hasClaim to true for specified vp_ids
    */
-  async confirmVP(data: {
-    verifier_did: string;
-    vp_ids: string[];
-  }): Promise<{
+  async confirmVP(data: { verifier_did: string; vp_ids: string[] }): Promise<{
     message: string;
     confirmed_count: number;
   }> {
@@ -406,7 +405,9 @@ class PresentationService {
 
     logger.success(`VP stored: ${sharedVp.id}`);
     logger.info(`Holder: ${data.holder_did}`);
-    logger.info(`Verifier: ${data.verifier_did || 'N/A (initiated by holder)'}`);
+    logger.info(
+      `Verifier: ${data.verifier_did || "N/A (initiated by holder)"}`
+    );
     logger.info(`Is Barcode: ${sharedVp.is_barcode}`);
 
     return {
@@ -423,7 +424,7 @@ class PresentationService {
     const sharedVp = await this.db.vPSharing.findFirst({
       where: {
         id: vpId,
-        deletedAt: null
+        deletedAt: null,
       },
     });
 
@@ -433,13 +434,7 @@ class PresentationService {
       );
     }
 
-    // Soft delete VP after retrieval (one-time use) - idempotent
-    await this.db.vPSharing.update({
-      where: { id: vpId },
-      data: { deletedAt: new Date() }
-    });
-
-    logger.success(`VP retrieved and soft deleted: ${vpId}`);
+    logger.success(`VP retrieved: ${vpId}`);
 
     // Parse VP string to JSON object
     const vpObject = JSON.parse(sharedVp.VP);
@@ -454,14 +449,15 @@ class PresentationService {
    */
   private decodeMultibase(encoded: string): Buffer {
     // Remove 'z' prefix (indicates base58btc encoding)
-    if (!encoded.startsWith('z')) {
-      throw new Error('Invalid multibase encoding: expected z prefix');
+    if (!encoded.startsWith("z")) {
+      throw new Error("Invalid multibase encoding: expected z prefix");
     }
 
     const base58String = encoded.substring(1);
 
     // Base58 alphabet (Bitcoin/IPFS alphabet)
-    const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    const ALPHABET =
+      "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
     // Decode base58 to bytes
     let decoded = BigInt(0);
@@ -475,8 +471,8 @@ class PresentationService {
     }
 
     // Convert BigInt to Buffer
-    const hex = decoded.toString(16).padStart(64, '0'); // Ed25519 signatures are 64 bytes = 128 hex chars
-    return Buffer.from(hex, 'hex');
+    const hex = decoded.toString(16).padStart(64, "0"); // Ed25519 signatures are 64 bytes = 128 hex chars
+    return Buffer.from(hex, "hex");
   }
 
   /**
@@ -484,24 +480,34 @@ class PresentationService {
    */
   private hexToPublicKey(publicKeyHex: string): crypto.KeyObject {
     // Remove '0x' prefix if present
-    const cleanHex = publicKeyHex.startsWith('0x')
+    const cleanHex = publicKeyHex.startsWith("0x")
       ? publicKeyHex.substring(2)
       : publicKeyHex;
 
     // Ed25519 public key is 32 bytes
     if (cleanHex.length !== 64) {
-      throw new Error(`Invalid Ed25519 public key length: expected 64 hex chars, got ${cleanHex.length}`);
+      throw new Error(
+        `Invalid Ed25519 public key length: expected 64 hex chars, got ${cleanHex.length}`
+      );
     }
 
-    const publicKeyBuffer = Buffer.from(cleanHex, 'hex');
+    const publicKeyBuffer = Buffer.from(cleanHex, "hex");
 
     // Create Ed25519 public key in DER format (SPKI)
     // ASN.1 structure for Ed25519 public key
     const derHeader = Buffer.from([
-      0x30, 0x2a, // SEQUENCE, length 42
-      0x30, 0x05, // SEQUENCE, length 5
-      0x06, 0x03, 0x2b, 0x65, 0x70, // OID: 1.3.101.112 (Ed25519)
-      0x03, 0x21, 0x00 // BIT STRING, length 33, 0 unused bits
+      0x30,
+      0x2a, // SEQUENCE, length 42
+      0x30,
+      0x05, // SEQUENCE, length 5
+      0x06,
+      0x03,
+      0x2b,
+      0x65,
+      0x70, // OID: 1.3.101.112 (Ed25519)
+      0x03,
+      0x21,
+      0x00, // BIT STRING, length 33, 0 unused bits
     ]);
 
     const derKey = Buffer.concat([derHeader, publicKeyBuffer]);
@@ -509,8 +515,8 @@ class PresentationService {
     // Create public key object
     return crypto.createPublicKey({
       key: derKey,
-      format: 'der',
-      type: 'spki'
+      format: "der",
+      type: "spki",
     });
   }
 
@@ -519,7 +525,7 @@ class PresentationService {
    */
   private hexToECDSAPublicKey(publicKeyHex: string): crypto.KeyObject {
     // Remove '0x' prefix if present
-    const cleanHex = publicKeyHex.startsWith('0x')
+    const cleanHex = publicKeyHex.startsWith("0x")
       ? publicKeyHex.substring(2)
       : publicKeyHex;
 
@@ -529,25 +535,53 @@ class PresentationService {
 
     if (cleanHex.length === 130) {
       // 65 bytes with 04 prefix
-      publicKeyBuffer = Buffer.from(cleanHex, 'hex');
+      publicKeyBuffer = Buffer.from(cleanHex, "hex");
       if (publicKeyBuffer[0] !== 0x04) {
-        throw new Error('Invalid ECDSA P-256 public key: expected 04 prefix for uncompressed key');
+        throw new Error(
+          "Invalid ECDSA P-256 public key: expected 04 prefix for uncompressed key"
+        );
       }
     } else if (cleanHex.length === 128) {
       // 64 bytes without prefix, add 04 prefix
-      publicKeyBuffer = Buffer.concat([Buffer.from([0x04]), Buffer.from(cleanHex, 'hex')]);
+      publicKeyBuffer = Buffer.concat([
+        Buffer.from([0x04]),
+        Buffer.from(cleanHex, "hex"),
+      ]);
     } else {
-      throw new Error(`Invalid ECDSA P-256 public key length: expected 128 or 130 hex chars, got ${cleanHex.length}`);
+      throw new Error(
+        `Invalid ECDSA P-256 public key length: expected 128 or 130 hex chars, got ${cleanHex.length}`
+      );
     }
 
     // Create ECDSA P-256 public key in DER format (SPKI)
     // ASN.1 structure for ECDSA P-256 public key
     const derHeader = Buffer.from([
-      0x30, 0x59, // SEQUENCE, length 89
-      0x30, 0x13, // SEQUENCE, length 19
-      0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, // OID: 1.2.840.10045.2.1 (ecPublicKey)
-      0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, // OID: 1.2.840.10045.3.1.7 (P-256)
-      0x03, 0x42, 0x00 // BIT STRING, length 66, 0 unused bits
+      0x30,
+      0x59, // SEQUENCE, length 89
+      0x30,
+      0x13, // SEQUENCE, length 19
+      0x06,
+      0x07,
+      0x2a,
+      0x86,
+      0x48,
+      0xce,
+      0x3d,
+      0x02,
+      0x01, // OID: 1.2.840.10045.2.1 (ecPublicKey)
+      0x06,
+      0x08,
+      0x2a,
+      0x86,
+      0x48,
+      0xce,
+      0x3d,
+      0x03,
+      0x01,
+      0x07, // OID: 1.2.840.10045.3.1.7 (P-256)
+      0x03,
+      0x42,
+      0x00, // BIT STRING, length 66, 0 unused bits
     ]);
 
     const derKey = Buffer.concat([derHeader, publicKeyBuffer]);
@@ -555,8 +589,8 @@ class PresentationService {
     // Create public key object
     return crypto.createPublicKey({
       key: derKey,
-      format: 'der',
-      type: 'spki'
+      format: "der",
+      type: "spki",
     });
   }
 
@@ -574,10 +608,13 @@ class PresentationService {
 
       // 2. Canonicalize the data (simple JSON stringification for now)
       // Note: For production, use RDF Dataset Canonicalization (RDFC 1.0)
-      const canonicalData = JSON.stringify(dataWithoutProof, Object.keys(dataWithoutProof).sort());
+      const canonicalData = JSON.stringify(
+        dataWithoutProof,
+        Object.keys(dataWithoutProof).sort()
+      );
 
       // 3. Create message buffer
-      const messageBuffer = Buffer.from(canonicalData, 'utf8');
+      const messageBuffer = Buffer.from(canonicalData, "utf8");
 
       // 4. Decode signature from multibase
       const signatureBuffer = this.decodeMultibase(proof.proofValue);
@@ -596,7 +633,7 @@ class PresentationService {
       logger.debug(`EdDSA signature verification result: ${isValid}`);
       return isValid;
     } catch (error) {
-      logger.error('Error verifying EdDSA signature:', error);
+      logger.error("Error verifying EdDSA signature:", error);
       return false;
     }
   }
@@ -615,10 +652,13 @@ class PresentationService {
 
       // 2. Canonicalize the data (simple JSON stringification for now)
       // Note: For production, use RDF Dataset Canonicalization (RDFC 1.0)
-      const canonicalData = JSON.stringify(dataWithoutProof, Object.keys(dataWithoutProof).sort());
+      const canonicalData = JSON.stringify(
+        dataWithoutProof,
+        Object.keys(dataWithoutProof).sort()
+      );
 
       // 3. Create message buffer
-      const messageBuffer = Buffer.from(canonicalData, 'utf8');
+      const messageBuffer = Buffer.from(canonicalData, "utf8");
 
       // 4. Decode signature from multibase (or handle raw signature)
       let signatureBuffer: Buffer;
@@ -626,11 +666,11 @@ class PresentationService {
         signatureBuffer = this.decodeMultibase(proof.proofValue);
       } catch (error) {
         // If multibase decoding fails, try to decode as hex or base64
-        if (proof.proofValue.startsWith('0x')) {
-          signatureBuffer = Buffer.from(proof.proofValue.substring(2), 'hex');
+        if (proof.proofValue.startsWith("0x")) {
+          signatureBuffer = Buffer.from(proof.proofValue.substring(2), "hex");
         } else {
           // Try as base64
-          signatureBuffer = Buffer.from(proof.proofValue, 'base64');
+          signatureBuffer = Buffer.from(proof.proofValue, "base64");
         }
       }
 
@@ -639,7 +679,7 @@ class PresentationService {
 
       // 6. Verify signature using ECDSA with SHA256
       const isValid = crypto.verify(
-        'sha256', // Use SHA256 hash algorithm
+        "sha256", // Use SHA256 hash algorithm
         messageBuffer,
         publicKey,
         signatureBuffer
@@ -648,7 +688,7 @@ class PresentationService {
       logger.debug(`ECDSA P-256 signature verification result: ${isValid}`);
       return isValid;
     } catch (error) {
-      logger.error('Error verifying ECDSA signature:', error);
+      logger.error("Error verifying ECDSA signature:", error);
       return false;
     }
   }
@@ -656,7 +696,9 @@ class PresentationService {
   /**
    * Verify a single VC's proof
    */
-  private async verifyVCProof(vc: VerifiableCredential): Promise<VCVerificationResult> {
+  private async verifyVCProof(
+    vc: VerifiableCredential
+  ): Promise<VCVerificationResult> {
     try {
       // Get issuer DID
       const issuerDID = vc.issuer;
@@ -669,16 +711,16 @@ class PresentationService {
           vc_id: vc.id,
           issuer: issuerDID,
           valid: false,
-          error: 'Issuer DID not found on blockchain'
+          error: "Issuer DID not found on blockchain",
         };
       }
 
-      if (didDocument.status !== 'Active') {
+      if (didDocument.status !== "Active") {
         return {
           vc_id: vc.id,
           issuer: issuerDID,
           valid: false,
-          error: `Issuer DID is not active. Status: ${didDocument.status}`
+          error: `Issuer DID is not active. Status: ${didDocument.status}`,
         };
       }
 
@@ -691,18 +733,22 @@ class PresentationService {
           vc_id: vc.id,
           issuer: issuerDID,
           valid: false,
-          error: 'Public key not found in issuer DID document'
+          error: "Public key not found in issuer DID document",
         };
       }
 
       // Verify VC proof using ECDSA P-256 with SHA256
-      const isValid = await this.verifyECDSASignature(vc, vc.proof, publicKeyHex);
+      const isValid = await this.verifyECDSASignature(
+        vc,
+        vc.proof,
+        publicKeyHex
+      );
 
       return {
         vc_id: vc.id,
         issuer: issuerDID,
         valid: isValid,
-        error: isValid ? undefined : 'Signature verification failed'
+        error: isValid ? undefined : "Signature verification failed",
       };
     } catch (error) {
       logger.error(`Error verifying VC ${vc.id}:`, error);
@@ -710,7 +756,7 @@ class PresentationService {
         vc_id: vc.id,
         issuer: vc.issuer,
         valid: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
@@ -744,7 +790,9 @@ class PresentationService {
     }
 
     // Parse VP string to JSON object
-    const vp: VerifiablePresentation = JSON.parse(sharedVp.VP) as VerifiablePresentation;
+    const vp: VerifiablePresentation = JSON.parse(
+      sharedVp.VP
+    ) as VerifiablePresentation;
     const holderDID = sharedVp.holder_did;
 
     logger.info(`Verifying VP ${vpId} from holder ${holderDID}`);
@@ -754,7 +802,7 @@ class PresentationService {
       vp,
       vp_valid: false,
       holder_did: holderDID,
-      credentials_verification: []
+      credentials_verification: [],
     };
 
     // Step 1: Verify VP signature (if VP has proof)
@@ -765,8 +813,8 @@ class PresentationService {
 
         if (!didDocument.found) {
           result.vp_valid = false;
-          result.vp_error = 'Holder DID not found on blockchain';
-        } else if (didDocument.status !== 'Active') {
+          result.vp_error = "Holder DID not found on blockchain";
+        } else if (didDocument.status !== "Active") {
           result.vp_valid = false;
           result.vp_error = `Holder DID is not active. Status: ${didDocument.status}`;
         } else {
@@ -776,25 +824,30 @@ class PresentationService {
 
           if (!publicKeyHex) {
             result.vp_valid = false;
-            result.vp_error = 'Public key not found in holder DID document';
+            result.vp_error = "Public key not found in holder DID document";
           } else {
             // Verify VP signature using ECDSA P-256 with SHA256
-            const isValid = await this.verifyECDSASignature(vp, vp.proof, publicKeyHex);
+            const isValid = await this.verifyECDSASignature(
+              vp,
+              vp.proof,
+              publicKeyHex
+            );
             result.vp_valid = isValid;
             if (!isValid) {
-              result.vp_error = 'VP signature verification failed';
+              result.vp_error = "VP signature verification failed";
             }
           }
         }
       } catch (error) {
-        logger.error('Error verifying VP signature:', error);
+        logger.error("Error verifying VP signature:", error);
         result.vp_valid = false;
-        result.vp_error = error instanceof Error ? error.message : 'Unknown error';
+        result.vp_error =
+          error instanceof Error ? error.message : "Unknown error";
       }
     } else {
       // VP doesn't have proof or holder DID
       result.vp_valid = false;
-      result.vp_error = 'VP does not have a proof or holder DID';
+      result.vp_error = "VP does not have a proof or holder DID";
     }
 
     // Step 2: Verify each VC in the VP
@@ -810,37 +863,52 @@ class PresentationService {
     logger.success(`VP verification completed for ${vpId}`);
     logger.info(`VP valid: ${result.vp_valid}`);
     logger.info(`VCs verified: ${result.credentials_verification.length}`);
-    logger.info(`VCs valid: ${result.credentials_verification.filter(r => r.valid).length}`);
+    logger.info(
+      `VCs valid: ${
+        result.credentials_verification.filter((r) => r.valid).length
+      }`
+    );
     logger.info(`Is barcode VP: ${sharedVp.is_barcode}`);
 
     // Step 3: Update VPRequest verify_status if this VP is linked to a request
     try {
       // Check if there's a VPRequest with this vp_id
       const vpRequest = await this.db.vPRequest.findFirst({
-        where: { vp_id: vpId }
+        where: { vp_id: vpId },
       });
 
       if (vpRequest) {
         // Determine verify_status based on verification result
         // VALID if VP signature is valid AND all VCs are valid
         // INVALID otherwise
-        const allVCsValid = result.credentials_verification.every(vc => vc.valid);
+        const allVCsValid = result.credentials_verification.every(
+          (vc) => vc.valid
+        );
         const isValid = result.vp_valid && allVCsValid;
 
-        const verify_status = isValid ? 'VALID_VERIFICATION' : 'INVALID_VERIFICATION';
+        const verify_status = isValid
+          ? "VALID_VERIFICATION"
+          : "INVALID_VERIFICATION";
 
         await this.db.vPRequest.update({
           where: { id: vpRequest.id },
-          data: { verify_status }
+          data: { verify_status },
         });
 
-        logger.success(`VPRequest ${vpRequest.id} verify_status updated to: ${verify_status}`);
+        logger.success(
+          `VPRequest ${vpRequest.id} verify_status updated to: ${verify_status}`
+        );
       } else {
-        logger.info(`No VPRequest found for VP ${vpId} - skipping verify_status update`);
+        logger.info(
+          `No VPRequest found for VP ${vpId} - skipping verify_status update`
+        );
       }
     } catch (error) {
       // Don't fail the verification if VPRequest update fails
-      logger.error(`Failed to update VPRequest verify_status for VP ${vpId}:`, error);
+      logger.error(
+        `Failed to update VPRequest verify_status for VP ${vpId}:`,
+        error
+      );
     }
 
     // Step 4: Conditionally soft delete VP based on is_barcode value
@@ -850,13 +918,15 @@ class PresentationService {
         await this.db.vPSharing.updateMany({
           where: {
             id: vpId,
-            deletedAt: null // Only update if not already deleted
+            deletedAt: null, // Only update if not already deleted
           },
           data: {
-            deletedAt: new Date()
-          }
+            deletedAt: new Date(),
+          },
         });
-        logger.success(`VP ${vpId} soft deleted after verification (one-time use)`);
+        logger.success(
+          `VP ${vpId} soft deleted after verification (one-time use)`
+        );
       } catch (error) {
         // Don't fail the verification if soft delete fails
         logger.error(`Failed to soft delete VP ${vpId}:`, error);
