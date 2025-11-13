@@ -756,7 +756,7 @@ class CredentialService {
   async revokeVC(data: RevokeVCDTO): Promise<RevokeVCResponseDTO> {
     const { request_id, action, vc_id, encrypted_body } = data;
 
-    // 1. Find the original revocation request in the database
+    // 1. Find the original revocation request
     const revokeRequest = await this.db.vCRevokeRequest.findUnique({
       where: { id: request_id },
     });
@@ -770,6 +770,9 @@ class CredentialService {
     // 2. Get issuer_did and holder_did from database
     const issuer_did = revokeRequest.issuer_did;
     const holder_did = revokeRequest.holder_did;
+    
+    // [NEW] Get the encrypted_body (reason) from the original request
+    const encrypted_body_reason = revokeRequest.encrypted_body;
 
     // 3. Check if already processed
     if (revokeRequest.status !== RequestStatus.PENDING) {
@@ -778,9 +781,9 @@ class CredentialService {
       );
     }
 
-    // 4. Process based on action (Logika ini tetap sama)
+    // 4. Process based on action
     if (action === RequestStatus.REJECTED) {
-      // ... (logika REJECTED tidak berubah)
+      // ... (logic for REJECTED remains the same) ...
       const updatedRequest = await this.db.vCRevokeRequest.update({
         where: { id: request_id },
         data: { status: RequestStatus.REJECTED },
@@ -788,7 +791,7 @@ class CredentialService {
 
       logger.warn(`VC Revocation request rejected: ${request_id}`);
 
-      // Send push notification to holder
+      // ... (push notification logic remains the same) ...
       try {
         await NotificationService.sendVCStatusNotification(
           holder_did,
@@ -813,8 +816,9 @@ class CredentialService {
         request_id: updatedRequest.id,
         status: updatedRequest.status,
       };
+
     } else if (action === RequestStatus.APPROVED) {
-      // ... (logika APPROVED tidak berubah)
+      
       if (!vc_id) {
         throw new BadRequestError("vc_id is required when action is APPROVED.");
       }
@@ -835,12 +839,12 @@ class CredentialService {
           logger.warn(
             `Attempted to approve revocation for an already revoked VC: ${vc_id}`
           );
+          // [MODIFICATION] Still update request status even if already revoked
           await this.db.vCRevokeRequest.update({
-            // Still update request status
             where: { id: request_id },
             data: {
               status: RequestStatus.APPROVED,
-              vc_id: vc_id, // <-- SIMPAN VC_ID DI SINI
+              vc_id: vc_id 
             },
           });
           throw new BadRequestError(
@@ -851,6 +855,7 @@ class CredentialService {
           `VC ${vc_id} found and is currently active. Proceeding with blockchain revocation.`
         );
       } catch (error: any) {
+        // ... (pre-check error handling remains the same) ...
         logger.error(`Pre-revocation check failed for VC ${vc_id}:`, error);
         if (error instanceof NotFoundError) {
           throw new NotFoundError(
@@ -864,8 +869,7 @@ class CredentialService {
           `Failed to verify VC status before revocation: ${error.message}`
         );
       }
-      // ------------------------------------
-
+      
       // --- Blockchain Revocation Call ---
       let blockchainReceipt: any;
       try {
@@ -884,7 +888,20 @@ class CredentialService {
           `Blockchain revocation failed: ${blockchainError.message}`
         );
       }
-      // ---------------------------------
+      
+      // --- [NEW] Database Updates (Transaction) ---
+      let updatedRequest;
+      let newVCResponse;
+      try {
+        const result = await this.db.$transaction(async (tx) => {
+          // Update the original VCRevokeRequest
+          const updatedReq = await tx.vCRevokeRequest.update({
+            where: { id: request_id },
+            data: { 
+              status: RequestStatus.APPROVED,
+              vc_id: vc_id 
+            },
+          });
 
       // --- Update DB Status and Create VCResponse ---
       const updatedRequest = await this.db.vCRevokeRequest.update({
@@ -913,20 +930,22 @@ class CredentialService {
       );
       // ------------------------
 
-      // Send push notification to holder
+      // ... (push notification logic remains the same) ...
+      // NOTE: You might want to change this notification, since the holder
+      // now has to "claim" the revocation message.
       try {
         await NotificationService.sendVCStatusNotification(
           holder_did,
-          "Credential Revoked",
-          "Your verifiable credential has been revoked and is no longer valid.",
+          "Credential Revocation Notice", // [MODIFIED] Title
+          "A notice regarding your credential revocation is ready to be claimed.", // [MODIFIED] Body
           {
-            type: "VC_REVOKED",
+            type: "VC_REVOKE_NOTICE_PENDING", // [MODIFIED] Type
+            vc_response_id: newVCResponse.id,
             request_id: request_id,
             request_type: RequestType.REVOKE,
-            transaction_hash: blockchainReceipt?.hash,
           }
         );
-        logger.success(`Push notification sent to holder: ${holder_did}`);
+        logger.success(`Push notification (for claim) sent to holder: ${holder_did}`);
       } catch (notifError: any) {
         logger.error(
           `Failed to send push notification to ${holder_did}:`,
@@ -936,9 +955,10 @@ class CredentialService {
 
       return {
         message:
-          "Verifiable Credential revocation request approved and VC revoked on blockchain.",
+          "Verifiable Credential revocation request approved. Revocation notice is pending claim by holder.",
         request_id: updatedRequest.id,
         status: updatedRequest.status,
+        vc_response_id: newVCResponse.id, // [NEW] Return the new ID
         transaction_hash: blockchainReceipt?.hash,
         block_number: blockchainReceipt?.blockNumber,
       };
@@ -2067,20 +2087,18 @@ class CredentialService {
         "Authenticated DID does not match the issuer_did in the request body."
       );
     }
-    const { issuer_did, vc_id } = data;
+    
+    // [MODIFIED] Destructure new fields
+    const { issuer_did, holder_did, vc_id, encrypted_body } = data;
 
     logger.info(
       `Attempting direct revoke by issuer ${issuer_did} for VC ${vc_id}`
     );
 
-    // 2. Pre-Check: Pastikan VC ada dan aktif
-    let holder_did: string | undefined;
+    // 2. Pre-Check: Pastikan VC ada dan aktif, dan holder-nya cocok
     try {
       const currentVcStatus =
         await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
-
-      // Simpan holder_did untuk notifikasi
-      holder_did = currentVcStatus.holderDID;
 
       // Periksa apakah issuer-nya cocok
       if (currentVcStatus.issuerDID !== issuer_did) {
@@ -2091,6 +2109,16 @@ class CredentialService {
           `Authenticated issuer (${issuer_did}) did not issue this VC.`
         );
       }
+      
+      // [NEW] Periksa apakah holder-nya cocok
+      if (currentVcStatus.holderDID !== holder_did) {
+        logger.warn(
+          `Revoke attempt failed: VC ${vc_id} holder (${currentVcStatus.holderDID}) does not match request holder (${holder_did}).`
+        );
+        throw new ForbiddenError(
+          `Holder DID in request does not match the VC's owner on blockchain.`
+        );
+      }
 
       if (currentVcStatus && currentVcStatus.status === false) {
         logger.warn(`Attempted to revoke an already revoked VC: ${vc_id}`);
@@ -2099,7 +2127,7 @@ class CredentialService {
         );
       }
       logger.info(
-        `VC ${vc_id} found, is active, and matches issuer. Proceeding with blockchain revocation.`
+        `VC ${vc_id} found, is active, and matches issuer/holder. Proceeding with blockchain revocation.`
       );
     } catch (error: any) {
       logger.error(`Pre-revocation check failed for VC ${vc_id}:`, error);
@@ -2133,22 +2161,48 @@ class CredentialService {
       );
     }
 
-    // 4. Kirim notifikasi push ke holder
-    if (holder_did) {
+    // [MODIFIED] 4. Simpan ke tabel VCinitiatedByIssuer dan log
+    try {
+      // [NEW] Simpan "pesan" pencabutan ke tabel VCinitiatedByIssuer
+      const newRecord = await this.db.vCinitiatedByIssuer.create({
+        data: {
+          request_type: RequestType.REVOKE, // Hardcode sebagai REVOKE
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          encrypted_body: encrypted_body, // Menyimpan alasan/pesan pencabutan
+          status: VCResponseStatus.PENDING, // Status default PENDING
+        },
+      });
+
+      // Buat log di IssuerActionLog (mengikuti pola yang ada)
+      await this.db.issuerActionLog.create({
+        data: {
+          action_type: RequestType.REVOKE,
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          vc_id: vc_id,
+          transaction_hash: blockchainReceipt.hash,
+        }
+      });
+
+      logger.success(
+        `New revocation notice created in VCinitiatedByIssuer: ${newRecord.id}`
+      );
+
+      // [NEW] Kirim notifikasi push ke holder untuk "meng-claim" pesan pencabutan
       try {
         await NotificationService.sendVCStatusNotification(
           holder_did,
-          "Credential Revoked",
-          "Your verifiable credential has been revoked by the issuer and is no longer valid.",
+          "Credential Revocation Notice", // Judul baru
+          "A notice regarding your credential revocation is ready to be claimed.", // Body baru
           {
-            type: "VC_REVOKED_BY_ISSUER",
-            vc_id: vc_id,
+            type: "VC_REVOKE_NOTICE_PENDING", // Tipe baru
+            record_id: newRecord.id,
             request_type: RequestType.REVOKE,
-            transaction_hash: blockchainReceipt?.hash,
           }
         );
         logger.success(
-          `Push notification sent to holder (direct revoke): ${holder_did}`
+          `Push notification sent to holder (for revoke claim): ${holder_did}`
         );
       } catch (notifError: any) {
         logger.error(
@@ -2156,42 +2210,24 @@ class CredentialService {
           notifError
         );
       }
-      try {
-        await this.db.issuerActionLog.create({
-          data: {
-            action_type: RequestType.REVOKE,
-            issuer_did: issuer_did,
-            holder_did: holder_did, // Gunakan holder_did yang didapat dari pre-check
-            vc_id: vc_id,
-            transaction_hash: blockchainReceipt.hash,
-          },
-        });
-        logger.success(`Issuer action REVOKE logged for VC: ${vc_id}`);
-      } catch (logError: any) {
-        // Jangan gagalkan seluruh proses jika logging error
-        logger.error(
-          `Failed to log issuer action for REVOKE VC ${vc_id}:`,
-          logError
-        );
-      }
-      // --- AKHIR LOGGING AUDIT ---
 
-      // 5. Kirim respons
+      // [MODIFIED] 5. Kirim respons
       return {
-        message: "VC revoked directly on blockchain.",
-        vc_id: vc_id,
+        message: "VC revoked directly on blockchain. Revocation notice stored for holder claim.",
+        record_id: newRecord.id, // [MODIFIED]
         transaction_hash: blockchainReceipt.hash,
         block_number: blockchainReceipt.blockNumber,
       };
-    }
 
-    // 5. Kirim respons
-    return {
-      message: "VC revoked directly on blockchain.",
-      vc_id: vc_id,
-      transaction_hash: blockchainReceipt.hash,
-      block_number: blockchainReceipt.blockNumber,
-    };
+    } catch (dbError: any) {
+      logger.error(
+        `Database storage failed for VCinitiatedByIssuer (VC ${vc_id}) after successful TX ${blockchainReceipt?.hash}:`,
+        dbError
+      );
+      throw new InternalServerError(
+        `Blockchain revoke succeeded (TX: ${blockchainReceipt.hash}), but database save failed. Please contact support. Error: ${dbError.message}`
+      );
+    }
   }
 
   async issuerRenewVC(

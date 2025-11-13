@@ -105,11 +105,11 @@ export interface RevokeVCDTO {
   encrypted_body?: string; // Encrypted VC body (Required only if action is APPROVED)
 }
 
-// Response body after successful revocation
 export interface RevokeVCResponseDTO {
   message: string;
   request_id: string; // ID of the VCRevokeRequest processed
   status: RequestStatus; // Final status of the VCRevokeRequest
+  vc_response_id?: string; // [NEW] ID of the record created in VCResponse
   transaction_hash?: string; // Blockchain TX hash if approved & successful
   block_number?: number; // Blockchain block number if approved & successful
 }
@@ -221,13 +221,15 @@ export interface IssuerIssueVCResponseDTO {
 
 export interface IssuerRevokeVCDTO {
   issuer_did: string; // DID Issuer yang diautentikasi
-  vc_id: string; // ID VC yang akan dicabut
+  holder_did: string; // [NEW] DID Holder yang VC-nya akan dicabut
+  vc_id: string;      // ID VC yang akan dicabut
+  encrypted_body: string; 
 }
 
 // Response body DTO for POST /credentials/issuer/revoke-vc
 export interface IssuerRevokeVCResponseDTO {
   message: string;
-  vc_id: string;
+  record_id: string; // [MODIFIED] ID dari record baru di tabel VCinitiatedByIssuer
   transaction_hash: string;
   block_number: number;
 }
