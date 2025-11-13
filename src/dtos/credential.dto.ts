@@ -102,6 +102,7 @@ export interface RevokeVCDTO {
   request_id: string; // ID of the VCRevokeRequest record
   action: "APPROVED" | "REJECTED"; // Action to perform
   vc_id?: string; // VC ID to revoke (Required only if action is APPROVED)
+  encrypted_body?: string; // Encrypted VC body (Required only if action is APPROVED)
 }
 
 // Response body after successful revocation

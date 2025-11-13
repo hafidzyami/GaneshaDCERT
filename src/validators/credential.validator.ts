@@ -357,6 +357,13 @@ export const revokeVCValidator = [
     .withMessage("vc_id is required when action is APPROVED"),
   // .isUUID() // Add format check if needed
   // .withMessage("Invalid vc_id format"),
+
+  // encrypted_body is required only if action is APPROVED
+  body("encrypted_body")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("encrypted_body is required when action is APPROVED"),
 ];
 
 export const processRenewalVCValidator = [

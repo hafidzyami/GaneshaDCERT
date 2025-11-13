@@ -74,6 +74,7 @@ export const acceptVPRequest = asyncHandler(async (req: Request, res: Response) 
   }
 
   const { vpReqId, vpId } = req.query;
+  const { credentials } = req.body;
 
   if (!vpReqId || !vpId) {
     throw new ValidationError("vpReqId and vpId are required", []);
@@ -82,6 +83,7 @@ export const acceptVPRequest = asyncHandler(async (req: Request, res: Response) 
   const result = await PresentationService.acceptVPRequest({
     vpReqId: vpReqId as string,
     vpId: vpId as string,
+    credentials,
   });
 
   return ResponseHelper.success(res, result, "VP request accepted successfully");
@@ -129,6 +131,26 @@ export const claimVP = asyncHandler(async (req: Request, res: Response) => {
   });
 
   return ResponseHelper.success(res, result, "VPs claimed successfully");
+});
+
+/**
+ * Confirm VP Controller
+ * Verifier confirms VPs have been saved to local storage
+ */
+export const confirmVP = asyncHandler(async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  const { verifier_did, vp_ids } = req.body;
+
+  const result = await PresentationService.confirmVP({
+    verifier_did,
+    vp_ids,
+  });
+
+  return ResponseHelper.success(res, result, result.message);
 });
 
 /**

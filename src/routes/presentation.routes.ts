@@ -6,6 +6,8 @@ import {
   storeVPValidator,
   getVPValidator,
   verifyVPValidator,
+  acceptVPRequestValidator,
+  confirmVPValidator,
 } from "../validators/presentation.validator";
 import { verifyDIDSignature } from "../middlewares/didAuth.middleware";
 
@@ -235,41 +237,60 @@ router.get("/request", vp.getVPRequests);
  *                 data:
  *                   type: object
  *                   properties:
- *                     vp_request_id:
+ *                     id:
  *                       type: string
  *                       format: uuid
+ *                       description: VP request ID
+ *                     holder_did:
+ *                       type: string
+ *                       description: Holder DID
  *                     verifier_did:
  *                       type: string
+ *                       description: Verifier DID
  *                     verifier_name:
  *                       type: string
  *                       example: PT. ABC Company
- *                     holder_did:
+ *                       description: Verifier name
+ *                     purpose:
  *                       type: string
+ *                       description: Purpose of VP request
+ *                     status:
+ *                       type: string
+ *                       enum: [PENDING, ACCEPT, DECLINE]
+ *                       description: Request status
  *                     requested_credentials:
  *                       type: array
+ *                       description: List of credentials requested by verifier
  *                       items:
  *                         type: object
  *                         properties:
  *                           schema_id:
  *                             type: string
  *                             format: uuid
+ *                             description: Schema ID
  *                           schema_name:
  *                             type: string
- *                           required_fields:
- *                             type: array
- *                             items:
- *                               type: string
- *                     purpose:
+ *                             description: Schema name
+ *                           schema_version:
+ *                             type: integer
+ *                             description: Schema version
+ *                     vp_id:
  *                       type: string
- *                     status:
+ *                       format: uuid
+ *                       nullable: true
+ *                       description: VP ID (null for PENDING/DECLINE, has value for ACCEPT)
+ *                     verify_status:
  *                       type: string
- *                       enum: [PENDING, FULFILLED, REJECTED, EXPIRED]
- *                     created_at:
+ *                       enum: [NOT_VERIFIED, VALID_VERIFICATION, INVALID_VERIFICATION]
+ *                       description: Verification status
+ *                     createdAt:
  *                       type: string
  *                       format: date-time
- *                     expires_at:
+ *                       description: Request creation timestamp
+ *                     updatedAt:
  *                       type: string
  *                       format: date-time
+ *                       description: Request last update timestamp
  *       400:
  *         description: Invalid request ID
  *       404:
@@ -345,7 +366,7 @@ router.post("/", verifyDIDSignature, storeVPValidator, vp.storeVP);
  * /presentations/accept:
  *   post:
  *     summary: Accept VP Request
- *     description: Holder accepts a VP request and provides the VP ID
+ *     description: Holder accepts a VP request and provides the VP ID and credentials being shared
  *     tags:
  *       - Verification & Presentation (VP) Flow
  *     parameters:
@@ -363,6 +384,35 @@ router.post("/", verifyDIDSignature, storeVPValidator, vp.storeVP);
  *           type: string
  *           format: uuid
  *         description: ID of the VP created for this request
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - credentials
+ *             properties:
+ *               credentials:
+ *                 type: array
+ *                 description: List of credentials being shared by the holder
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - schema_id
+ *                     - schema_name
+ *                     - schema_version
+ *                   properties:
+ *                     schema_id:
+ *                       type: string
+ *                       format: uuid
+ *                       description: Schema ID
+ *                     schema_name:
+ *                       type: string
+ *                       description: Schema name
+ *                     schema_version:
+ *                       type: integer
+ *                       description: Schema version
  *     responses:
  *       200:
  *         description: VP request accepted successfully
@@ -384,7 +434,7 @@ router.post("/", verifyDIDSignature, storeVPValidator, vp.storeVP);
  *       500:
  *         description: Internal server error
  */
-router.post("/accept", vp.acceptVPRequest);
+router.post("/accept", acceptVPRequestValidator, vp.acceptVPRequest);
 
 /**
  * @swagger
@@ -429,8 +479,8 @@ router.post("/decline", vp.declineVPRequest);
  * @swagger
  * /presentations/claim:
  *   post:
- *     summary: Claim VPs by Verifier
- *     description: Verifier claims all pending VPs that were created for their requests (initiated by verifier flow)
+ *     summary: Claim VPs by Verifier (Phase 1)
+ *     description: Verifier claims all pending VPs that were created for their requests. This does NOT mark VPs as claimed yet. Verifier must call /presentations/confirm after saving VPs to local storage to complete the claim process.
  *     tags:
  *       - Verification & Presentation (VP) Flow
  *     requestBody:
@@ -473,9 +523,25 @@ router.post("/decline", vp.declineVPRequest);
  *                             format: uuid
  *                           holder_did:
  *                             type: string
- *                           vp:
- *                             type: object
- *                             description: The Verifiable Presentation
+ *                           vp_request_id:
+ *                             type: string
+ *                             format: uuid
+ *                             nullable: true
+ *                             description: ID of the VP request (if initiated by verifier request)
+ *                           credentials:
+ *                             type: array
+ *                             nullable: true
+ *                             description: List of credentials requested by verifier
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 schema_id:
+ *                                   type: string
+ *                                   format: uuid
+ *                                 schema_name:
+ *                                   type: string
+ *                                 schema_version:
+ *                                   type: integer
  *                           created_at:
  *                             type: string
  *                             format: date-time
@@ -485,6 +551,65 @@ router.post("/decline", vp.declineVPRequest);
  *         description: Internal server error
  */
 router.post("/claim", vp.claimVP);
+
+/**
+ * @swagger
+ * /presentations/confirm:
+ *   post:
+ *     summary: Confirm VPs saved to local storage
+ *     description: Verifier confirms that VPs have been saved to local storage. This updates hasClaim to true for the specified VPs.
+ *     tags:
+ *       - Verification & Presentation (VP) Flow
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - verifier_did
+ *               - vp_ids
+ *             properties:
+ *               verifier_did:
+ *                 type: string
+ *                 example: did:dcert:iVerifier123
+ *                 description: DID of the verifier confirming VPs
+ *               vp_ids:
+ *                 type: array
+ *                 description: List of VP IDs to confirm
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 example: ["3fa85f64-5717-4562-b3fc-2c963f66afa6", "4gb96g75-6828-5673-c4gd-3d074g77bgb7"]
+ *     responses:
+ *       200:
+ *         description: VPs confirmed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Successfully confirmed 2 VP(s)
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Successfully confirmed 2 VP(s)
+ *                     confirmed_count:
+ *                       type: integer
+ *                       example: 2
+ *       400:
+ *         description: Invalid request data or empty vp_ids array
+ *       500:
+ *         description: Internal server error
+ */
+router.post("/confirm", confirmVPValidator, vp.confirmVP);
 
 /**
  * @swagger

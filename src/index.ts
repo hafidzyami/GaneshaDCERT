@@ -115,7 +115,7 @@ const swaggerOptions: swaggerJsdoc.Options = {
         description: "Production Server",
       },
       {
-        url: "http://192.168.55.101:3069/api/v1",
+        url: "http://192.168.55.113:3069/api/v1",
         description: "Local Server",
       },
     ],

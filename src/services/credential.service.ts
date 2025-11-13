@@ -754,7 +754,7 @@ class CredentialService {
   }
 
   async revokeVC(data: RevokeVCDTO): Promise<RevokeVCResponseDTO> {
-    const { request_id, action, vc_id } = data;
+    const { request_id, action, vc_id, encrypted_body } = data;
 
     // 1. Find the original revocation request in the database
     const revokeRequest = await this.db.vCRevokeRequest.findUnique({
@@ -817,6 +817,10 @@ class CredentialService {
       // ... (logika APPROVED tidak berubah)
       if (!vc_id) {
         throw new BadRequestError("vc_id is required when action is APPROVED.");
+      }
+
+      if (!encrypted_body) {
+        throw new BadRequestError("encrypted_body is required when action is APPROVED.");
       }
 
       logger.info(
@@ -882,7 +886,7 @@ class CredentialService {
       }
       // ---------------------------------
 
-      // --- Update DB Status ---
+      // --- Update DB Status and Create VCResponse ---
       const updatedRequest = await this.db.vCRevokeRequest.update({
         where: { id: request_id },
         data: {
@@ -892,6 +896,20 @@ class CredentialService {
       });
       logger.info(
         `Revocation request ${request_id} status updated to APPROVED in DB.`
+      );
+
+      // Create VCResponse so holder can see the revoked VC data
+      const newVCResponse = await this.db.vCResponse.create({
+        data: {
+          request_id: request_id,
+          request_type: RequestType.REVOKE,
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          encrypted_body: encrypted_body,
+        },
+      });
+      logger.success(
+        `VCResponse created for revocation: ${newVCResponse.id}`
       );
       // ------------------------
 
