@@ -3100,12 +3100,10 @@ class CredentialService {
       // Use transaction to ensure atomicity
       const result = await this.db.$transaction(async (tx) => {
         // Check if old record exists
-        const oldRecord = await tx.issuerVCData.findUnique({
+        const oldRecord = await tx.issuerVCData.findFirst({
           where: {
-            issuer_did_encrypted_body: {
-              issuer_did: data.issuer_did,
-              encrypted_body: data.old_encrypted_body,
-            },
+            issuer_did: data.issuer_did,
+            encrypted_body: data.old_encrypted_body,
           },
         });
 
@@ -3118,10 +3116,7 @@ class CredentialService {
         // Delete old record
         await tx.issuerVCData.delete({
           where: {
-            issuer_did_encrypted_body: {
-              issuer_did: data.issuer_did,
-              encrypted_body: data.old_encrypted_body,
-            },
+            id: oldRecord.id,
           },
         });
 
@@ -3149,13 +3144,34 @@ class CredentialService {
         throw error;
       }
 
-      // Check for unique constraint violation (new_encrypted_body already exists)
-      if (error.code === 'P2002') {
-        throw new BadRequestError("The new VC data already exists for the issuer");
-      }
-
       throw new InternalServerError(`Failed to update issuer VC data: ${error.message}`);
     }
+  }
+
+  /**
+   * Get Issuer VC Data by ID
+   * Retrieve a specific VC data record by its ID
+   */
+  async getIssuerVCDataById(id: string): Promise<{
+    message: string;
+    data: any;
+  }> {
+    logger.info(`Fetching issuer VC data with ID: ${id}`);
+
+    const issuerVCData = await this.db.issuerVCData.findUnique({
+      where: { id },
+    });
+
+    if (!issuerVCData) {
+      throw new NotFoundError("Issuer VC data not found");
+    }
+
+    logger.success(`Issuer VC data retrieved successfully`);
+
+    return {
+      message: "Issuer VC data retrieved successfully",
+      data: issuerVCData,
+    };
   }
 }
 

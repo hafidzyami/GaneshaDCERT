@@ -932,6 +932,19 @@ export const getIssuerVCDataValidator = [
 ];
 
 /**
+ * Validator for GET /credentials/issuer/vc/:id
+ * Validates getting issuer VC data by ID
+ */
+export const getIssuerVCDataByIdValidator = [
+  param("id")
+    .trim()
+    .notEmpty()
+    .withMessage("id is required")
+    .isUUID()
+    .withMessage("id must be a valid UUID"),
+];
+
+/**
  * Validator for PUT /credentials/issuer/vc
  * Validates updating issuer VC data (replacing old encrypted_body with new one)
  */

@@ -143,3 +143,12 @@ export const confirmVPValidator = [
     .isUUID()
     .withMessage("Each vp_id must be a valid UUID"),
 ];
+
+export const deleteVPValidator = [
+  param("vpId")
+    .trim()
+    .notEmpty()
+    .withMessage("VP ID is required")
+    .isUUID()
+    .withMessage("Invalid VP ID format"),
+];

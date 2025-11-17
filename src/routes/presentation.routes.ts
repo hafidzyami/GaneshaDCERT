@@ -8,6 +8,7 @@ import {
   verifyVPValidator,
   acceptVPRequestValidator,
   confirmVPValidator,
+  deleteVPValidator,
 } from "../validators/presentation.validator";
 import { verifyDIDSignature } from "../middlewares/didAuth.middleware";
 
@@ -119,9 +120,12 @@ router.post("/request", verifyDIDSignature, requestVPValidator, vp.requestVP);
  * /presentations/request:
  *   get:
  *     summary: Get VP requests with filtering
- *     description: Get VP requests filtered by verifier_did OR holder_did, and optionally by status
+ *     description: Get VP requests filtered by verifier_did OR holder_did, and optionally by status (requires DID authentication)
  *     tags:
  *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - VerifierBearerAuth: []
+ *       - HolderBearerAuth: []
  *     parameters:
  *       - in: query
  *         name: verifier_did
@@ -202,19 +206,23 @@ router.post("/request", verifyDIDSignature, requestVPValidator, vp.requestVP);
  *                             format: date-time
  *       400:
  *         description: Invalid request - must provide either verifier_did or holder_did
+ *       401:
+ *         description: Unauthorized - invalid or missing JWT token
  *       500:
  *         description: Internal server error
  */
-router.get("/request", vp.getVPRequests);
+router.get("/request", verifyDIDSignature, vp.getVPRequests);
 
 /**
  * @swagger
  * /presentations/request/{vpReqId}:
  *   get:
  *     summary: Get VP request details
- *     description: Holder retrieves details of a VP request to decide whether to share credentials
+ *     description: Holder retrieves details of a VP request to decide whether to share credentials (requires DID authentication)
  *     tags:
  *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - HolderBearerAuth: []
  *     parameters:
  *       - in: path
  *         name: vpReqId
@@ -293,6 +301,8 @@ router.get("/request", vp.getVPRequests);
  *                       description: Request last update timestamp
  *       400:
  *         description: Invalid request ID
+ *       401:
+ *         description: Unauthorized - invalid or missing JWT token
  *       404:
  *         description: VP request not found
  *       500:
@@ -300,6 +310,7 @@ router.get("/request", vp.getVPRequests);
  */
 router.get(
   "/request/:vpReqId",
+  verifyDIDSignature,
   getVPRequestDetailsValidator,
   vp.getVPRequestDetails
 );
@@ -366,9 +377,11 @@ router.post("/", verifyDIDSignature, storeVPValidator, vp.storeVP);
  * /presentations/accept:
  *   post:
  *     summary: Accept VP Request
- *     description: Holder accepts a VP request and provides the VP ID and credentials being shared
+ *     description: Holder accepts a VP request and provides the VP ID and credentials being shared (requires DID authentication)
  *     tags:
  *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - HolderBearerAuth: []
  *     parameters:
  *       - in: query
  *         name: vpReqId
@@ -429,21 +442,25 @@ router.post("/", verifyDIDSignature, storeVPValidator, vp.storeVP);
  *                   example: VP request accepted successfully
  *       400:
  *         description: Invalid request parameters
+ *       401:
+ *         description: Unauthorized - invalid or missing JWT token
  *       404:
  *         description: VP request not found
  *       500:
  *         description: Internal server error
  */
-router.post("/accept", acceptVPRequestValidator, vp.acceptVPRequest);
+router.post("/accept", verifyDIDSignature, acceptVPRequestValidator, vp.acceptVPRequest);
 
 /**
  * @swagger
  * /presentations/decline:
  *   post:
  *     summary: Decline VP Request
- *     description: Holder declines a VP request
+ *     description: Holder declines a VP request (requires DID authentication)
  *     tags:
  *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - HolderBearerAuth: []
  *     parameters:
  *       - in: query
  *         name: vpReqId
@@ -468,21 +485,25 @@ router.post("/accept", acceptVPRequestValidator, vp.acceptVPRequest);
  *                   example: VP request declined successfully
  *       400:
  *         description: Invalid request parameters
+ *       401:
+ *         description: Unauthorized - invalid or missing JWT token
  *       404:
  *         description: VP request not found
  *       500:
  *         description: Internal server error
  */
-router.post("/decline", vp.declineVPRequest);
+router.post("/decline", verifyDIDSignature, vp.declineVPRequest);
 
 /**
  * @swagger
  * /presentations/claim:
  *   post:
  *     summary: Claim VPs by Verifier (Phase 1)
- *     description: Verifier claims all pending VPs that were created for their requests. This does NOT mark VPs as claimed yet. Verifier must call /presentations/confirm after saving VPs to local storage to complete the claim process.
+ *     description: Verifier claims all pending VPs that were created for their requests. This does NOT mark VPs as claimed yet. Verifier must call /presentations/confirm after saving VPs to local storage to complete the claim process (requires DID authentication).
  *     tags:
  *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - VerifierBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -542,24 +563,31 @@ router.post("/decline", vp.declineVPRequest);
  *                                   type: string
  *                                 schema_version:
  *                                   type: integer
+ *                           purpose:
+ *                             type: string
+ *                             description: Purpose of Verifiable Presentation (VP)
  *                           created_at:
  *                             type: string
  *                             format: date-time
  *       400:
  *         description: Invalid request data
+ *       401:
+ *         description: Unauthorized - invalid or missing JWT token
  *       500:
  *         description: Internal server error
  */
-router.post("/claim", vp.claimVP);
+router.post("/claim", verifyDIDSignature, vp.claimVP);
 
 /**
  * @swagger
  * /presentations/confirm:
  *   post:
- *     summary: Confirm VPs saved to local storage
- *     description: Verifier confirms that VPs have been saved to local storage. This updates hasClaim to true for the specified VPs.
+ *     summary: Confirm VPs saved to local storage (Phase 2)
+ *     description: Verifier confirms that VPs have been saved to local storage. This updates hasClaim to true for the specified VPs (requires DID authentication).
  *     tags:
  *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - VerifierBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -606,19 +634,23 @@ router.post("/claim", vp.claimVP);
  *                       example: 2
  *       400:
  *         description: Invalid request data or empty vp_ids array
+ *       401:
+ *         description: Unauthorized - invalid or missing JWT token
  *       500:
  *         description: Internal server error
  */
-router.post("/confirm", confirmVPValidator, vp.confirmVP);
+router.post("/confirm", verifyDIDSignature, confirmVPValidator, vp.confirmVP);
 
 /**
  * @swagger
  * /presentations/{vpId}:
  *   get:
  *     summary: Get Verifiable Presentation
- *     description: Verifier retrieves the stored VP from holder
+ *     description: Verifier retrieves the stored VP from holder (requires DID authentication)
  *     tags:
  *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - VerifierBearerAuth: []
  *     parameters:
  *       - in: path
  *         name: vpId
@@ -679,14 +711,16 @@ router.post("/confirm", confirmVPValidator, vp.confirmVP);
  *                       format: date-time
  *       400:
  *         description: Invalid VP ID
+ *       401:
+ *         description: Unauthorized - invalid or missing JWT token
+ *       403:
+ *         description: Forbidden - unauthorized to access this VP
  *       404:
  *         description: VP not found
- *       403:
- *         description: Unauthorized to access this VP
  *       500:
  *         description: Internal server error
  */
-router.get("/:vpId", getVPValidator, vp.getVP);
+router.get("/:vpId", verifyDIDSignature, getVPValidator, vp.getVP);
 
 /**
  * @swagger
@@ -761,5 +795,54 @@ router.get("/:vpId", getVPValidator, vp.getVP);
  *         description: Internal server error
  */
 router.get("/:vpId/verify", verifyVPValidator, vp.verifyVP);
+
+/**
+ * @swagger
+ * /presentations/{vpId}:
+ *   delete:
+ *     summary: Delete Verifiable Presentation (Soft Delete)
+ *     description: Holder soft deletes their stored VP by setting deletedAt timestamp. The VP will no longer be accessible. Holder DID is extracted from JWT authentication token.
+ *     tags:
+ *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - HolderBearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: vpId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID of the VP to delete
+ *     responses:
+ *       200:
+ *         description: VP deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: VP deleted successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: VP deleted successfully
+ *       400:
+ *         description: Invalid request data, VP already deleted, or unauthorized (holder_did mismatch)
+ *       401:
+ *         description: Unauthorized - invalid or missing JWT token
+ *       404:
+ *         description: VP not found
+ *       500:
+ *         description: Internal server error
+ */
+router.delete("/:vpId", verifyDIDSignature, deleteVPValidator, vp.deleteVP);
 
 export default router;
