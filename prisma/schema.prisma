@@ -291,11 +291,11 @@ model VCinitiatedByIssuer {
 }
 
 model IssuerVCData {
+  id             String   @id @default(uuid())
   issuer_did     String
   encrypted_body String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  @@id([issuer_did, encrypted_body])
   @@index([issuer_did])
 }

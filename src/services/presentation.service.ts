@@ -281,6 +281,7 @@ class PresentationService {
         schema_name: string;
         schema_version: number;
       }> | null;
+      purpose: string | null;
       created_at: Date;
     }>;
   }> {
@@ -318,7 +319,8 @@ class PresentationService {
           },
           select: {
             id: true,
-            credentials: true, // Changed from requested_credentials to credentials
+            credentials: true,
+            purpose: true,
           },
         });
 
@@ -331,6 +333,7 @@ class PresentationService {
             schema_name: string;
             schema_version: number;
           }> | null,
+          purpose: vpRequest?.purpose || null,
           created_at: vp.createdAt,
         };
       })
@@ -374,6 +377,48 @@ class PresentationService {
     return {
       message: `Successfully confirmed ${updateResult.count} VP(s)`,
       confirmed_count: updateResult.count,
+    };
+  }
+
+  /**
+   * Delete VP (Soft Delete)
+   * Holder can delete their stored VP
+   */
+  async deleteVP(data: {
+    vpId: string;
+    holder_did: string;
+  }): Promise<{ message: string }> {
+    // Check if VP exists and belongs to the holder
+    const vpSharing = await this.db.vPSharing.findUnique({
+      where: { id: data.vpId },
+    });
+
+    if (!vpSharing) {
+      throw new NotFoundError("VP not found");
+    }
+
+    // Check if already deleted
+    if (vpSharing.deletedAt) {
+      throw new BadRequestError("VP has already been deleted");
+    }
+
+    // Verify ownership
+    if (vpSharing.holder_did !== data.holder_did) {
+      throw new BadRequestError("You are not authorized to delete this VP");
+    }
+
+    // Soft delete: set deletedAt to current timestamp
+    await this.db.vPSharing.update({
+      where: { id: data.vpId },
+      data: {
+        deletedAt: new Date(),
+      },
+    });
+
+    logger.success(`VP ${data.vpId} soft deleted by holder ${data.holder_did}`);
+
+    return {
+      message: "VP deleted successfully",
     };
   }
 

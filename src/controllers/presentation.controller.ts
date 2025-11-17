@@ -154,6 +154,32 @@ export const confirmVP = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
+ * Delete VP Controller (Soft Delete)
+ * Holder deletes their stored VP
+ */
+export const deleteVP = asyncHandler(async (req: RequestWithDID, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError("Validation error", errors.array());
+  }
+
+  const { vpId } = req.params;
+
+  // Get holder_did from JWT authentication middleware
+  const holder_did = req.holderDID;
+  if (!holder_did) {
+    throw new ValidationError("Holder DID not found in authentication token", []);
+  }
+
+  const result = await PresentationService.deleteVP({
+    vpId,
+    holder_did,
+  });
+
+  return ResponseHelper.success(res, result, result.message);
+});
+
+/**
  * Store VP Controller
  */
 export const storeVP = asyncHandler(async (req: RequestWithDID, res: Response) => {

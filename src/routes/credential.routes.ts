@@ -33,6 +33,7 @@ import {
   confirmCombinedVCsBatchValidator,
   storeIssuerVCDataValidator,
   getIssuerVCDataValidator,
+  getIssuerVCDataByIdValidator,
   updateIssuerVCDataValidator,
 } from "../validators/credential.validator";
 
@@ -2446,6 +2447,35 @@ router.post(
  *     responses:
  *       201:
  *         description: Issuer VC data stored successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Issuer VC data stored successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                       description: Unique ID of the record
+ *                     issuer_did:
+ *                       type: string
+ *                       example: "did:dcert:i..."
+ *                     encrypted_body:
+ *                       type: string
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
  *       400:
  *         description: Invalid request body
  *       500:
@@ -2485,6 +2515,70 @@ router.get(
   "/issuer/vc/:issuer_did",
   getIssuerVCDataValidator,
   credentialController.getIssuerVCData
+);
+
+/**
+ * @swagger
+ * /credentials/issuer/vc/id/{id}:
+ *   get:
+ *     summary: Get issuer VC data by ID
+ *     description: Retrieve a specific VC data record by its unique ID
+ *     tags: [Verifiable Credential (VC) Lifecycle]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID of the issuer VC data record
+ *     responses:
+ *       200:
+ *         description: Issuer VC data retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Issuer VC data retrieved successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                       description: Unique ID of the record
+ *                     issuer_did:
+ *                       type: string
+ *                       example: "did:dcert:i..."
+ *                       description: DID of the issuer
+ *                     encrypted_body:
+ *                       type: string
+ *                       description: Encrypted VC body
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       description: Creation timestamp
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       description: Last update timestamp
+ *       400:
+ *         description: Invalid ID format
+ *       404:
+ *         description: Issuer VC data not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/issuer/vc/id/:id",
+  getIssuerVCDataByIdValidator,
+  credentialController.getIssuerVCDataById
 );
 
 /**
@@ -2534,6 +2628,10 @@ router.get(
  *                 data:
  *                   type: object
  *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                       description: Unique ID of the new record
  *                     issuer_did:
  *                       type: string
  *                     encrypted_body:
@@ -2545,7 +2643,7 @@ router.get(
  *                       type: string
  *                       format: date-time
  *       400:
- *         description: Validation error or new encrypted_body already exists
+ *         description: Validation error
  *       404:
  *         description: Old VC data not found for this issuer
  *       401:

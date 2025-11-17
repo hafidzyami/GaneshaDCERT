@@ -863,6 +863,24 @@ export const getIssuerVCData = asyncHandler(
 );
 
 /**
+ * Get Issuer VC Data by ID Controller
+ */
+export const getIssuerVCDataById = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { id } = req.params;
+
+    const result = await CredentialService.getIssuerVCDataById(id);
+
+    return ResponseHelper.success(res, result.data, result.message);
+  }
+);
+
+/**
  * Update Issuer VC Data Controller
  */
 export const updateIssuerVCData = asyncHandler(
