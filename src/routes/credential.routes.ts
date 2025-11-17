@@ -2583,13 +2583,21 @@ router.get(
 
 /**
  * @swagger
- * /credentials/issuer/vc:
+ * /credentials/issuer/vc/{id}:
  *   put:
- *     summary: Update issuer VC data
- *     description: Replace old encrypted VC body with new one for an issuer. This is useful when issuer updates, renews, or revokes a VC and the encrypted_body changes.
+ *     summary: Update issuer VC data by ID
+ *     description: Update encrypted VC body for a specific issuer VC data record. The issuer_did in request body must match the issuer_did in the database record. This is useful when issuer updates, renews, or revokes a VC and the encrypted_body changes.
  *     tags: [Verifiable Credential (VC) Lifecycle]
  *     security:
  *       - HolderBearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID of the issuer VC data record to update
  *     requestBody:
  *       required: true
  *       content:
@@ -2598,17 +2606,13 @@ router.get(
  *             type: object
  *             required:
  *               - issuer_did
- *               - old_encrypted_body
- *               - new_encrypted_body
+ *               - encrypted_body
  *             properties:
  *               issuer_did:
  *                 type: string
  *                 example: "did:dcert:i..."
- *                 description: DID Issuer
- *               old_encrypted_body:
- *                 type: string
- *                 description: Current encrypted VC body to be replaced
- *               new_encrypted_body:
+ *                 description: DID of the issuer (must match the record's issuer_did)
+ *               encrypted_body:
  *                 type: string
  *                 description: New encrypted VC body
  *     responses:
@@ -2631,7 +2635,7 @@ router.get(
  *                     id:
  *                       type: string
  *                       format: uuid
- *                       description: Unique ID of the new record
+ *                       description: Unique ID of the record
  *                     issuer_did:
  *                       type: string
  *                     encrypted_body:
@@ -2643,16 +2647,16 @@ router.get(
  *                       type: string
  *                       format: date-time
  *       400:
- *         description: Validation error
+ *         description: Validation error or issuer_did mismatch
  *       404:
- *         description: Old VC data not found for this issuer
+ *         description: Issuer VC data not found
  *       401:
  *         description: Unauthorized
  *       500:
  *         description: Internal server error
  */
 router.put(
-  "/issuer/vc",
+  "/issuer/vc/:id",
   verifyDIDSignature,
   updateIssuerVCDataValidator,
   credentialController.updateIssuerVCData

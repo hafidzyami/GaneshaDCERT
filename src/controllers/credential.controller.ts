@@ -890,12 +890,13 @@ export const updateIssuerVCData = asyncHandler(
       throw new ValidationError("Validation error", errors.array());
     }
 
-    const { issuer_did, old_encrypted_body, new_encrypted_body } = req.body;
+    const { id } = req.params;
+    const { issuer_did, encrypted_body } = req.body;
 
     const result = await CredentialService.updateIssuerVCData({
+      id,
       issuer_did,
-      old_encrypted_body,
-      new_encrypted_body,
+      encrypted_body,
     });
 
     return ResponseHelper.success(res, result.data, result.message);

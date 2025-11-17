@@ -3086,61 +3086,51 @@ class CredentialService {
 
   /**
    * Update Issuer VC Data
-   * Replace old encrypted_body with new encrypted_body for an issuer
+   * Update encrypted_body for a specific issuer VC data record by ID
    * This is useful when issuer updates/renews/revokes a VC
    */
   async updateIssuerVCData(data: {
+    id: string;
     issuer_did: string;
-    old_encrypted_body: string;
-    new_encrypted_body: string;
+    encrypted_body: string;
   }): Promise<{ message: string; data: any }> {
-    logger.info(`Updating VC data for issuer: ${data.issuer_did}`);
+    logger.info(`Updating VC data with ID: ${data.id}`);
 
     try {
-      // Use transaction to ensure atomicity
-      const result = await this.db.$transaction(async (tx) => {
-        // Check if old record exists
-        const oldRecord = await tx.issuerVCData.findFirst({
-          where: {
-            issuer_did: data.issuer_did,
-            encrypted_body: data.old_encrypted_body,
-          },
-        });
+      // Check if record exists
+      const existingRecord = await this.db.issuerVCData.findUnique({
+        where: { id: data.id },
+      });
 
-        if (!oldRecord) {
-          throw new NotFoundError(
-            "Old VC data not found for this issuer"
-          );
-        }
+      if (!existingRecord) {
+        throw new NotFoundError("Issuer VC data not found");
+      }
 
-        // Delete old record
-        await tx.issuerVCData.delete({
-          where: {
-            id: oldRecord.id,
-          },
-        });
+      // Verify issuer_did matches
+      if (existingRecord.issuer_did !== data.issuer_did) {
+        throw new BadRequestError(
+          "Issuer DID mismatch. The provided issuer_did does not match the record."
+        );
+      }
 
-        // Create new record
-        const newRecord = await tx.issuerVCData.create({
-          data: {
-            issuer_did: data.issuer_did,
-            encrypted_body: data.new_encrypted_body,
-          },
-        });
-
-        return newRecord;
+      // Update the record
+      const updatedRecord = await this.db.issuerVCData.update({
+        where: { id: data.id },
+        data: {
+          encrypted_body: data.encrypted_body,
+        },
       });
 
       logger.success(`Issuer VC data updated successfully`);
 
       return {
         message: "Issuer VC data updated successfully",
-        data: result,
+        data: updatedRecord,
       };
     } catch (error: any) {
       logger.error(`Failed to update issuer VC data:`, error);
 
-      if (error instanceof NotFoundError) {
+      if (error instanceof NotFoundError || error instanceof BadRequestError) {
         throw error;
       }
 
