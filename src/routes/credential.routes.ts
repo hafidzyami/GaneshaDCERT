@@ -280,11 +280,7 @@ router.get(
  *       500:
  *         description: Internal server error or blockchain connection error
  */
-router.get(
-  "/",
-  getHolderVCsValidator,
-  credentialController.getHolderVCs
-);
+router.get("/", getHolderVCsValidator, credentialController.getHolderVCs);
 
 /**
  * @swagger
@@ -2490,7 +2486,7 @@ router.post(
 
 /**
  * @swagger
- * /credentials/issuer/vc/{issuer_did}:
+ * /credentials/issuer/vc/did/{issuer_did}:
  *   get:
  *     summary: Get issuer VC data
  *     description: Retrieve all encrypted VC data for a specific issuer
@@ -2512,14 +2508,14 @@ router.post(
  *         description: Internal server error
  */
 router.get(
-  "/issuer/vc/:issuer_did",
+  "/issuer/vc/did/:issuer_did",
   getIssuerVCDataValidator,
   credentialController.getIssuerVCData
 );
 
 /**
  * @swagger
- * /credentials/issuer/vc/id/{id}:
+ * /credentials/issuer/vc/{id}:
  *   get:
  *     summary: Get issuer VC data by ID
  *     description: Retrieve a specific VC data record by its unique ID
@@ -2576,7 +2572,7 @@ router.get(
  *         description: Internal server error
  */
 router.get(
-  "/issuer/vc/id/:id",
+  "/issuer/vc/:id",
   getIssuerVCDataByIdValidator,
   credentialController.getIssuerVCDataById
 );
