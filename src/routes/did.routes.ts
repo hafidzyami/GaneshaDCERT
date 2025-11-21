@@ -4,11 +4,14 @@ import {
   optionalInstitutionAuthMiddleware,
   verifyTokenInstitutionAuthMiddleware,
 } from "../middlewares/auth.middleware";
+import { adminAuthMiddleware } from "../middlewares/adminAuth.middleware";
+import { verifyDIDSignature } from "../middlewares/didAuth.middleware";
 import {
   registerDIDValidator,
   checkDIDValidator,
   keyRotationValidator,
   deleteDIDValidator,
+  deleteDIDByAdminValidator,
   getDIDDocumentValidator,
 } from "../validators/did.validator";
 
@@ -522,6 +525,8 @@ router.get("/blocks", did.numberofBlocks);
  *       **Important:** Keep the old private key secure until rotation is complete.
  *     tags:
  *       - DID Management
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: did
@@ -616,24 +621,32 @@ router.get("/blocks", did.numberofBlocks);
  *       500:
  *         description: Internal server error or blockchain failure
  */
-router.put("/:did/key-rotation", keyRotationValidator, did.keyRotation);
+router.put(
+  "/:did/key-rotation",
+  verifyDIDSignature,
+  keyRotationValidator,
+  did.keyRotation
+);
 
 /**
  * @swagger
  * /dids/{did}:
  *   delete:
- *     summary: Deactivate DID
+ *     summary: Deactivate DID (User)
  *     description: |
- *       Deactivate a DID on the blockchain (soft delete - marks as inactive).
+ *       Deactivate a DID on the blockchain. Requires DID signature authentication via JWT token.
+ *       All VCs owned by this DID will be automatically revoked.
  *
  *       **DID Format:** `did:dcert:[i/u][44 chars]` (55 chars total)
  *       - Characters allowed: a-z, A-Z, 0-9, _ (underscore), - (hyphen)
  *
- *       **Important:**
- *       - Deactivated DIDs cannot issue new credentials
- *       - Existing credentials remain valid (unless revoked separately)
- *       - Deactivation is permanent and cannot be reversed
- *       - Requires signature proof of ownership
+ *       **Deactivation process:**
+ *       1. Verify JWT token contains valid DID signature
+ *       2. Query all VCs owned by the holder (from IssuerVCData table)
+ *       3. Create revoke requests to each issuer (encrypted with issuer's public key)
+ *       4. Mark DID as deactivated on blockchain
+ *       5. **Important:** Deactivation is permanent and cannot be reversed
+ *       6. **Note:** VCs will be revoked after issuer approves the revoke requests
  *
  *       **Use cases:**
  *       - Account closure
@@ -641,6 +654,8 @@ router.put("/:did/key-rotation", keyRotationValidator, did.keyRotation);
  *       - Organizational changes
  *     tags:
  *       - DID Management
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: did
@@ -650,28 +665,9 @@ router.put("/:did/key-rotation", keyRotationValidator, did.keyRotation);
  *           pattern: '^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$'
  *         example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
  *         description: DID to deactivate (55 chars total)
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - signature
- *             properties:
- *               signature:
- *                 type: string
- *                 pattern: '^[a-fA-F0-9]+$'
- *                 example: "1234567890abcdef1234567890abcdef1234567890abcdef"
- *                 description: Signature hex string WITHOUT 0x prefix (sign the DID string)
- *               reason:
- *                 type: string
- *                 maxLength: 500
- *                 example: "Organization discontinued operations"
- *                 description: Reason for deactivation (for audit trail)
  *     responses:
  *       200:
- *         description: DID deactivated successfully or DID not found
+ *         description: DID deactivated successfully
  *         content:
  *           application/json:
  *             schema:
@@ -682,7 +678,7 @@ router.put("/:did/key-rotation", keyRotationValidator, did.keyRotation);
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: "DID deactivated successfully"
+ *                   example: "DID deactivated successfully. 3 revoke requests have been created."
  *                 data:
  *                   type: object
  *                   properties:
@@ -691,45 +687,118 @@ router.put("/:did/key-rotation", keyRotationValidator, did.keyRotation);
  *                       example: true
  *                     message:
  *                       type: string
- *                       example: "DID deactivated successfully"
+ *                       example: "DID deactivated successfully. 3 revoke requests have been created."
  *                     did:
  *                       type: string
  *                       example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
+ *                     revokeRequestsCount:
+ *                       type: integer
+ *                       example: 3
+ *                       description: Number of revoke requests that were created
  *                     transactionHash:
  *                       type: string
  *                       example: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
- *                       description: Blockchain transaction hash (hex without 0x prefix)
  *                     blockNumber:
  *                       type: integer
  *                       example: 12347
- *             examples:
- *               success:
- *                 summary: DID deactivated successfully
- *                 value:
- *                   success: true
- *                   message: "DID deactivated successfully"
- *                   data:
- *                     found: true
- *                     message: "DID deactivated successfully"
- *                     did: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
- *                     transactionHash: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
- *                     blockNumber: 12347
- *               notFound:
- *                 summary: DID not found
- *                 value:
- *                   success: true
- *                   message: "DID not found on blockchain"
- *                   data:
- *                     found: false
- *                     error: "Not Found"
- *                     message: "DID not found on blockchain"
- *                     did: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
  *       400:
- *         description: Invalid signature or validation error
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized (Invalid or missing JWT token)
+ *       404:
+ *         description: DID not found
  *       500:
  *         description: Internal server error or blockchain failure
  */
-router.delete("/:did", deleteDIDValidator, did.deleteDID);
+router.delete("/:did", verifyDIDSignature, deleteDIDValidator, did.deleteDID);
+
+/**
+ * @swagger
+ * /dids/admin/{did}:
+ *   delete:
+ *     summary: Deactivate DID (Admin)
+ *     description: |
+ *       Admin endpoint to deactivate a DID on the blockchain.
+ *       All VCs owned by this DID will be automatically revoked.
+ *
+ *       **DID Format:** `did:dcert:[i/u][44 chars]` (55 chars total)
+ *
+ *       **Deactivation process:**
+ *       1. Verify admin authentication
+ *       2. Query all VCs owned by the holder (from IssuerVCData table)
+ *       3. Create revoke requests to each issuer (encrypted with issuer's public key)
+ *       4. Mark DID as deactivated on blockchain
+ *       5. **Important:** Deactivation is permanent and cannot be reversed
+ *       6. **Note:** VCs will be revoked after issuer approves the revoke requests
+ *
+ *       **Use cases:**
+ *       - Admin-initiated account deactivation
+ *       - Security enforcement
+ *       - Compliance requirements
+ *     tags:
+ *       - DID Management
+ *     security:
+ *       - AdminBearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: did
+ *         required: true
+ *         schema:
+ *           type: string
+ *           pattern: '^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$'
+ *         example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
+ *         description: DID to deactivate (55 chars total)
+ *     responses:
+ *       200:
+ *         description: DID deactivated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "DID deactivated successfully by admin. 3 revoke requests have been created."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     found:
+ *                       type: boolean
+ *                       example: true
+ *                     message:
+ *                       type: string
+ *                       example: "DID deactivated successfully. 3 revoke requests have been created."
+ *                     did:
+ *                       type: string
+ *                       example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
+ *                     revokeRequestsCount:
+ *                       type: integer
+ *                       example: 3
+ *                       description: Number of revoke requests that were created
+ *                     transactionHash:
+ *                       type: string
+ *                       example: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+ *                     blockNumber:
+ *                       type: integer
+ *                       example: 12347
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized (Invalid or missing admin token)
+ *       404:
+ *         description: DID not found
+ *       500:
+ *         description: Internal server error or blockchain failure
+ */
+router.delete(
+  "/admin/:did",
+  adminAuthMiddleware,
+  deleteDIDByAdminValidator,
+  did.deleteDIDByAdmin
+);
 
 /**
  * @swagger

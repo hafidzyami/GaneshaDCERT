@@ -293,9 +293,13 @@ model VCinitiatedByIssuer {
 model IssuerVCData {
   id             String   @id @default(uuid())
   issuer_did     String
+  holder_did     String?
+  vc_id          String?
   encrypted_body String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   @@index([issuer_did])
+  @@index([holder_did])
+  @@index([vc_id])
 }

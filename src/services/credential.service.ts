@@ -1025,13 +1025,21 @@ class CredentialService {
         `Processing approval for renewal request ${request_id} targeting VC ${vc_id}`
       );
 
+      // --- Validation: hash is required when approved ---
+      if (!data.hash) {
+        throw new BadRequestError(
+          "hash is required when action is APPROVED."
+        );
+      }
+
       // --- Blockchain Call ---
       let blockchainReceipt: any;
       try {
         // Call the renew function on the blockchain
         blockchainReceipt = await VCBlockchainService.renewVCInBlockchain(
           vc_id,
-          expired_at
+          expired_at,
+          data.hash
         );
         logger.success(
           `VC ${vc_id} renewed successfully on blockchain. TX: ${blockchainReceipt?.hash}`
@@ -2228,8 +2236,8 @@ class CredentialService {
       );
     }
 
-    // Destrukturisasi data, termasuk expiredAt
-    const { issuer_did, holder_did, vc_id, encrypted_body, expiredAt } = data; // <-- TAMBAHKAN expiredAt
+    // Destrukturisasi data, termasuk expiredAt dan hash
+    const { issuer_did, holder_did, vc_id, encrypted_body, expiredAt, hash } = data;
 
     logger.info(
       `Attempting direct renew by issuer ${issuer_did} for VC ${vc_id}`
@@ -2266,10 +2274,11 @@ class CredentialService {
     // 3. Panggil Blockchain (RenewVC)
     let blockchainReceipt: any;
     try {
-      // --- PERBAIKAN: Teruskan expiredAt ke fungsi blockchain ---
+      // Pass expiredAt and hash to blockchain
       blockchainReceipt = await VCBlockchainService.renewVCInBlockchain(
         vc_id,
-        expiredAt
+        expiredAt,
+        hash
       );
       logger.success(
         `VC ${vc_id} renewed successfully on blockchain. TX: ${blockchainReceipt?.hash}`
@@ -3020,19 +3029,23 @@ class CredentialService {
    */
   async storeIssuerVCData(data: {
     issuer_did: string;
+    holder_did: string;
+    vc_id: string;
     encrypted_body: string;
   }): Promise<{ message: string; data: any }> {
-    logger.info(`Storing VC data for issuer: ${data.issuer_did}`);
+    logger.info(`Storing VC data for issuer: ${data.issuer_did}, VC ID: ${data.vc_id}`);
 
     try {
       const issuerVCData = await this.db.issuerVCData.create({
         data: {
           issuer_did: data.issuer_did,
+          holder_did: data.holder_did,
+          vc_id: data.vc_id,
           encrypted_body: data.encrypted_body,
         },
       });
 
-      logger.success(`Issuer VC data stored successfully`);
+      logger.success(`Issuer VC data stored successfully for VC ID: ${data.vc_id}`);
 
       return {
         message: "Issuer VC data stored successfully",

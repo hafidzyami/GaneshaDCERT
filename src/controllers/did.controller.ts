@@ -2,7 +2,7 @@ import { Response } from "express";
 import { validationResult } from "express-validator";
 import { DIDService } from "../services";
 import { ValidationError } from "../utils";
-import { asyncHandler, RequestWithInstitution } from "../middlewares";
+import { asyncHandler, RequestWithInstitution, RequestWithDID } from "../middlewares";
 import { ResponseHelper } from "../utils/helpers";
 
 /**
@@ -108,7 +108,29 @@ export const keyRotation = asyncHandler(
  * Delete DID Controller
  * Returns 404 if DID not found
  */
+/**
+ * Delete DID Controller (User path - requires DID signature)
+ */
 export const deleteDID = asyncHandler(
+  async (req: RequestWithDID, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { did } = req.params;
+
+    // Deactivate DID and revoke all VCs
+    const result = await DIDService.deactivateDID(did);
+
+    return ResponseHelper.success(res, result, result.message);
+  }
+);
+
+/**
+ * Delete DID Controller (Admin path - requires admin auth)
+ */
+export const deleteDIDByAdmin = asyncHandler(
   async (req: RequestWithInstitution, res: Response) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -116,8 +138,8 @@ export const deleteDID = asyncHandler(
     }
 
     const { did } = req.params;
-    const { signature, reason } = req.body;
 
+    // Deactivate DID and revoke all VCs
     const result = await DIDService.deactivateDID(did);
 
     return ResponseHelper.success(res, result, result.message);
