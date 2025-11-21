@@ -4,9 +4,29 @@
  */
 
 import * as crypto from 'crypto';
-import { p256 } from '@noble/curves/nist.js';
-import { sha256, sha512 } from '@noble/hashes/sha2.js';
-import { hmac } from '@noble/hashes/hmac.js';
+
+// Dynamic imports for ESM modules
+let p256: any;
+let sha256: any;
+let sha512: any;
+let hmac: any;
+
+// Initialize ESM modules
+async function initCrypto() {
+  if (!p256) {
+    const nist = await import('@noble/curves/nist.js');
+    p256 = nist.p256;
+  }
+  if (!sha256) {
+    const sha2 = await import('@noble/hashes/sha2.js');
+    sha256 = sha2.sha256;
+    sha512 = sha2.sha512;
+  }
+  if (!hmac) {
+    const hmacModule = await import('@noble/hashes/hmac.js');
+    hmac = hmacModule.hmac;
+  }
+}
 
 /**
  * Convert hex string to Uint8Array
@@ -108,6 +128,9 @@ export async function encryptWithPublicKey(
   publicKeyHex: string
 ): Promise<string> {
   try {
+    // Initialize crypto modules
+    await initCrypto();
+
     console.log('[Encryption] Starting encryption with P-256 public key');
     console.log('[Encryption] Public key (first 20 chars):', publicKeyHex.substring(0, 20));
 
@@ -221,6 +244,9 @@ export async function decryptWithPrivateKey(
   privateKeyHex: string
 ): Promise<Record<string, any>> {
   try {
+    // Initialize crypto modules
+    await initCrypto();
+
     console.log('[Decryption] Starting decryption with private key');
 
     // Step 1: Decode base64url to bytes
@@ -318,6 +344,9 @@ export async function signWithES256(
   privateKeyHex: string
 ): Promise<string> {
   try {
+    // Initialize crypto modules
+    await initCrypto();
+
     console.log('[Signing] Starting ECDSA signature with P-256');
 
     // Import the private key
@@ -363,6 +392,9 @@ export async function verifySignature(
   publicKeyHex: string
 ): Promise<boolean> {
   try {
+    // Initialize crypto modules
+    await initCrypto();
+
     console.log('[Verify] Starting signature verification with P-256');
 
     // Parse public key
