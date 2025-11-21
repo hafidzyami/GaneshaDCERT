@@ -2620,7 +2620,7 @@ router.get(
  * /credentials/issuer/vc/{id}:
  *   put:
  *     summary: Update issuer VC data by ID
- *     description: Update encrypted VC body for a specific issuer VC data record. The issuer_did in request body must match the issuer_did in the database record. This is useful when issuer updates, renews, or revokes a VC and the encrypted_body changes.
+ *     description: Update encrypted VC body and optionally vc_id for a specific issuer VC data record. The issuer_did in request body must match the issuer_did in the database record. This is useful when issuer updates, renews, or revokes a VC and the encrypted_body changes.
  *     tags: [Verifiable Credential (VC) Lifecycle]
  *     security:
  *       - HolderBearerAuth: []
@@ -2646,6 +2646,10 @@ router.get(
  *                 type: string
  *                 example: "did:dcert:i..."
  *                 description: DID of the issuer (must match the record's issuer_did)
+ *               vc_id:
+ *                 type: string
+ *                 example: "schema123:1:did:dcert:u...:1234567890"
+ *                 description: Optional - VC ID to update. If provided, will replace the existing vc_id. If not provided, vc_id remains unchanged.
  *               encrypted_body:
  *                 type: string
  *                 description: New encrypted VC body
@@ -2672,6 +2676,12 @@ router.get(
  *                       description: Unique ID of the record
  *                     issuer_did:
  *                       type: string
+ *                     holder_did:
+ *                       type: string
+ *                       nullable: true
+ *                     vc_id:
+ *                       type: string
+ *                       nullable: true
  *                     encrypted_body:
  *                       type: string
  *                     createdAt:

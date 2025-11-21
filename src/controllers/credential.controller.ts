@@ -893,11 +893,12 @@ export const updateIssuerVCData = asyncHandler(
     }
 
     const { id } = req.params;
-    const { issuer_did, encrypted_body } = req.body;
+    const { issuer_did, vc_id, encrypted_body } = req.body;
 
     const result = await CredentialService.updateIssuerVCData({
       id,
       issuer_did,
+      vc_id,
       encrypted_body,
     });
 

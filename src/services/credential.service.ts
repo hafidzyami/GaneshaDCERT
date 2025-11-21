@@ -3150,6 +3150,7 @@ class CredentialService {
   async updateIssuerVCData(data: {
     id: string;
     issuer_did: string;
+    vc_id?: string;
     encrypted_body: string;
   }): Promise<{ message: string; data: any }> {
     logger.info(`Updating VC data with ID: ${data.id}`);
@@ -3171,12 +3172,21 @@ class CredentialService {
         );
       }
 
+      // Prepare update data
+      const updateData: any = {
+        encrypted_body: data.encrypted_body,
+      };
+
+      // Only update vc_id if provided (not null/undefined)
+      if (data.vc_id !== undefined && data.vc_id !== null) {
+        updateData.vc_id = data.vc_id;
+        logger.info(`Updating vc_id to: ${data.vc_id}`);
+      }
+
       // Update the record
       const updatedRecord = await this.db.issuerVCData.update({
         where: { id: data.id },
-        data: {
-          encrypted_body: data.encrypted_body,
-        },
+        data: updateData,
       });
 
       logger.success(`Issuer VC data updated successfully`);
