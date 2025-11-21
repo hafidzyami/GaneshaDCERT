@@ -406,6 +406,14 @@ export const processRenewalVCValidator = [
     .withMessage(
       "expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"
     ),
+
+  body("hash")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("hash is required when action is APPROVED")
+    .isLength({ min: 1 })
+    .withMessage("hash must not be empty"),
 ];
 
 export const processUpdateVCValidator = [
@@ -775,6 +783,13 @@ export const issuerRenewVCValidator = [
     .withMessage(
       "expiredAt must be a valid ISO 8601 date string (e.g., 2025-12-31T23:59:59.000Z)"
     ),
+
+  body("hash")
+    .trim()
+    .notEmpty()
+    .withMessage("hash is required")
+    .isLength({ min: 1 })
+    .withMessage("hash must not be empty"),
 ];
 
 export const claimIssuerInitiatedVCsBatchValidator = [
@@ -909,6 +924,20 @@ export const storeIssuerVCDataValidator = [
     .withMessage("issuer_did is required")
     .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid issuer DID format"),
+
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder DID format"),
+
+  body("vc_id")
+    .trim()
+    .notEmpty()
+    .withMessage("vc_id is required")
+    .isLength({ min: 1 })
+    .withMessage("vc_id must not be empty"),
 
   body("encrypted_body")
     .trim()

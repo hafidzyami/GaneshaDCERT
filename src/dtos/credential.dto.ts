@@ -120,6 +120,7 @@ export interface ProcessRenewalVCDTO {
   vc_id?: string; // VC ID to renew (Required only if action is APPROVED)
   encrypted_body?: string; // Newly issued/renewed encrypted VC body (Required only if action is APPROVED)
   expired_at?: string; // Expiration date and time (ISO 8601 format, Required only if action is APPROVED)
+  hash?: string; // Hash of the renewed VC (Required only if action is APPROVED)
 }
 
 // Response body DTO for POST /credentials/renew-vc
@@ -239,7 +240,8 @@ export interface IssuerRenewVCDTO {
   holder_did: string;
   vc_id: string; // ID dari VC on-chain yang akan diperbarui (renew)
   encrypted_body: string; // Body VC BARU (sudah dienkripsi) yang akan disimpan di DB
-  expiredAt: string; // <-- TAMBAHKAN BARIS INI
+  expiredAt: string; // Expiration date and time (ISO 8601 format)
+  hash: string; // Hash of the renewed VC
 }
 
 // Response body DTO for POST /credentials/issuer/renew-vc

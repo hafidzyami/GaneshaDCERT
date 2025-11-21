@@ -1,9 +1,10 @@
 import BlockchainService from "./blockchain/didBlockchain.service";
 import InstitutionService from "./institution.service";
 import { BadRequestError, NotFoundError } from "../utils/errors/AppError";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, RequestStatus } from "@prisma/client";
 import { prisma } from "../config/database";
 import { logger } from "../config";
+import { encryptWithPublicKey } from "../utils/encryptUtil";
 
 /**
  * DID Service with Dependency Injection
@@ -78,8 +79,11 @@ class DIDService {
         },
       });
 
-      logger.info(`Queried institution data for email ${email}: ${JSON.stringify(institution)}`);
-
+      logger.info(
+        `Queried institution data for email ${email}: ${JSON.stringify(
+          institution
+        )}`
+      );
 
       if (!institution) {
         throw new NotFoundError(
@@ -206,14 +210,97 @@ class DIDService {
       throw new NotFoundError("DID not found on blockchain");
     }
 
+    // Query all VCs owned by this holder from IssuerVCData
+    const vcs = await this.prisma.issuerVCData.findMany({
+      where: {
+        holder_did: did,
+      },
+      select: {
+        vc_id: true,
+        issuer_did: true,
+      },
+    });
+
+    logger.info(
+      `Found ${vcs.length} VCs owned by DID ${did} to create revoke requests`
+    );
+
+    // Create revoke request for each VC to its issuer
+    let requestCount = 0;
+    const reason = "The holder’s DID document has been deactivated";
+
+    for (const vc of vcs) {
+      // Skip if vc_id is null (legacy data)
+      if (!vc.vc_id || !vc.issuer_did) {
+        logger.warn(`Skipping VC with null vc_id or issuer_did`);
+        continue;
+      }
+
+      try {
+        // Get issuer's public key from blockchain
+        const issuerDIDDocument = await this.blockchainService.getDIDDocument(
+          vc.issuer_did
+        );
+
+        if (!issuerDIDDocument.found) {
+          logger.warn(
+            `Issuer DID ${vc.issuer_did} not found on blockchain, skipping VC ${vc.vc_id}`
+          );
+          continue;
+        }
+
+        // Get public key using keyId
+        const issuerKeyId = issuerDIDDocument.keyId;
+        const issuerPublicKey = issuerDIDDocument[issuerKeyId];
+
+        // Encrypt the revoke request body with issuer's public key
+        const requestBody = {
+          vc_id: vc.vc_id,
+          reason: reason,
+        };
+
+        const encryptedBody = await encryptWithPublicKey(
+          requestBody,
+          issuerPublicKey
+        );
+
+        // Create revoke request in database
+        await this.prisma.vCRevokeRequest.create({
+          data: {
+            issuer_did: vc.issuer_did,
+            holder_did: did,
+            encrypted_body: encryptedBody,
+            status: RequestStatus.PENDING,
+          },
+        });
+
+        requestCount++;
+        logger.info(
+          `✅ Successfully created revoke request for VC ${vc.vc_id} to issuer ${vc.issuer_did}`
+        );
+      } catch (error: any) {
+        // Log error but continue with other VCs
+        console.error(
+          `❌ Failed to create revoke request for VC ${vc.vc_id}:`,
+          error.message
+        );
+        logger.error(
+          `Failed to create revoke request for VC ${vc.vc_id}: ${error.message}`
+        );
+      }
+    }
+
     // Deactivate DID
     const receipt = await this.blockchainService.deactivateDID(did);
 
-    // TODO: Trigger batch revocation for all associated VCs via message queue
+    logger.success(
+      `DID ${did} deactivated successfully. Created ${requestCount}/${vcs.length} revoke requests.`
+    );
 
     return {
-      message: "DID deactivated successfully",
+      message: `DID deactivated successfully. ${requestCount} revoke requests have been created.`,
       did,
+      revokeRequestsCount: requestCount,
       transactionHash: receipt.hash,
       blockNumber: receipt.blockNumber,
     };

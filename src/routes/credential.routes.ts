@@ -821,6 +821,10 @@ router.post(
  *                 format: date-time
  *                 example: "2030-11-04T10:00:00.000Z"
  *                 description: Expiration date and time for the renewed VC (ISO 8601 format, Required only if action is APPROVED).
+ *               hash:
+ *                 type: string
+ *                 description: Hash of the renewed VC (Required only if action is APPROVED).
+ *                 example: "a1b2c3d4e5f6..."
  *     responses:
  *       200:
  *         description: Renewal request processed successfully (Approved or Rejected).
@@ -1666,15 +1670,24 @@ router.post(
  *             type: object
  *             required:
  *               - issuer_did
+ *               - holder_did
  *               - vc_id
+ *               - encrypted_body
  *             properties:
  *               issuer_did:
  *                 type: string
  *                 example: "did:dcert:i..."
  *                 description: DID Issuer (harus cocok dengan DID di token JWT)
+ *               holder_did:
+ *                 type: string
+ *                 example: "did:dcert:u..."
+ *                 description: DID Holder yang VC-nya akan dicabut
  *               vc_id:
  *                 type: string
  *                 description: ID dari VC yang akan dicabut
+ *               encrypted_body:
+ *                 type: string
+ *                 description: Encrypted body containing revocation reason
  *     responses:
  *       200:
  *         description: VC berhasil dicabut di blockchain.
@@ -1739,6 +1752,7 @@ router.post(
  *               - vc_id
  *               - encrypted_body
  *               - expiredAt
+ *               - hash
  *             properties:
  *               issuer_did:
  *                 type: string
@@ -1759,6 +1773,10 @@ router.post(
  *                 format: date-time
  *                 description: Tanggal kedaluwarsa BARU untuk VC (format ISO 8601)
  *                 example: "2027-11-04T10:00:00.000Z"
+ *               hash:
+ *                 type: string
+ *                 description: Hash of the renewed VC
+ *                 example: "a1b2c3d4e5f6..."
  *     responses:
  *       201:
  *         description: VC berhasil diperbarui di blockchain dan VC baru disimpan di DB.
@@ -2421,8 +2439,10 @@ router.post(
  * /credentials/issuer/vc:
  *   post:
  *     summary: Store issuer VC data
- *     description: Store encrypted VC data for an issuer
+ *     description: Store encrypted VC data for an issuer with ownership tracking
  *     tags: [Verifiable Credential (VC) Lifecycle]
+ *     security:
+ *       - BearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -2431,12 +2451,22 @@ router.post(
  *             type: object
  *             required:
  *               - issuer_did
+ *               - holder_did
+ *               - vc_id
  *               - encrypted_body
  *             properties:
  *               issuer_did:
  *                 type: string
  *                 description: Issuer DID
  *                 example: did:dcert:i1234567890abcdef
+ *               holder_did:
+ *                 type: string
+ *                 description: Holder DID who owns this VC
+ *                 example: did:dcert:u1234567890abcdef
+ *               vc_id:
+ *                 type: string
+ *                 description: Unique VC ID for tracking
+ *                 example: vc_123456789
  *               encrypted_body:
  *                 type: string
  *                 description: Encrypted VC body
@@ -2464,6 +2494,12 @@ router.post(
  *                     issuer_did:
  *                       type: string
  *                       example: "did:dcert:i..."
+ *                     holder_did:
+ *                       type: string
+ *                       example: "did:dcert:u..."
+ *                     vc_id:
+ *                       type: string
+ *                       example: "vc_123456789"
  *                     encrypted_body:
  *                       type: string
  *                     createdAt:
@@ -2474,6 +2510,8 @@ router.post(
  *                       format: date-time
  *       400:
  *         description: Invalid request body
+ *       401:
+ *         description: Unauthorized
  *       500:
  *         description: Internal server error
  */

@@ -833,10 +833,12 @@ export const storeIssuerVCData = asyncHandler(
       throw new ValidationError("Validation error", errors.array());
     }
 
-    const { issuer_did, encrypted_body } = req.body;
+    const { issuer_did, holder_did, vc_id, encrypted_body } = req.body;
 
     const result = await CredentialService.storeIssuerVCData({
       issuer_did,
+      holder_did,
+      vc_id,
       encrypted_body,
     });
 
