@@ -282,12 +282,15 @@ model VCinitiatedByIssuer {
   request_type   RequestType
   issuer_did     String
   holder_did     String
+  vc_id          String?
   encrypted_body String
   status         VCResponseStatus @default(PENDING)
   processing_at  DateTime?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   deletedAt      DateTime?
+
+  @@index([vc_id])
 }
 
 model IssuerVCData {

@@ -4,6 +4,7 @@ import { NotFoundError, BadRequestError } from "../utils/errors/AppError";
 import logger from "../config/logger";
 import * as crypto from "crypto";
 import DIDService from "./did.service";
+import VCBlockchainService from "./blockchain/vcBlockchain.service";
 
 /**
  * Data Integrity Proof Structure
@@ -748,7 +749,50 @@ class PresentationService {
       // Get issuer DID
       const issuerDID = vc.issuer;
 
-      // Get issuer's public key from blockchain
+      // Step 1: Check if VC exists on blockchain and is active
+      let vcOnBlockchain = false;
+      let vcActiveOnBlockchain = false;
+
+      try {
+        const vcStatus = await VCBlockchainService.getVCStatusFromBlockchain(vc.id);
+
+        if (vcStatus) {
+          vcOnBlockchain = true;
+          vcActiveOnBlockchain = vcStatus.status === true;
+
+          if (vcActiveOnBlockchain) {
+            logger.info(`VC ${vc.id} found on blockchain and is active`);
+          } else {
+            logger.warn(`VC ${vc.id} found on blockchain but is inactive/revoked`);
+          }
+        } else {
+          logger.warn(`VC ${vc.id} not found on blockchain`);
+        }
+      } catch (vcError) {
+        logger.error(`Error checking VC ${vc.id} on blockchain:`, vcError);
+        // Continue with verification even if blockchain check fails
+      }
+
+      // If VC is not found or not active on blockchain, mark as invalid
+      if (!vcOnBlockchain) {
+        return {
+          vc_id: vc.id,
+          issuer: issuerDID,
+          valid: false,
+          error: "VC not found on blockchain",
+        };
+      }
+
+      if (!vcActiveOnBlockchain) {
+        return {
+          vc_id: vc.id,
+          issuer: issuerDID,
+          valid: false,
+          error: "VC is inactive or revoked on blockchain",
+        };
+      }
+
+      // Step 2: Get issuer's public key from blockchain
       const didDocument = await DIDService.getDIDDocument(issuerDID);
 
       if (!didDocument.found) {
@@ -782,7 +826,7 @@ class PresentationService {
         };
       }
 
-      // Verify VC proof using ECDSA P-256 with SHA256
+      // Step 3: Verify VC proof using ECDSA P-256 with SHA256
       const isValid = await this.verifyECDSASignature(
         vc,
         vc.proof,
