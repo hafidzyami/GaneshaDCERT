@@ -1851,6 +1851,7 @@ class CredentialService {
           request_type: RequestType.ISSUANCE, // Hardcode sebagai ISSUANCE
           issuer_did: issuer_did,
           holder_did: holder_did,
+          vc_id: vc_id, // Store vc_id for schema parsing
           encrypted_body: encrypted_body,
           // --- MENGGUNAKAN VCResponseStatus YANG DIIMPOR ---
           status: VCResponseStatus.PENDING, // Status default PENDING
@@ -2006,6 +2007,7 @@ class CredentialService {
           request_type: RequestType.UPDATE, // Hardcode sebagai UPDATE
           issuer_did: issuer_did,
           holder_did: holder_did,
+          vc_id: new_vc_id, // Store new vc_id for schema parsing
           encrypted_body: encrypted_body, // Menyimpan body VC yang BARU
           status: VCResponseStatus.PENDING, // Status default PENDING
         },
@@ -2161,6 +2163,7 @@ class CredentialService {
           request_type: RequestType.REVOKE, // Hardcode sebagai REVOKE
           issuer_did: issuer_did,
           holder_did: holder_did,
+          vc_id: vc_id, // Store vc_id for schema parsing
           encrypted_body: encrypted_body, // Menyimpan alasan/pesan pencabutan
           status: VCResponseStatus.PENDING, // Status default PENDING
         },
@@ -2301,6 +2304,7 @@ class CredentialService {
           request_type: RequestType.RENEWAL,
           issuer_did: issuer_did,
           holder_did: holder_did,
+          vc_id: vc_id, // Store vc_id for schema parsing
           encrypted_body: encrypted_body,
           status: VCResponseStatus.PENDING,
         },
@@ -2772,18 +2776,59 @@ class CredentialService {
           LIMIT ${remainingLimit}
           FOR UPDATE SKIP LOCKED
         )
-        RETURNING id, encrypted_body, request_type, processing_at;
+        RETURNING id, encrypted_body, request_type, processing_at, vc_id;
       `;
 
-      // Map results - ISSUER_INITIATED doesn't have schema_data
+      // Map results and parse schema_data from vc_id
       for (const vc of issuerInitiatedVCs) {
+        let schema_data: any = null;
+
+        // Parse vc_id to get schema information
+        try {
+          if (vc.vc_id) {
+            // Parse vc_id format: "schema_id:schema_version:holder_did:timestamp"
+            const parts = vc.vc_id.split(":");
+            if (parts.length >= 2) {
+              const schema_id = parts[0];
+              const schema_version = parseInt(parts[1], 10);
+
+              if (schema_id && !isNaN(schema_version)) {
+                const schema = await SchemaService.getSchemaByIdAndVersion(
+                  schema_id,
+                  schema_version
+                );
+
+                if (schema) {
+                  schema_data = {
+                    id: schema.id,
+                    version: schema.version,
+                    name: schema.name,
+                    schema: schema.schema,
+                    issuer_did: schema.issuer_did,
+                    issuer_name: schema.issuer_name,
+                    image_link: schema.image_link,
+                    expired_in: schema.expired_in,
+                    isActive: schema.isActive,
+                  };
+                }
+              }
+            }
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.warn(
+            `Failed to fetch schema data for issuer-initiated VC ${vc.id}: ${errorMessage}`
+          );
+          // Continue without schema_data
+        }
+
         combinedClaims.push({
           source: "ISSUER_INITIATED",
           claimId: vc.id, // Use id for confirmation
           encrypted_body: vc.encrypted_body,
           request_type: vc.request_type,
           processing_at: vc.processing_at,
-          schema_data: null, // No schema data for issuer-initiated VCs
+          schema_data,
         });
       }
       logger.info(
