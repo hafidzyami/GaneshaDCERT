@@ -1,4 +1,5 @@
 import multer from "multer";
+import { Request, Response, NextFunction } from "express";
 import { BadRequestError } from "../utils/errors/AppError";
 
 /**
@@ -59,3 +60,41 @@ export const uploadOptionalImage = multer({
     fileSize: 5 * 1024 * 1024, // 5MB max file size
   },
 }).single("image"); // Field name is "image"
+
+// Middleware to require image file after multer processes the request
+export const requireImageFile = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  if (!req.file) {
+    throw new BadRequestError("Background image is required");
+  }
+  next();
+};
+
+// Middleware to require either image_link or image file for update
+export const requireImageOrLink = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  const hasImageFile = !!req.file;
+  const hasImageLink = !!req.body.image_link;
+
+  if (!hasImageFile && !hasImageLink) {
+    throw new BadRequestError(
+      "Either background image file or image_link is required"
+    );
+  }
+
+  next();
+};
+
+// Configure multer instance for any file upload (for VC documents)
+export const uploadSingleFile = multer({
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max file size
+  },
+}).single("file"); // Field name is "file"

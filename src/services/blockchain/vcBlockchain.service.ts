@@ -226,11 +226,11 @@ class VCBlockchainService {
 
   /**
    * Renew VC on Blockchain
-   * Reactivates VC with new expiration date
+   * Reactivates VC with new expiration date and hash
    */
-  async renewVCInBlockchain(id: string, expiredAt: string | undefined): Promise<TransactionReceipt> {
+  async renewVCInBlockchain(id: string, expiredAt: string | undefined, hash: string): Promise<TransactionReceipt> {
     try {
-      const tx = await this.contract.renewVC(id, expiredAt || "");
+      const tx = await this.contract.renewVC(id, expiredAt || "", hash);
       const receipt = await tx.wait();
 
       if (receipt.status !== 1) {
@@ -344,6 +344,7 @@ class VCBlockchainService {
 
   /**
    * Get All VCs from Blockchain
+   * Note: This method may be expensive for large number of VCs
    */
   async getAllVCsFromBlockchain(): Promise<any[]> {
     try {

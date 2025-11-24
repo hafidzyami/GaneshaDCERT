@@ -64,8 +64,8 @@ export const processIssuanceVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("vc_hash is required when action is APPROVED")
-    .matches(/^[a-fA-F0-9]{64}$/) // Example validation for Keccak256 hash
-    .withMessage("Invalid vc_hash format (must be a 64-character)"),
+    .matches(/^[a-fA-F0-9]{64}$/)
+    .withMessage("Invalid vc_hash format (must be a 64-character hex string)"),
 
   body("encrypted_body")
     .if(body("action").equals(RequestStatus.APPROVED))
@@ -212,7 +212,7 @@ export const processCredentialResponseValidator = [
 ];
 
 export const getHolderVCsValidator = [
-  query("holderDid")
+  query("holder_did")
     .trim()
     .notEmpty()
     .withMessage("Holder DID is required")
@@ -357,6 +357,13 @@ export const revokeVCValidator = [
     .withMessage("vc_id is required when action is APPROVED"),
   // .isUUID() // Add format check if needed
   // .withMessage("Invalid vc_id format"),
+
+  // encrypted_body is required only if action is APPROVED
+  body("encrypted_body")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("encrypted_body is required when action is APPROVED"),
 ];
 
 export const processRenewalVCValidator = [
@@ -399,6 +406,14 @@ export const processRenewalVCValidator = [
     .withMessage(
       "expired_at must be a valid ISO 8601 date string (e.g., 2030-12-31T23:59:59.000Z)"
     ),
+
+  body("hash")
+    .if(body("action").equals(RequestStatus.APPROVED))
+    .trim()
+    .notEmpty()
+    .withMessage("hash is required when action is APPROVED")
+    .isLength({ min: 1 })
+    .withMessage("hash must not be empty"),
 ];
 
 export const processUpdateVCValidator = [
@@ -456,9 +471,9 @@ export const processUpdateVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("new_vc_hash is required when action is APPROVED")
-    .matches(/^0x[a-fA-F0-9]{64}$/)
+    .matches(/^[a-fA-F0-9]{64}$/) // [MODIFIED] Removed 0x
     .withMessage(
-      "Invalid new_vc_hash format (must be a 64-character hex string starting with 0x)"
+      "Invalid new_vc_hash format (must be a 64-character hex string)" // [MODIFIED]
     ),
 
   body("encrypted_body")
@@ -614,9 +629,9 @@ export const issuerIssueVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("vc_hash is required")
-    .matches(/^0x[a-fA-F0-9]{64}$/) // Asumsi hash 64 char hex
+    .matches(/^[a-fA-F0-9]{64}$/) // [MODIFIED] Removed 0x
     .withMessage(
-      "Invalid vc_hash format (must be a 64-character hex string starting with 0x)"
+      "Invalid vc_hash format (must be a 64-character hex string)" // [MODIFIED]
     ),
 
   body("encrypted_body")
@@ -680,9 +695,9 @@ export const issuerUpdateVCValidator = [
     .trim()
     .notEmpty()
     .withMessage("new_vc_hash is required")
-    .matches(/^0x[a-fA-F0-9]{64}$/)
+    .matches(/^[a-fA-F0-9]{64}$/) // [MODIFIED] Removed 0x
     .withMessage(
-      "Invalid new_vc_hash format (must be a 64-character hex string starting with 0x)"
+      "Invalid new_vc_hash format (must be a 64-character hex string)" // [MODIFIED]
     ),
 
   body("encrypted_body")
@@ -706,7 +721,27 @@ export const issuerRevokeVCValidator = [
     .matches(/^did:dcert:i(?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/) // Harus 'i' (institution)
     .withMessage("Invalid issuer DID format (must be an institution DID)"),
 
+  // [NEW] Add validator for holder_did
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("Holder DID is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder DID format")
+    .custom((value, { req }) => {
+      if (value === req.body.issuer_did) {
+        throw new Error("Issuer DID and Holder DID cannot be the same.");
+      }
+      return true;
+    }),
+
   body("vc_id").trim().notEmpty().withMessage("vc_id is required"),
+  
+  // [NEW] Add validator for encrypted_body
+  body("encrypted_body")
+    .trim()
+    .notEmpty()
+    .withMessage("Encrypted body (reason) is required"),
 ];
 
 export const issuerRenewVCValidator = [
@@ -748,6 +783,13 @@ export const issuerRenewVCValidator = [
     .withMessage(
       "expiredAt must be a valid ISO 8601 date string (e.g., 2025-12-31T23:59:59.000Z)"
     ),
+
+  body("hash")
+    .trim()
+    .notEmpty()
+    .withMessage("hash is required")
+    .isLength({ min: 1 })
+    .withMessage("hash must not be empty"),
 ];
 
 export const claimIssuerInitiatedVCsBatchValidator = [
@@ -813,4 +855,147 @@ export const validateVCValidator = [
     .withMessage("holder_did is required")
     .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid holder_did format"),
+];
+
+export const claimCombinedVCsBatchValidator = [
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder_did format"),
+
+  body("limit")
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage("limit must be an integer between 1 and 100"),
+];
+
+/**
+ * [NEW] Validator for Phase 2 Combined Batch: Confirm multiple VCs
+ */
+export const confirmCombinedVCsBatchValidator = [
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder_did format"),
+
+  body("items")
+    .isArray({ min: 1, max: 100 })
+    .withMessage("items must be an array with 1 to 100 objects"),
+
+  body("items.*.claimId")
+    .trim()
+    .notEmpty()
+    .isUUID()
+    .withMessage("Each item's claimId must be a valid UUID"),
+
+  body("items.*.source")
+    .trim()
+    .isIn(["HOLDER_REQUEST", "ISSUER_INITIATED"])
+    .withMessage(
+      "Each item's source must be either 'HOLDER_REQUEST' or 'ISSUER_INITIATED'"
+    ),
+];
+
+/**
+ * Validator for DELETE /credentials/file
+ * Validates the deletion of VC document file
+ */
+export const deleteVCDocumentValidator = [
+  body("file_id")
+    .trim()
+    .notEmpty()
+    .withMessage("file_id is required")
+    .isUUID()
+    .withMessage("file_id must be a valid UUID"),
+];
+
+/**
+ * Validator for POST /credentials/issuer/vc
+ * Validates storing issuer VC data
+ */
+export const storeIssuerVCDataValidator = [
+  body("issuer_did")
+    .trim()
+    .notEmpty()
+    .withMessage("issuer_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid issuer DID format"),
+
+  body("holder_did")
+    .trim()
+    .notEmpty()
+    .withMessage("holder_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid holder DID format"),
+
+  body("vc_id")
+    .trim()
+    .notEmpty()
+    .withMessage("vc_id is required")
+    .isLength({ min: 1 })
+    .withMessage("vc_id must not be empty"),
+
+  body("encrypted_body")
+    .trim()
+    .notEmpty()
+    .withMessage("encrypted_body is required")
+    .isLength({ min: 1 })
+    .withMessage("encrypted_body must not be empty"),
+];
+
+/**
+ * Validator for GET /credentials/issuer/vc/:issuer_did
+ * Validates retrieving issuer VC data
+ */
+export const getIssuerVCDataValidator = [
+  param("issuer_did")
+    .trim()
+    .notEmpty()
+    .withMessage("issuer_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid issuer DID format"),
+];
+
+/**
+ * Validator for GET /credentials/issuer/vc/:id
+ * Validates getting issuer VC data by ID
+ */
+export const getIssuerVCDataByIdValidator = [
+  param("id")
+    .trim()
+    .notEmpty()
+    .withMessage("id is required")
+    .isUUID()
+    .withMessage("id must be a valid UUID"),
+];
+
+/**
+ * Validator for PUT /credentials/issuer/vc/{id}
+ * Validates updating issuer VC data by ID
+ */
+export const updateIssuerVCDataValidator = [
+  param("id")
+    .trim()
+    .notEmpty()
+    .withMessage("id is required")
+    .isUUID()
+    .withMessage("id must be a valid UUID"),
+
+  body("issuer_did")
+    .trim()
+    .notEmpty()
+    .withMessage("issuer_did is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid issuer DID format"),
+
+  body("encrypted_body")
+    .trim()
+    .notEmpty()
+    .withMessage("encrypted_body is required")
+    .isLength({ min: 1 })
+    .withMessage("encrypted_body must not be empty"),
 ];

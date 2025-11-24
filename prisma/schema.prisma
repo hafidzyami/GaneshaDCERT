@@ -33,6 +33,18 @@ enum VCResponseStatus {
   CLAIMED
 }
 
+enum VPRequestStatus {
+  PENDING
+  ACCEPT
+  DECLINE
+}
+
+enum VPVerifyStatus {
+  NOT_VERIFIED
+  VALID_VERIFICATION
+  INVALID_VERIFICATION
+}
+
 model VCIssuanceRequest {
   id             String        @id @default(uuid())
   encrypted_body String
@@ -97,11 +109,17 @@ model IssuerActionLog {
 }
 
 model VPSharing {
-  id         String    @id @default(uuid())
-  holder_did String
-  VP         String
-  createdAt  DateTime  @default(now())
-  deletedAt  DateTime?
+  id           String    @id @default(uuid())
+  holder_did   String
+  verifier_did String?   // NULL = initiated by holder, NOT NULL = initiated by verifier
+  VP           String
+  is_barcode   Boolean   @default(false)
+  hasClaim     Boolean   @default(false) // Track if VP has been claimed by verifier
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  @@index([verifier_did])
+  @@index([hasClaim])
 }
 
 model VCResponse {
@@ -205,11 +223,23 @@ model MagicLink {
 }
 
 model VPRequest {
-  id             String   @id @default(uuid())
-  holder_did     String
-  verifier_did   String
-  list_schema_id String[]
-  createdAt      DateTime @default(now())
+  id                    String          @id @default(uuid())
+  holder_did            String
+  verifier_did          String
+  verifier_name         String
+  purpose               String
+  status                VPRequestStatus @default(PENDING)
+  requested_credentials Json            // [{schema_id, schema_name, schema_version}] - What verifier requests
+  credentials           Json?           // [{schema_id, schema_name, schema_version}] - What holder actually provides
+  vp_id                 String?         // NULL for DECLINE, has value for ACCEPT
+  verify_status         VPVerifyStatus  @default(NOT_VERIFIED)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  @@index([holder_did])
+  @@index([verifier_did])
+  @@index([status])
+  @@index([vp_id])
 }
 
 model Admin {
@@ -252,10 +282,27 @@ model VCinitiatedByIssuer {
   request_type   RequestType
   issuer_did     String
   holder_did     String
+  vc_id          String?
   encrypted_body String
   status         VCResponseStatus @default(PENDING)
   processing_at  DateTime?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   deletedAt      DateTime?
+
+  @@index([vc_id])
+}
+
+model IssuerVCData {
+  id             String   @id @default(uuid())
+  issuer_did     String
+  holder_did     String?
+  vc_id          String?
+  encrypted_body String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([issuer_did])
+  @@index([holder_did])
+  @@index([vc_id])
 }

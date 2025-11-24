@@ -20,25 +20,22 @@ export const scheduleVCCleanup = () => {
   // Run every 5 minutes
   const cronExpression = "*/5 * * * *";
 
-  const task = cron.schedule(
-    cronExpression,
-    async () => {
-      try {
-        logger.info("[Scheduler] Starting VC cleanup job");
-        const result = await CredentialService.resetStuckProcessingVCs(15); // 15 minute timeout
+  const task = cron.schedule(cronExpression, async () => {
+    try {
+      logger.info("[Scheduler] Starting VC cleanup job");
+      const result = await CredentialService.resetStuckProcessingVCs(15); // 15 minute timeout
 
-        if (result.reset_count > 0) {
-          logger.warn(
-            `[Scheduler] VC cleanup completed: ${result.reset_count} VCs reset to PENDING`
-          );
-        } else {
-          logger.info("[Scheduler] VC cleanup completed: no stuck VCs found");
-        }
-      } catch (error) {
-        logger.error(`[Scheduler] VC cleanup job failed: ${error}`);
+      if (result.total_reset_count > 0) {
+        logger.warn(
+          `[Scheduler] VC cleanup completed: ${result.total_reset_count} total VCs reset to PENDING (${result.vc_response_reset_count} from VCResponse, ${result.vc_initiated_reset_count} from VCinitiatedByIssuer)`
+        );
+      } else {
+        logger.info("[Scheduler] VC cleanup completed: no stuck VCs found");
       }
+    } catch (error) {
+      logger.error(`[Scheduler] VC cleanup job failed: ${error}`);
     }
-  );
+  });
 
   // Start the task
   task.start();
