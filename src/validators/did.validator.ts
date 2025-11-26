@@ -105,19 +105,6 @@ export const keyRotationValidator = [
     .withMessage("New public key is required")
     .matches(/^[a-fA-F0-9]{66,130}$/)
     .withMessage("Invalid new public key format"),
-
-  body("signature")
-    .trim()
-    .notEmpty()
-    .withMessage("Signature is required for verification")
-    .matches(/^[a-fA-F0-9]+$/)
-    .withMessage("Invalid signature format"),
-
-  body("reason")
-    .optional()
-    .trim()
-    .isLength({ max: 500 })
-    .withMessage("Reason must not exceed 500 characters"),
 ];
 
 /**

@@ -96,7 +96,7 @@ export const keyRotation = asyncHandler(
     }
 
     const { did } = req.params;
-    const { new_public_key, signature, reason } = req.body;
+    const { new_public_key } = req.body;
 
     const result = await DIDService.rotateKey(did, new_public_key);
 

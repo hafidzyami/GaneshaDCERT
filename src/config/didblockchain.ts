@@ -55,8 +55,8 @@ class DIDsBlockchainConfig {
         DIDsBlockchainConfig.signer.address
       );
 
-      logger.success("Blockchain connected successfully");
-      logger.info("Blockchain Details", {
+      logger.success("DID Blockchain connected successfully");
+      logger.info("DID Blockchain Details", {
         network: network.name,
         chainId: network.chainId.toString(),
         signer: DIDsBlockchainConfig.signer.address,

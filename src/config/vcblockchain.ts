@@ -55,11 +55,14 @@ class VCBlockchainConfig {
         VCBlockchainConfig.signer.address
       );
 
-      console.log("✅ VC Blockchain connected successfully");
-      console.log(`   Network: ${network.name} (Chain ID: ${network.chainId})`);
-      console.log(`   Signer: ${VCBlockchainConfig.signer.address}`);
-      console.log(`   Balance: ${ethers.formatEther(balance)} ETH`);
-      console.log(`   Contract: ${env.VC_CONTRACT_ADDRESS}`);
+      logger.success("VC Blockchain connected successfully");
+      logger.info("VC Blockchain Details", {
+        network: network.name,
+        chainId: network.chainId.toString(),
+        signer: VCBlockchainConfig.signer.address,
+        balance: `${ethers.formatEther(balance)} ETH`,
+        contract: env.VC_CONTRACT_ADDRESS,
+      });
 
       return true;
     } catch (error) {

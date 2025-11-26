@@ -315,7 +315,7 @@ const startServer = async () => {
     }
 
     // Test VC Blockchain Connection
-    const vcBlockchainConnected = await DIDBlockchainConfig.testConnection();
+    const vcBlockchainConnected = await VCBlockchainConfig.testConnection();
     if (!vcBlockchainConnected) {
       logger.warn("VC Blockchain connection failed, but server will continue");
     }
