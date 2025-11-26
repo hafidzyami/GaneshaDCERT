@@ -517,12 +517,12 @@ router.get("/blocks", did.numberofBlocks);
  *       - Uncompressed: 130 hex characters
  *
  *       **Security Process:**
- *       1. Verify ownership using signature from old private key
+ *       1. Verify ownership using JWT token authentication
  *       2. Validate new public key format (hex only, no 0x)
  *       3. Update key on blockchain
  *       4. Update DID document
  *
- *       **Important:** Keep the old private key secure until rotation is complete.
+ *       **Important:** Authentication is handled via JWT token in Authorization header.
  *     tags:
  *       - DID Management
  *     security:
@@ -544,23 +544,12 @@ router.get("/blocks", did.numberofBlocks);
  *             type: object
  *             required:
  *               - new_public_key
- *               - signature
  *             properties:
  *               new_public_key:
  *                 type: string
  *                 pattern: '^[a-fA-F0-9]{66,130}$'
  *                 example: "04f6e5d4c3b2a19876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba98"
  *                 description: New public key hex string WITHOUT 0x prefix (66 or 130 hex chars)
- *               signature:
- *                 type: string
- *                 pattern: '^[a-fA-F0-9]+$'
- *                 example: "1234567890abcdef1234567890abcdef1234567890abcdef"
- *                 description: Signature hex string WITHOUT 0x prefix (sign with old private key)
- *               reason:
- *                 type: string
- *                 maxLength: 500
- *                 example: "Security upgrade - periodic key rotation"
- *                 description: Optional reason for key rotation
  *     responses:
  *       200:
  *         description: Key rotated successfully or DID not found
