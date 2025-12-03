@@ -35,6 +35,13 @@ import { scheduleVCCleanup } from "./jobs/vcCleanupScheduler";
 // Blockchain Event Publisher
 import blockchainEventPublisher from "./services/blockchainEventPublisher.service";
 
+// Schema Cache
+import { initializeCache, closeCache, getSchema, isCacheInitialized } from "./cache/schemaCache";
+
+// Database for performance comparison
+import { PrismaClient } from "@prisma/client";
+const prisma = new PrismaClient();
+
 const app: Application = express();
 const PORT: number = env.PORT;
 
@@ -269,7 +276,7 @@ app.get("/api/v1/health", async (req: Request, res: Response) => {
   const vcBCHealth = await VCBlockchainConfig.isConnected();
 
   const response: HealthCheckResponse = {
-    success: dbHealth && didBCHealth,
+    success: dbHealth && didBCHealth && vcBCHealth,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     services: {
@@ -279,8 +286,11 @@ app.get("/api/v1/health", async (req: Request, res: Response) => {
     },
   };
 
-  const statusCode = response.success ? 200 : 503;
-  res.status(statusCode).json(response);
+  if (response.success) {
+    res.status(200).json(response);
+  } else {
+    res.status(503).json(response);
+  }
 });
 
 /**
@@ -342,6 +352,200 @@ app.get("/api/v1/health/blockchain-sync", async (req: Request, res: Response) =>
   }
 });
 
+/**
+ * @swagger
+ * /admin/performance/schema-compare/{id}/{version}:
+ *   get:
+ *     summary: Compare PostgreSQL vs RocksDB Performance
+ *     description: Benchmark endpoint to compare schema retrieval speed between PostgreSQL and RocksDB cache
+ *     tags:
+ *       - Performance
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Schema ID
+ *       - in: path
+ *         name: version
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Schema version
+ *     responses:
+ *       200:
+ *         description: Performance comparison results
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 schemaId:
+ *                   type: string
+ *                   example: "abc-123"
+ *                 version:
+ *                   type: integer
+ *                   example: 1
+ *                 postgres:
+ *                   type: object
+ *                   properties:
+ *                     duration_ms:
+ *                       type: number
+ *                       example: 45.23
+ *                     found:
+ *                       type: boolean
+ *                       example: true
+ *                 rocksdb:
+ *                   type: object
+ *                   properties:
+ *                     duration_ms:
+ *                       type: number
+ *                       example: 0.15
+ *                     found:
+ *                       type: boolean
+ *                       example: true
+ *                     cache_available:
+ *                       type: boolean
+ *                       example: true
+ *                 comparison:
+ *                   type: object
+ *                   properties:
+ *                     speedup_factor:
+ *                       type: number
+ *                       description: How many times faster RocksDB is than PostgreSQL
+ *                       example: 301.53
+ *                     time_saved_ms:
+ *                       type: number
+ *                       example: 45.08
+ *                     faster_storage:
+ *                       type: string
+ *                       example: "rocksdb"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *       404:
+ *         description: Schema not found
+ *       500:
+ *         description: Server error
+ */
+app.get(
+  "/api/v1/admin/performance/schema-compare/:id/:version",
+  async (req: Request, res: Response) => {
+    try {
+      const { id, version } = req.params;
+      const versionNum = parseInt(version);
+
+      if (isNaN(versionNum)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid version parameter",
+        });
+      }
+
+      // Measure PostgreSQL query
+      const pgStart = performance.now();
+      let pgResult = null;
+      let pgError = null;
+      try {
+        pgResult = await prisma.vCSchema.findUnique({
+          where: {
+            id_version: {
+              id,
+              version: versionNum,
+            },
+          },
+        });
+      } catch (error) {
+        pgError = error;
+      }
+      const pgEnd = performance.now();
+      const pgDuration = pgEnd - pgStart;
+
+      // Measure RocksDB query
+      const rocksStart = performance.now();
+      let rocksResult = null;
+      let rocksError = null;
+      const cacheAvailable = isCacheInitialized();
+      try {
+        if (cacheAvailable) {
+          rocksResult = await getSchema(id, versionNum);
+        }
+      } catch (error) {
+        rocksError = error;
+      }
+      const rocksEnd = performance.now();
+      const rocksDuration = rocksEnd - rocksStart;
+
+      // Calculate comparison metrics
+      const speedupFactor = pgDuration > 0 ? pgDuration / rocksDuration : 0;
+      const timeSaved = pgDuration - rocksDuration;
+      const fasterStorage =
+        rocksDuration < pgDuration
+          ? "rocksdb"
+          : pgDuration < rocksDuration
+          ? "postgresql"
+          : "equal";
+
+      // Check if schema exists
+      if (!pgResult && !rocksResult) {
+        return res.status(404).json({
+          success: false,
+          message: `Schema ${id} version ${versionNum} not found`,
+          postgres: {
+            duration_ms: parseFloat(pgDuration.toFixed(4)),
+            found: false,
+            error: pgError ? String(pgError) : null,
+          },
+          rocksdb: {
+            duration_ms: parseFloat(rocksDuration.toFixed(4)),
+            found: false,
+            cache_available: cacheAvailable,
+            error: rocksError ? String(rocksError) : null,
+          },
+        });
+      }
+
+      // Return comparison results
+      res.json({
+        success: true,
+        schemaId: id,
+        version: versionNum,
+        postgres: {
+          duration_ms: parseFloat(pgDuration.toFixed(4)),
+          found: !!pgResult,
+          error: pgError ? String(pgError) : null,
+        },
+        rocksdb: {
+          duration_ms: parseFloat(rocksDuration.toFixed(4)),
+          found: !!rocksResult,
+          cache_available: cacheAvailable,
+          error: rocksError ? String(rocksError) : null,
+        },
+        comparison: {
+          speedup_factor: parseFloat(speedupFactor.toFixed(2)),
+          time_saved_ms: parseFloat(timeSaved.toFixed(4)),
+          faster_storage: fasterStorage,
+          latency_reduction_percent: parseFloat(
+            ((timeSaved / pgDuration) * 100).toFixed(2)
+          ),
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error("Performance comparison error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to compare performance",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+);
+
 // API Routes with /api/v1 prefix
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/admin/auth", adminAuthRoutes);
@@ -382,6 +586,16 @@ const startServer = async () => {
       logger.warn("VC Blockchain connection failed, but server will continue");
     }
 
+    // Initialize Schema Cache (RocksDB)
+    logger.info("💾 Initializing schema cache (RocksDB)...");
+    try {
+      await initializeCache();
+      logger.success("   ✓ Schema cache initialized");
+    } catch (error) {
+      logger.error("   ✗ Failed to initialize schema cache:", error);
+      logger.warn("   Server will continue without cache");
+    }
+
     // Initialize Background Jobs
     logger.info("⏰ Initializing background jobs...");
     scheduleVCCleanup();
@@ -414,6 +628,7 @@ const startServer = async () => {
 process.on("SIGINT", async () => {
   logger.info("Shutting down gracefully...");
   await blockchainEventPublisher.stop();
+  await closeCache();
   await DatabaseService.disconnect();
   process.exit(0);
 });
@@ -421,6 +636,7 @@ process.on("SIGINT", async () => {
 process.on("SIGTERM", async () => {
   logger.info("Shutting down gracefully...");
   await blockchainEventPublisher.stop();
+  await closeCache();
   await DatabaseService.disconnect();
   process.exit(0);
 });
