@@ -96,11 +96,11 @@ class SchemaService {
   // ============================================
 
   /**
-   * Get all VC schemas with optional filters
+   * Get all VC schemas with optional filters (from RDBMS)
    */
   async getAllSchemas(filter: SchemaFilterDTO = {}): Promise<VCSchema[]> {
     try {
-      this.logStart("Get all schemas", JSON.stringify(filter));
+      this.logStart("Get all schemas from RDBMS", JSON.stringify(filter));
 
       const where = this.buildWhereClause(filter);
 
@@ -139,12 +139,32 @@ class SchemaService {
       }
 
       this.logSuccess(
-        "Get all schemas",
+        "Get all schemas from RDBMS",
         `Retrieved ${schemas.length} schema(s)`
       );
       return schemas;
     } catch (error: any) {
-      this.logError("Get all schemas", error);
+      this.logError("Get all schemas from RDBMS", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all VC schemas directly from blockchain
+   */
+  async getAllSchemasFromBlockchain(): Promise<any[]> {
+    try {
+      this.logStart("Get all schemas from blockchain", "Direct blockchain query");
+
+      const schemas = await this.vcBlockchainService.getAllSchemasFromBlockchain();
+
+      this.logSuccess(
+        "Get all schemas from blockchain",
+        `Retrieved ${schemas.length} schema(s)`
+      );
+      return schemas;
+    } catch (error: any) {
+      this.logError("Get all schemas from blockchain", error);
       throw error;
     }
   }
@@ -341,26 +361,22 @@ class SchemaService {
 
   /**
    * Create new VC schema (version 1)
+   * Only writes to blockchain - database will be updated via event listener
    */
   async create(
     data: CreateVCSchemaDTO,
     imageBuffer?: Buffer,
     imageMimeType?: string
-  ): Promise<VCSchemaOperationResponseDTO> {
+  ): Promise<any> {
     this.logStart("Create schema", data.name);
 
-    let createdSchema: VCSchema | null = null;
     let uploadedImageUrl: string | null = null;
     let uploadedImageFileName: string | null = null;
+    let schemaId: string | null = null;
 
     try {
-      // Get DID document from blockchain
-      const didDocument = await DIDBlockchainService.getDIDDocument(
-        data.issuer_did
-      );
-
-      // Extract name from DID document
-      const issuerName = didDocument.details?.name || null;
+      // Generate schema ID
+      schemaId = uuidv4();
 
       // Upload image to MinIO if provided
       if (imageBuffer) {
@@ -388,59 +404,39 @@ class SchemaService {
         }
       }
 
-      // 1. Create in database
-      createdSchema = await prisma.vCSchema.create({
-        data: {
-          name: data.name,
-          schema: data.schema as Prisma.InputJsonValue,
-          issuer_did: data.issuer_did,
-          issuer_name: issuerName,
-          image_link: uploadedImageUrl,
-          expired_in: data.expired_in ?? null, // Use provided value or null if not provided
-          version: SCHEMA_CONSTANTS.INITIAL_VERSION,
-          isActive: true,
-        },
-      });
-
-      this.logSuccess("Create schema in DB", `${createdSchema.id} v1`);
-
-      // 2. Create in blockchain
+      // Create in blockchain only - event listener will update database
       logger.info("Data :", data);
       logger.info("Schema :", data.schema);
       const schemaString = this.toBlockchainFormat(data.schema);
       logger.info("Schema String:", schemaString);
       const receipt = await this.vcBlockchainService.createVCSchemaInBlockchain(
-        createdSchema.id,
+        schemaId,
         data.name,
         schemaString,
-        data.issuer_did
+        data.issuer_did,
+        uploadedImageUrl || ""
       );
 
       this.logSuccess("Create schema in blockchain", `TX: ${receipt.hash}`);
 
       return {
-        message: SCHEMA_CONSTANTS.MESSAGES.CREATED,
-        schema: createdSchema,
+        message: `${SCHEMA_CONSTANTS.MESSAGES.CREATED} (Database will be synced via event listener)`,
+        schema: {
+          id: schemaId,
+          version: SCHEMA_CONSTANTS.INITIAL_VERSION,
+          name: data.name,
+          schema: data.schema as any,
+          issuer_did: data.issuer_did,
+          issuer_name: null,
+          image_link: uploadedImageUrl,
+          expired_in: data.expired_in ?? null,
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
         transaction_hash: receipt.hash,
       };
     } catch (error: any) {
-      // Rollback database if blockchain fails
-      if (createdSchema) {
-        logger.warn(
-          `[SchemaService] Rolling back database for schema: ${createdSchema.id} v${createdSchema.version}`
-        );
-        await prisma.vCSchema
-          .delete({
-            where: {
-              id_version: {
-                id: createdSchema.id,
-                version: createdSchema.version,
-              },
-            },
-          })
-          .catch(() => {});
-      }
-
       // Rollback uploaded image if exists
       if (uploadedImageFileName) {
         logger.warn(
@@ -461,40 +457,35 @@ class SchemaService {
 
   /**
    * Update schema (creates new version)
+   * Only writes to blockchain - database will be updated via event listener
    */
   async update(
     id: string,
     data: UpdateVCSchemaDTO,
     imageBuffer?: Buffer,
     imageMimeType?: string
-  ): Promise<VCSchemaOperationResponseDTO> {
+  ): Promise<any> {
     this.logStart("Update schema", id);
 
-    let newVersionSchema: VCSchema | null = null;
     let uploadedImageUrl: string | null = null;
     let uploadedImageFileName: string | null = null;
 
     try {
-      // 1. Get existing schema
+      // 1. Get existing schema to know current version
       const existingSchema = await this.getLastSchemaById(id);
 
       // Image management logic
-      // Case 1: Keep existing background (image_link provided, no new file)
-      // Case 2: Change background (new file provided, no image_link)
-      // Case 3: Remove background (neither image_link nor file provided)
-      // NOTE: Old images are NOT deleted because they belong to previous versions
-
       let finalImageLink: string | null = null;
 
       if (data.image_link) {
-        // Case 1: Keep existing background
+        // Keep existing background
         finalImageLink = data.image_link;
         this.logSuccess(
           "Keep existing schema background",
           "Using provided image_link"
         );
       } else if (imageBuffer) {
-        // Case 2: Change background - upload new image (old image kept for previous version)
+        // Upload new background image
         try {
           uploadedImageFileName = `${uuidv4()}`;
           const uploadResult = await StorageService.uploadFile(
@@ -519,77 +510,45 @@ class SchemaService {
           );
         }
       } else {
-        // Case 3: Remove background (old image kept for previous version)
+        // Remove background
         finalImageLink = null;
         this.logSuccess(
           "Remove schema background",
-          "Setting image_link to null for new version"
+          "No image for new version"
         );
       }
 
-      // Determine expired_in for new version:
-      // - If provided in data: use new value (even if 0 or null)
-      // - If not provided: keep existing value
-      const finalExpiredIn =
-        data.expired_in !== undefined
-          ? data.expired_in
-          : existingSchema.expired_in;
-
-      // 2. Create new version in database
-      const newVersion = existingSchema.version + 1;
-      newVersionSchema = await prisma.vCSchema.create({
-        data: {
-          id: existingSchema.id,
-          name: existingSchema.name,
-          schema: data.schema as Prisma.InputJsonValue,
-          issuer_did: existingSchema.issuer_did,
-          issuer_name: existingSchema.issuer_name,
-          image_link: finalImageLink,
-          expired_in: finalExpiredIn, // Use new value if provided, otherwise keep old value
-          version: newVersion,
-          isActive: true,
-        },
-      });
-
-      this.logSuccess(
-        "Update schema in DB",
-        `${newVersionSchema.id} v${newVersion}`
-      );
-
-      // 3. Update in blockchain
+      // Update in blockchain only - event listener will update database
       logger.info("Schema: ", data.schema);
       const schemaString = this.toBlockchainFormat(data.schema);
       logger.info("Schema String: ", schemaString);
       const receipt = await this.vcBlockchainService.updateVCSchemaInBlockchain(
         existingSchema.id,
-        schemaString
+        schemaString,
+        finalImageLink || ""
       );
 
       this.logSuccess("Update schema in blockchain", `TX: ${receipt.hash}`);
 
+      const newVersion = existingSchema.version + 1;
       return {
-        message: SCHEMA_CONSTANTS.MESSAGES.UPDATED,
-        schema: newVersionSchema,
+        message: `${SCHEMA_CONSTANTS.MESSAGES.UPDATED} (Database will be synced via event listener)`,
+        schema: {
+          id: existingSchema.id,
+          name: existingSchema.name,
+          schema: data.schema as any,
+          issuer_did: existingSchema.issuer_did,
+          issuer_name: existingSchema.issuer_name,
+          image_link: finalImageLink,
+          expired_in: data.expired_in !== undefined ? data.expired_in : existingSchema.expired_in,
+          version: newVersion,
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
         transaction_hash: receipt.hash,
       };
     } catch (error: any) {
-      // Rollback database if blockchain fails
-      if (newVersionSchema) {
-        logger.warn(
-          `[SchemaService] Rolling back database for schema: ${newVersionSchema.id} v${newVersionSchema.version}`
-        );
-        await prisma.vCSchema
-          .delete({
-            where: {
-              id_version: {
-                id: newVersionSchema.id,
-                version: newVersionSchema.version,
-              },
-            },
-          })
-          .catch(() => {});
-      }
-
       // Rollback uploaded image if exists
       if (uploadedImageFileName) {
         logger.warn(
@@ -610,6 +569,7 @@ class SchemaService {
 
   /**
    * Deactivate schema
+   * Only writes to blockchain - database will be updated via event listener
    * @param id - Schema ID
    * @param version - Optional version number. If not provided, deactivates the latest version
    */
@@ -623,27 +583,14 @@ class SchemaService {
     );
 
     try {
-      // 1. Get schema
+      // Get schema to verify it exists and is active
       const schema = await this.getSchemaById(id, version);
 
       if (!schema.isActive) {
         throw new BadRequestError(SCHEMA_CONSTANTS.MESSAGES.ALREADY_INACTIVE);
       }
 
-      // 2. Deactivate in database
-      const deactivatedSchema = await prisma.vCSchema.update({
-        where: {
-          id_version: {
-            id: schema.id,
-            version: schema.version,
-          },
-        },
-        data: { isActive: false },
-      });
-
-      this.logSuccess("Deactivate schema in DB", id);
-
-      // 3. Deactivate in blockchain
+      // Deactivate in blockchain only - event listener will update database
       const receipt =
         await this.vcBlockchainService.deactivateVCSchemaInBlockchain(
           schema.id,
@@ -653,35 +600,15 @@ class SchemaService {
       this.logSuccess("Deactivate schema in blockchain", `TX: ${receipt.hash}`);
 
       return {
-        message: SCHEMA_CONSTANTS.MESSAGES.DEACTIVATED,
-        schema: deactivatedSchema,
+        message: `${SCHEMA_CONSTANTS.MESSAGES.DEACTIVATED} (Database will be synced via event listener)`,
+        schema: {
+          ...schema,
+          isActive: false,
+          updatedAt: new Date(),
+        },
         transaction_hash: receipt.hash,
       };
     } catch (error: any) {
-      // Rollback database if blockchain fails
-      if (
-        error instanceof BadRequestError &&
-        error.message.includes("Blockchain")
-      ) {
-        const schema = await this.getSchemaById(id, version).catch(() => null);
-        if (schema) {
-          logger.warn(
-            `[SchemaService] Rolling back deactivation for schema: ${id} v${schema.version}`
-          );
-          await prisma.vCSchema
-            .update({
-              where: {
-                id_version: {
-                  id: schema.id,
-                  version: schema.version,
-                },
-              },
-              data: { isActive: true },
-            })
-            .catch(() => {});
-        }
-      }
-
       this.logError("Deactivate schema", error);
 
       if (error instanceof BadRequestError) {
@@ -696,6 +623,7 @@ class SchemaService {
 
   /**
    * Reactivate schema
+   * Only writes to blockchain - database will be updated via event listener
    * @param id - Schema ID
    * @param version - Optional version number. If not provided, reactivates the latest version
    */
@@ -709,27 +637,14 @@ class SchemaService {
     );
 
     try {
-      // 1. Get schema
+      // Get schema to verify it exists and is inactive
       const schema = await this.getSchemaById(id, version);
 
       if (schema.isActive) {
         throw new BadRequestError(SCHEMA_CONSTANTS.MESSAGES.ALREADY_ACTIVE);
       }
 
-      // 2. Reactivate in database
-      const reactivatedSchema = await prisma.vCSchema.update({
-        where: {
-          id_version: {
-            id: schema.id,
-            version: schema.version,
-          },
-        },
-        data: { isActive: true },
-      });
-
-      this.logSuccess("Reactivate schema in DB", id);
-
-      // 3. Reactivate in blockchain
+      // Reactivate in blockchain only - event listener will update database
       const receipt =
         await this.vcBlockchainService.reactivateVCSchemaInBlockchain(
           schema.id,
@@ -739,35 +654,15 @@ class SchemaService {
       this.logSuccess("Reactivate schema in blockchain", `TX: ${receipt.hash}`);
 
       return {
-        message: SCHEMA_CONSTANTS.MESSAGES.REACTIVATED,
-        schema: reactivatedSchema,
+        message: `${SCHEMA_CONSTANTS.MESSAGES.REACTIVATED} (Database will be synced via event listener)`,
+        schema: {
+          ...schema,
+          isActive: true,
+          updatedAt: new Date(),
+        },
         transaction_hash: receipt.hash,
       };
     } catch (error: any) {
-      // Rollback database if blockchain fails
-      if (
-        error instanceof BadRequestError &&
-        error.message.includes("Blockchain")
-      ) {
-        const schema = await this.getSchemaById(id, version).catch(() => null);
-        if (schema) {
-          logger.warn(
-            `[SchemaService] Rolling back reactivation for schema: ${id} v${schema.version}`
-          );
-          await prisma.vCSchema
-            .update({
-              where: {
-                id_version: {
-                  id: schema.id,
-                  version: schema.version,
-                },
-              },
-              data: { isActive: false },
-            })
-            .catch(() => {});
-        }
-      }
-
       this.logError("Reactivate schema", error);
 
       if (error instanceof BadRequestError) {

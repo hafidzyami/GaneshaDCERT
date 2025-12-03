@@ -26,7 +26,7 @@ import {
 // ============================================
 
 /**
- * Get all VC schemas with optional filters
+ * Get all VC schemas with optional filters (from RDBMS)
  * @route GET /api/schemas
  */
 export const getAllVCSchemas = asyncHandler(
@@ -47,6 +47,23 @@ export const getAllVCSchemas = asyncHandler(
     const schemas = await SchemaService.getAllSchemas(filter);
 
     return ResponseHelper.success(res, {
+      source: "rdbms",
+      count: schemas.length,
+      data: schemas,
+    });
+  }
+);
+
+/**
+ * Get all VC schemas directly from blockchain
+ * @route GET /api/schemas/blockchain
+ */
+export const getAllVCSchemasFromBlockchain = asyncHandler(
+  async (req: Request, res: Response) => {
+    const schemas = await SchemaService.getAllSchemasFromBlockchain();
+
+    return ResponseHelper.success(res, {
+      source: "blockchain",
       count: schemas.length,
       data: schemas,
     });

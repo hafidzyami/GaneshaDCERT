@@ -32,6 +32,9 @@ import {
 // Schedulers
 import { scheduleVCCleanup } from "./jobs/vcCleanupScheduler";
 
+// Blockchain Event Publisher
+import blockchainEventPublisher from "./services/blockchainEventPublisher.service";
+
 const app: Application = express();
 const PORT: number = env.PORT;
 
@@ -280,6 +283,65 @@ app.get("/api/v1/health", async (req: Request, res: Response) => {
   res.status(statusCode).json(response);
 });
 
+/**
+ * @swagger
+ * /health/blockchain-sync:
+ *   get:
+ *     summary: Blockchain Sync Status
+ *     description: Check blockchain event synchronization status
+ *     tags:
+ *       - System
+ *     responses:
+ *       200:
+ *         description: Blockchain sync status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 currentBlockchainBlock:
+ *                   type: number
+ *                   example: 12345
+ *                 checkpoints:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       eventType:
+ *                         type: string
+ *                         example: SchemaCreated
+ *                       lastSyncedBlock:
+ *                         type: string
+ *                         example: "12340"
+ *                       blockGap:
+ *                         type: number
+ *                         example: 5
+ *                       isSynced:
+ *                         type: boolean
+ *                         example: true
+ *                       lastSyncedAt:
+ *                         type: string
+ *                         format: date-time
+ */
+app.get("/api/v1/health/blockchain-sync", async (req: Request, res: Response) => {
+  try {
+    const status = await blockchainEventPublisher.getSyncStatus();
+    res.json({
+      success: true,
+      ...status,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to get blockchain sync status",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
 // API Routes with /api/v1 prefix
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/admin/auth", adminAuthRoutes);
@@ -325,6 +387,16 @@ const startServer = async () => {
     scheduleVCCleanup();
     logger.success("   ✓ VC cleanup scheduler started (runs every 5 minutes)");
 
+    // Start Blockchain Event Listener
+    logger.info("🔗 Starting blockchain event listener...");
+    try {
+      await blockchainEventPublisher.start();
+      logger.success("   ✓ Blockchain event listener started");
+    } catch (error) {
+      logger.error("   ✗ Failed to start blockchain event listener:", error);
+      logger.warn("   Server will continue without event listener");
+    }
+
     // Start Express Server
     app.listen(PORT, () => {
       logger.success("GaneshaDCERT API Server is running!");
@@ -341,12 +413,14 @@ const startServer = async () => {
 // Graceful Shutdown
 process.on("SIGINT", async () => {
   logger.info("Shutting down gracefully...");
+  await blockchainEventPublisher.stop();
   await DatabaseService.disconnect();
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
   logger.info("Shutting down gracefully...");
+  await blockchainEventPublisher.stop();
   await DatabaseService.disconnect();
   process.exit(0);
 });

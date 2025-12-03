@@ -148,6 +148,63 @@ router.get("/", getAllVCSchemasValidator, vcSchema.getAllVCSchemas);
 
 /**
  * @swagger
+ * /schemas/blockchain:
+ *   get:
+ *     summary: Get all VC schemas from blockchain
+ *     description: |
+ *       Retrieve all VC schemas directly from blockchain (Direct blockchain query - slower but always up-to-date).
+ *
+ *       **Note:** This endpoint queries blockchain directly, so it may be slower than the RDBMS endpoint but guarantees the latest data.
+ *     tags:
+ *       - VC Schema Management
+ *     responses:
+ *       200:
+ *         description: List of all VC schemas from blockchain
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 source:
+ *                   type: string
+ *                   example: blockchain
+ *                 count:
+ *                   type: integer
+ *                   description: Number of schemas returned
+ *                   example: 5
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         example: "550e8400-e29b-41d4-a716-446655440000"
+ *                       name:
+ *                         type: string
+ *                         example: "Diploma Certificate"
+ *                       schema:
+ *                         type: string
+ *                         example: "{\"type\":\"object\",\"properties\":{}}"
+ *                       issuerDID:
+ *                         type: string
+ *                         example: "did:dcert:iABCD1234567890"
+ *                       version:
+ *                         type: integer
+ *                         example: 1
+ *                       isActive:
+ *                         type: boolean
+ *                         example: true
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/blockchain", vcSchema.getAllVCSchemasFromBlockchain);
+
+/**
+ * @swagger
  * /schemas/latest:
  *   get:
  *     summary: Get latest schema version

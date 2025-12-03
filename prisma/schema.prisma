@@ -306,3 +306,33 @@ model IssuerVCData {
   @@index([holder_did])
   @@index([vc_id])
 }
+
+// Blockchain Event Checkpoint
+model EventCheckpoint {
+  id              String   @id @default(uuid())
+  contractAddress String
+  eventType       String   // "SchemaCreated", "SchemaUpdated", "VCIssued", etc.
+  lastSyncedBlock BigInt
+  lastSyncedAt    DateTime
+  updatedAt       DateTime @updatedAt
+
+  @@unique([contractAddress, eventType])
+  @@index([contractAddress])
+  @@index([eventType])
+}
+
+// Processed Events (untuk idempotency)
+model ProcessedEvent {
+  id              String   @id @default(uuid())
+  transactionHash String
+  logIndex        Int
+  blockNumber     BigInt
+  eventType       String   // "SchemaCreated", "SchemaUpdated", etc.
+  eventData       Json     // Store full event data for debugging
+  processedAt     DateTime @default(now())
+
+  @@unique([transactionHash, logIndex])
+  @@index([blockNumber])
+  @@index([eventType])
+  @@index([transactionHash])
+}
