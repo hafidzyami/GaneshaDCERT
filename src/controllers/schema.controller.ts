@@ -55,17 +55,83 @@ export const getAllVCSchemas = asyncHandler(
 );
 
 /**
- * Get all VC schemas directly from blockchain
- * @route GET /api/schemas/blockchain
+ * Get all VC schemas directly from blockchain with pagination
+ * @route GET /api/schemas/blockchain?page=1&limit=100&latestOnly=true
+ * @query page - Page number (default: 1)
+ * @query limit - Items per page (default: 100, max: 1000)
+ * @query latestOnly - Return only latest versions (default: true)
  */
 export const getAllVCSchemasFromBlockchain = asyncHandler(
   async (req: Request, res: Response) => {
-    const schemas = await SchemaService.getAllSchemasFromBlockchain();
+    // Extract and validate query parameters
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
+    const latestOnly = req.query.latestOnly !== 'false'; // default true
+
+    const result = await SchemaService.getAllSchemasFromBlockchain(
+      page,
+      limit,
+      latestOnly
+    );
 
     return ResponseHelper.success(res, {
       source: "blockchain",
-      count: schemas.length,
-      data: schemas,
+      data: result.schemas,
+      pagination: result.pagination,
+    });
+  }
+);
+
+/**
+ * Get total count of schemas from blockchain
+ * @route GET /api/schemas/blockchain/count
+ */
+export const getSchemasCountFromBlockchain = asyncHandler(
+  async (req: Request, res: Response) => {
+    const count = await SchemaService.getSchemasCountFromBlockchain();
+
+    return ResponseHelper.success(res, {
+      source: "blockchain",
+      count: count,
+    });
+  }
+);
+
+/**
+ * Get specific schema version from blockchain
+ * @route GET /api/schemas/blockchain/:id/version/:version
+ */
+export const getSchemaFromBlockchain = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id, version } = req.params;
+    const versionNumber = parseInt(version);
+
+    if (isNaN(versionNumber)) {
+      throw new ValidationError("Version must be a valid number");
+    }
+
+    const schema = await SchemaService.getSchemaFromBlockchain(id, versionNumber);
+
+    return ResponseHelper.success(res, {
+      source: "blockchain",
+      data: schema,
+    });
+  }
+);
+
+/**
+ * Get latest schema version from blockchain
+ * @route GET /api/schemas/blockchain/:id/latest
+ */
+export const getLatestSchemaFromBlockchain = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const schema = await SchemaService.getLatestSchemaFromBlockchain(id);
+
+    return ResponseHelper.success(res, {
+      source: "blockchain",
+      data: schema,
     });
   }
 );

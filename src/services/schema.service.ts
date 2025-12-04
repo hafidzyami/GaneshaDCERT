@@ -150,21 +150,98 @@ class SchemaService {
   }
 
   /**
-   * Get all VC schemas directly from blockchain
+   * Get all VC schemas directly from blockchain with pagination
+   * @param page - Page number (default: 1)
+   * @param limit - Items per page (default: 100, max: 1000)
+   * @param latestOnly - Return only latest versions (default: true)
    */
-  async getAllSchemasFromBlockchain(): Promise<any[]> {
+  async getAllSchemasFromBlockchain(
+    page: number = 1,
+    limit: number = 100,
+    latestOnly: boolean = true
+  ): Promise<any> {
     try {
-      this.logStart("Get all schemas from blockchain", "Direct blockchain query");
+      this.logStart(
+        "Get all schemas from blockchain",
+        `Page ${page}, limit ${limit}, latestOnly: ${latestOnly}`
+      );
 
-      const schemas = await this.vcBlockchainService.getAllSchemasFromBlockchain();
+      const result = await this.vcBlockchainService.getAllSchemasFromBlockchain(
+        page,
+        limit,
+        latestOnly
+      );
 
       this.logSuccess(
         "Get all schemas from blockchain",
-        `Retrieved ${schemas.length} schema(s)`
+        `Retrieved ${result.pagination.returned} of ${result.pagination.total} schema(s)`
       );
-      return schemas;
+
+      return result;
     } catch (error: any) {
       this.logError("Get all schemas from blockchain", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get total count of schemas from blockchain
+   */
+  async getSchemasCountFromBlockchain(): Promise<number> {
+    try {
+      this.logStart("Get schemas count from blockchain", "");
+
+      const count = await this.vcBlockchainService.getSchemasCountFromBlockchain();
+
+      this.logSuccess("Get schemas count from blockchain", `Count: ${count}`);
+      return count;
+    } catch (error: any) {
+      this.logError("Get schemas count from blockchain", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get specific schema version from blockchain
+   * @param schemaId - Schema ID
+   * @param version - Schema version
+   */
+  async getSchemaFromBlockchain(schemaId: string, version: number): Promise<any> {
+    try {
+      this.logStart("Get schema from blockchain", `${schemaId} v${version}`);
+
+      const schema = await this.vcBlockchainService.getSchemaFromBlockchain(
+        schemaId,
+        version
+      );
+
+      this.logSuccess("Get schema from blockchain", `Retrieved ${schemaId} v${version}`);
+      return schema;
+    } catch (error: any) {
+      this.logError("Get schema from blockchain", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get latest schema version from blockchain
+   * @param schemaId - Schema ID
+   */
+  async getLatestSchemaFromBlockchain(schemaId: string): Promise<any> {
+    try {
+      this.logStart("Get latest schema from blockchain", schemaId);
+
+      const schema = await this.vcBlockchainService.getLatestSchemaFromBlockchain(
+        schemaId
+      );
+
+      this.logSuccess(
+        "Get latest schema from blockchain",
+        `Retrieved ${schemaId} v${schema.version}`
+      );
+      return schema;
+    } catch (error: any) {
+      this.logError("Get latest schema from blockchain", error);
       throw error;
     }
   }

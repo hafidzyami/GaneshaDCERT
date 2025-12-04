@@ -195,14 +195,70 @@ class VCBlockchainService {
   }
 
   /**
-   * Get All VC Schemas from Blockchain (all versions)
+   * Get All VC Schemas from Blockchain with pagination (latest versions only by default)
+   * @param page - Page number (starts from 1)
+   * @param limit - Number of items per page (default: 100, max: 1000)
+   * @param latestOnly - Return only latest versions (default: true)
+   * @returns Object containing schemas array and pagination metadata
    */
-  async getAllSchemasFromBlockchain(): Promise<any[]> {
+  async getAllSchemasFromBlockchain(
+    page: number = 1,
+    limit: number = 100,
+    latestOnly: boolean = true
+  ): Promise<{
+    schemas: any[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      returned: number;
+      totalPages: number;
+      hasNextPage: boolean;
+      hasPrevPage: boolean;
+    };
+  }> {
     try {
-      const schemas = await this.contract.getAllSchemas();
+      // Validate parameters
+      const validatedPage = Math.max(1, page);
+      const validatedLimit = Math.min(Math.max(1, limit), 1000);
+      const offset = (validatedPage - 1) * validatedLimit;
+
+      // First check if there are any schemas to avoid "Offset exceeds total" error
+      const totalCount = latestOnly
+        ? await this.contract.vcSchemas.length
+        : await this.contract.getSchemasCount();
+      const totalNum = Number(totalCount);
+
+      // If no schemas exist, return empty result
+      if (totalNum === 0) {
+        console.log(`✅ No VC Schemas found in blockchain`);
+        return {
+          schemas: [],
+          pagination: {
+            page: validatedPage,
+            limit: validatedLimit,
+            total: 0,
+            returned: 0,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPrevPage: false,
+          },
+        };
+      }
+
+      // Call appropriate smart contract function
+      let result;
+      if (latestOnly) {
+        result = await this.contract.getLatestSchemasPaginated(offset, validatedLimit);
+      } else {
+        result = await this.contract.getAllSchemasPaginated(offset, validatedLimit);
+      }
+
+      // Destructure result from smart contract
+      const [schemasData, total, returned] = result;
 
       // Convert BigInt to string/number for JSON serialization
-      const serializedSchemas = schemas.map((schema: any) => ({
+      const serializedSchemas = schemasData.map((schema: any) => ({
         id: String(schema.id),
         name: String(schema.name),
         schema: String(schema.schema),
@@ -212,11 +268,111 @@ class VCBlockchainService {
         isActive: Boolean(schema.isActive),
       }));
 
-      console.log(`✅ Retrieved ${serializedSchemas.length} VC Schema versions from blockchain`);
-      return serializedSchemas;
+      const returnedNum = Number(returned);
+
+      console.log(
+        `✅ Retrieved ${returnedNum} of ${totalNum} VC Schema${latestOnly ? ' (latest only)' : ' version'}s from blockchain (page ${validatedPage})`
+      );
+
+      return {
+        schemas: serializedSchemas,
+        pagination: {
+          page: validatedPage,
+          limit: validatedLimit,
+          total: totalNum,
+          returned: returnedNum,
+          totalPages: Math.ceil(totalNum / validatedLimit),
+          hasNextPage: offset + returnedNum < totalNum,
+          hasPrevPage: validatedPage > 1,
+        },
+      };
     } catch (error: any) {
-      console.error("❌ Failed to get VC Schemas:", error);
-      throw new BlockchainError(`Failed to get VC Schemas: ${error.message}`);
+      console.error("❌ Failed to get VC Schemas from blockchain:", error);
+      throw new BlockchainError(
+        `Failed to get VC Schemas: ${error.message}`
+      );
+    }
+  }
+
+  /**
+   * Get total count of schemas from blockchain
+   * @returns Total number of schema versions
+   */
+  async getSchemasCountFromBlockchain(): Promise<number> {
+    try {
+      const count = await this.contract.getSchemasCount();
+      const countNum = Number(count);
+      console.log(`✅ Total schemas count from blockchain: ${countNum}`);
+      return countNum;
+    } catch (error: any) {
+      console.error("❌ Failed to get schemas count:", error);
+      throw new BlockchainError(
+        `Failed to get schemas count: ${error.message}`
+      );
+    }
+  }
+
+  /**
+   * Get specific schema by ID and version from blockchain
+   * @param schemaId - Schema ID
+   * @param version - Schema version
+   * @returns Schema data
+   */
+  async getSchemaFromBlockchain(
+    schemaId: string,
+    version: number
+  ): Promise<any> {
+    try {
+      const schema = await this.contract.getSchema(schemaId, version);
+
+      // Convert BigInt to string/number for JSON serialization
+      const serializedSchema = {
+        id: String(schema.id),
+        name: String(schema.name),
+        schema: String(schema.schema),
+        issuerDID: String(schema.issuerDID),
+        imageLink: String(schema.imageLink),
+        version: Number(schema.version),
+        isActive: Boolean(schema.isActive),
+      };
+
+      console.log(`✅ Retrieved schema ${schemaId} v${version} from blockchain`);
+      return serializedSchema;
+    } catch (error: any) {
+      console.error(`❌ Failed to get schema ${schemaId} v${version}:`, error);
+      throw new BlockchainError(
+        `Failed to get schema: ${error.message}`
+      );
+    }
+  }
+
+  /**
+   * Get latest version of a schema from blockchain
+   * @param schemaId - Schema ID
+   * @returns Latest schema data
+   */
+  async getLatestSchemaFromBlockchain(schemaId: string): Promise<any> {
+    try {
+      const schema = await this.contract.getLatestSchema(schemaId);
+
+      // Convert BigInt to string/number for JSON serialization
+      const serializedSchema = {
+        id: String(schema.id),
+        name: String(schema.name),
+        schema: String(schema.schema),
+        issuerDID: String(schema.issuerDID),
+        imageLink: String(schema.imageLink),
+        version: Number(schema.version),
+        isActive: Boolean(schema.isActive),
+      };
+
+      console.log(`✅ Retrieved latest schema ${schemaId} from blockchain`);
+      return serializedSchema;
+    } catch (error: any) {
+      console.error(`❌ Failed to get latest schema ${schemaId}:`, error);
+      throw new BlockchainError(
+        `Failed to get latest schema: ${error.message}`
+      );
     }
   }
 

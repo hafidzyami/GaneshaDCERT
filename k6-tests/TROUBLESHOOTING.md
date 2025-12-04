@@ -1,122 +1,114 @@
-# K6 Testing Troubleshooting
+# K6 Tests Troubleshooting Guide
 
-## Error: "IP (127.0.0.1) is in a blacklisted range"
+## Current Issue: "Responses are not arrays"
 
-### Problem
-```
-Request Failed error=Get "http://localhost:3069/api/v1/schemas": IP (127.0.0.1) is in a blacklisted range (127.0.0.0/8)
-lz="amazon:us:columbus" service_name=unknown_service test_run_id=6220230
-```
+Based on your error, the endpoints are responding but the data format isn't matching expectations.
 
-Ini terjadi karena K6 berjalan dalam **cloud mode** dan K6 Cloud memblock localhost.
+### Quick Fix
 
-### Solution
-
-#### Step 1: Logout dari K6 Cloud
+Run this diagnostic script to see actual response format:
 
 ```bash
-k6 logout cloud
+k6 run k6-tests/test-endpoint.js
 ```
 
-#### Step 2: Check K6 Status
+This will show you:
+- Actual response status
+- Response body structure
+- Data type and format
 
-```bash
-k6 version
+### Common Cause
+
+Your API might be returning data in a different format. Check if your response looks like:
+
+**Format 1: With wrapper object (Expected)**
+```json
+{
+  "success": true,
+  "count": 5,
+  "data": [...]
+}
 ```
 
-Pastikan tidak ada mention tentang cloud/login.
-
-#### Step 3: Run Test LOCAL
-
-```bash
-cd k6-tests
-k6 run quick-comparison.js
+**Format 2: Direct array**
+```json
+[...]
 ```
 
-**PENTING:** Jangan gunakan command `k6 cloud`!
+**Format 3: Different wrapper**
+```json
+{
+  "schemas": [...]
+}
+```
+
+### Solution Steps
+
+1. **Run diagnostic:**
+   ```bash
+   k6 run k6-tests/test-endpoint.js
+   ```
+
+2. **Check the output** - it will tell you the response structure
+
+3. **If Format 2 (direct array)**, the fix is already in test-helpers.js
+
+4. **If authentication required**, endpoints return 401:
+   - Check if `/api/v1/schemas` and `/api/v1/schemas/blockchain` should be public
+   - Or add authentication to tests
+
+5. **Test manually with curl:**
+   ```bash
+   curl http://localhost:3000/api/v1/schemas
+   curl http://localhost:3000/api/v1/schemas/blockchain
+   ```
 
 ---
 
-## Alternative: Create Local-Only Config
+## Other Common Issues
 
-Jika masih ter-redirect ke cloud, buat file `k6.config.js`:
+### Authentication Required (401)
 
+If you see:
+```json
+{"statusCode": 401, "message": "Unauthorized"}
+```
+
+**Check:** Are these endpoints supposed to be public for testing?
+
+**Quick fix:** Update routes to allow unauthenticated access for GET endpoints
+
+---
+
+### Timeout Errors
+
+If blockchain queries timeout, increase timeout in `test-helpers.js`:
 ```javascript
-export const options = {
-  // Explicitly disable cloud
-  ext: {
-    loadimpact: {
-      projectID: null,
-      name: null,
-    }
-  }
-};
+const bcResponse = http.get(`${baseURL}/api/v1/schemas/blockchain`, {
+  timeout: '180s', // Increase from default
+});
 ```
 
 ---
 
-## Check if K6 is Running in Cloud Mode
+### API Not Running
 
-Indikator K6 cloud mode:
-- ✗ Log shows `lz="amazon:us:..."`
-- ✗ Log shows `test_run_id=xxxxx`
-- ✗ Error: "IP is in blacklisted range"
-- ✗ Test URL: `https://app.k6.io/runs/xxxxx`
-
-Indikator K6 local mode:
-- ✓ No `lz=` in logs
-- ✓ No `test_run_id` in logs
-- ✓ Tests run immediately
-- ✓ No cloud URL
-
----
-
-## Manual Command (Guaranteed Local)
-
+If you get "Connection refused":
 ```bash
-# Explicitly disable cloud
-K6_CLOUD_TOKEN="" k6 run quick-comparison.js
+# Start API
+npm run dev
 
-# Or use specific flags
-k6 run --no-connection-reuse quick-comparison.js
+# Verify it's running
+curl http://localhost:3000/api/v1/schemas
 ```
 
 ---
 
-## Verify Backend is Running
+## Need More Help?
 
-Before running K6 test:
-
+Run the diagnostic script and share the output:
 ```bash
-# Test backend manually
-curl http://localhost:3069/api/v1/schemas
-
-# Should return JSON response
+k6 run k6-tests/test-endpoint.js
 ```
 
----
-
-## Full Reset
-
-If nothing works:
-
-```bash
-# 1. Logout
-k6 logout cloud
-
-# 2. Remove K6 config (if exists)
-rm ~/.config/loadimpact/k6
-
-# 3. Run test
-cd k6-tests
-k6 run quick-comparison.js
-```
-
----
-
-## Contact
-
-If still having issues, check:
-1. K6 version: `k6 version`
-2. Backend running: `curl localhost:3069/api/v1/schemas`
-3. Port correct in config.json: `"baseURL": "http://localhost:3069"`
+This will show exactly what format your API is returning.

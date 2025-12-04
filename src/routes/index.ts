@@ -11,3 +11,4 @@ export { default as schemaRoutes } from './schema.routes';
 export { default as presentationRoutes } from './presentation.routes';
 export { default as notificationRoutes } from './notification.routes';
 export { default as institutionRoutes } from './institution.routes';
+export { default as performanceRoutes } from './performance.routes';
