@@ -47,7 +47,7 @@ class PerformanceService {
 
   /**
    * Get all schemas from blockchain
-   * Uses pagination internally but returns all results for performance testing
+   * Uses pagination with limit 10 per call to avoid memory allocation errors
    */
   async getAllSchemasFromBlockchain(): Promise<any[]> {
     try {
@@ -61,20 +61,36 @@ class PerformanceService {
         return [];
       }
 
-      // Fetch all schemas in one call with large limit
-      const result = await VCBlockchainService.getAllSchemasFromBlockchain(
-        1,
-        Math.min(totalCount, 1000), // Max 1000 per call due to contract limit
-        false // Get all versions
-      );
+      console.log(`📊 [PerformanceService] Total schemas in blockchain: ${totalCount}`);
 
-      // Parse schema JSON strings to objects
-      const parsedSchemas = result.schemas.map(schema => this.parseSchemaJson(schema));
+      // Pagination settings
+      const LIMIT_PER_CALL = 10; // Limit 10 schemas per call to avoid memory errors
+      const totalPages = Math.ceil(totalCount / LIMIT_PER_CALL);
+      const allSchemas: any[] = [];
+
+      console.log(`📄 [PerformanceService] Will fetch ${totalPages} pages with limit ${LIMIT_PER_CALL} per page`);
+
+      // Fetch schemas page by page
+      for (let page = 1; page <= totalPages; page++) {
+        console.log(`🔄 [PerformanceService] Fetching page ${page}/${totalPages}...`);
+
+        const result = await VCBlockchainService.getAllSchemasFromBlockchain(
+          page,
+          LIMIT_PER_CALL,
+          false // Get all versions
+        );
+
+        // Parse schema JSON strings to objects
+        const parsedSchemas = result.schemas.map(schema => this.parseSchemaJson(schema));
+        allSchemas.push(...parsedSchemas);
+
+        console.log(`✓ Page ${page}/${totalPages} retrieved: ${parsedSchemas.length} schemas`);
+      }
 
       console.log(
-        `✅ [PerformanceService] Retrieved ${parsedSchemas.length} schemas from blockchain`
+        `✅ [PerformanceService] Retrieved total ${allSchemas.length} schemas from blockchain in ${totalPages} calls`
       );
-      return parsedSchemas;
+      return allSchemas;
     } catch (error: any) {
       console.error("❌ [PerformanceService] Failed to fetch schemas from blockchain:", error);
       throw error;

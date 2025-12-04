@@ -1,272 +1,286 @@
-# K6 Performance Testing - Schema Query Comparison
+# K6 Performance Tests - Database vs Blockchain
 
-Performance testing untuk membandingkan performa antara query PostgreSQL dan query Blockchain langsung.
+Performance testing suite untuk membandingkan performa query antara PostgreSQL database dan Blockchain menggunakan API performance yang baru.
 
 ## Prerequisites
 
-1. Install K6:
-   ```bash
-   # Windows (via Chocolatey)
-   choco install k6
+1. **Install K6**
 
-   # Windows (via Scoop)
-   scoop install k6
+```bash
+# Windows (using Chocolatey)
+choco install k6
 
-   # MacOS
-   brew install k6
+# macOS (using Homebrew)
+brew install k6
 
-   # Linux
-   sudo gpg -k
-   sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
-   echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-   sudo apt-get update
-   sudo apt-get install k6
-   ```
+# Linux
+sudo gpg -k
+sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+sudo apt-get update
+sudo apt-get install k6
+```
 
-2. Pastikan backend GaneshaDCERT sudah running di port yang dikonfigurasi (default: 3069)
+2. **Start Backend Server**
 
-3. Pastikan ada data schema di database dan blockchain untuk testing
+Pastikan backend server sudah running di `http://localhost:3069`
+
+```bash
+npm run dev
+```
+
+3. **Prepare Test Data**
+
+Pastikan database dan blockchain sudah memiliki data schemas yang bisa di-query.
+
+## Test Scenarios
+
+### GROUP A: Get All Query Scenarios
+
+#### Scenario A1: Baseline Performance (5 minutes)
+
+Mengukur baseline performance dengan 1 virtual user.
+
+```bash
+k6 run scenario-a1-baseline.js
+```
+
+**Configuration:**
+- Virtual Users: 1
+- Duration: 5 minutes
+- Expected Count: 10 schemas (update dengan `--env EXPECTED_COUNT=N`)
+
+**Metrics yang diukur:**
+- Response time (avg, p50, p95, p99)
+- Data consistency between database and blockchain
+- Speedup factor
+
+#### Scenario A2: Concurrent Load Test (7 minutes)
+
+Mengukur performa degradation dengan concurrent users.
+
+```bash
+k6 run scenario-a2-concurrent-load.js
+```
+
+**Load Stages:**
+- Light: 5 VUs (1 minute)
+- Medium: 20 VUs (2 minutes)
+- Heavy: 50 VUs (2 minutes)
+- Peak: 100 VUs (1 minute)
+- Ramp down: 0 VUs (1 minute)
+
+**Metrics yang diukur:**
+- Response time per load level
+- Error rate progression
+- Throughput (requests/second)
+- Saturation point identification
 
 ## Configuration
 
-Edit `config/config.json` untuk mengubah:
-- `baseURL`: URL backend API (default: http://localhost:3069)
-- `testDID`: DID untuk testing dengan filter
-- `scenarios`: Konfigurasi VUs dan duration untuk masing-masing scenario
-- `thresholds`: Target performance yang diharapkan
+### Environment Variables
 
-## Running Tests
-
-### Local Testing (Default)
-
-#### 1. Quick Comparison (Recommended untuk awal)
-Test cepat selama 30 detik dengan 10 Virtual Users:
+Customize test dengan environment variables:
 
 ```bash
-cd k6-tests
+# Set custom base URL
+k6 run --env BASE_URL=http://192.168.1.100:3069 scenario-a1-baseline.js
 
-# Windows
-run-test.bat
+# Set expected schema count
+k6 run --env EXPECTED_COUNT=15 scenario-a1-baseline.js
 
-# Linux/Mac
-k6 run quick-comparison.js
+# Set schema IDs untuk testing (comma-separated)
+k6 run --env SCHEMA_IDS=id1,id2,id3 scenario-a1-baseline.js
 ```
 
-**Output:**
-- Console: Real-time comparison logs
-- `results/quick-comparison.html`: Visual HTML report
-- `results/quick-comparison.json`: Raw JSON data
+### Customize Thresholds
 
-### Cloud Testing (With Visualization)
+Edit file `config.js` untuk mengubah performance thresholds:
 
-Untuk hasil testing yang lebih visual dan bisa di-share:
-
-#### 1. Setup K6 Cloud (One-time)
-
-```bash
-# Sign up for free: https://app.k6.io/account/register
-# Then login:
-k6 login cloud --token YOUR_TOKEN
+```javascript
+export const THRESHOLDS = {
+  database: {
+    'http_req_duration{endpoint:database}': [
+      'p(50)<100',   // Customize ini
+      'p(95)<500',
+      'p(99)<1000',
+    ],
+  },
+  // ...
+};
 ```
 
-#### 2. Run Quick Test with Cloud Output
+## Output
 
-```bash
-cd k6-tests
+### Console Output
 
-# Windows
-run-test-cloud.bat
+Setiap test akan menampilkan summary di console:
 
-# Linux/Mac
-k6 run --out cloud quick-comparison.js
+```
+=== Scenario A1: Baseline Performance Summary ===
+
+Database Performance:
+  - Average: 78.45 ms
+  - Median (p50): 75.20 ms
+  - p95: 120.50 ms
+  - p99: 150.80 ms
+  - Min: 45.10 ms
+  - Max: 180.90 ms
+
+Blockchain Performance:
+  - Average: 3500.23 ms
+  - Median (p50): 3200.45 ms
+  - p95: 5000.67 ms
+  - p99: 6500.89 ms
+  - Min: 2100.12 ms
+  - Max: 7200.34 ms
+
+Speedup Factor: 44.62x (Blockchain is 44.62x slower than Database)
 ```
 
-**Output:**
-- Cloud URL: https://app.k6.io/runs/xxxxx (with graphs!)
-- Local HTML: `results/quick-comparison.html`
-- Local JSON: `results/quick-comparison.json`
+### JSON Output
 
-**Benefits:**
-- ✅ Beautiful real-time graphs
-- ✅ Historical comparison
-- ✅ Share results dengan team
-- ✅ Trend analysis
-- ✅ Free tier: 50 test runs/month
+Hasil test juga disimpan dalam format JSON:
 
-### 2. Full Performance Test
-Test lengkap dengan multiple scenarios (total ~7 menit):
+- `summary.json` - Untuk Scenario A1
+- `summary-concurrent-load.json` - Untuk Scenario A2
 
-```bash
-cd k6-tests
-k6 run schema-performance-test.js
+File ini berisi detail metrics yang bisa dianalisis lebih lanjut.
+
+## API Endpoints yang Ditest
+
+### 1. Get All Schemas from Database
+```
+GET http://localhost:3069/api/v1/performance/schemas/database
 ```
 
-**Scenarios:**
-1. **Light Load (0-2m)**: 5 VUs testing both endpoints
-2. **Medium Load DB (2-4m)**: 20 VUs testing database only
-3. **Medium Load BC (4-6m)**: 10 VUs testing blockchain only
-4. **Spike Test (6-7m)**: Sudden spike to 50 VUs on database
-
-**Output:**
-- Console: Detailed comparison logs
-- `results/summary.html`: Complete HTML report
-- `results/summary.json`: Complete JSON data
-
-### 3. Custom Test Duration
-
-```bash
-# Test dengan 20 VUs selama 5 menit
-k6 run --vus 20 --duration 5m quick-comparison.js
-
-# Test dengan specific scenario
-k6 run --stage 1m:10,2m:20,1m:0 quick-comparison.js
+Response:
+```json
+{
+  "success": true,
+  "source": "database",
+  "responseTime": "25ms",
+  "count": 10,
+  "data": [...]
+}
 ```
 
-## Understanding Results
+### 2. Get All Schemas from Blockchain
+```
+GET http://localhost:3069/api/v1/performance/schemas/blockchain
+```
 
-### Key Metrics
+Response:
+```json
+{
+  "success": true,
+  "source": "blockchain",
+  "responseTime": "150ms",
+  "count": 10,
+  "data": [...]
+}
+```
 
-1. **http_req_duration**: Total request duration
-   - Database endpoint: Target p95 < 500ms
-   - Blockchain endpoint: Target p95 < 15s
+### 3. Get Specific Schema from Database
+```
+GET http://localhost:3069/api/v1/performance/schemas/database/:schemaId/:version
+```
 
-2. **Custom Metrics:**
-   - `database_query_duration`: PostgreSQL query time
-   - `blockchain_query_duration`: Blockchain query time
-   - `database_error_rate`: Error rate for database queries
-   - `blockchain_error_rate`: Error rate for blockchain queries
+### 4. Get Specific Schema from Blockchain
+```
+GET http://localhost:3069/api/v1/performance/schemas/blockchain/:schemaId/:version
+```
 
-3. **Comparison:**
-   - Speedup factor: How many times faster database vs blockchain
-   - Request count: Total requests per endpoint
-   - Throughput: Requests per second
+## Analyzing Results
 
-### Expected Results
+### Key Metrics to Look For
 
 **Database (PostgreSQL):**
-- p50: 100-200ms
-- p95: 300-500ms
-- p99: 500-1000ms
-- Throughput: 50-100 req/s
+- ✅ p95 should be < 500ms
+- ✅ Error rate < 1%
+- ✅ Handles 100+ VUs with acceptable degradation
 
-**Blockchain (Direct Query):**
-- p50: 5-10s
-- p95: 10-15s
-- p99: 15-30s
-- Throughput: 5-10 req/s
+**Blockchain:**
+- ⚠️ p95 will be 5-30 seconds
+- ⚠️ Error rate increases with load (10-30% at high VUs)
+- ⚠️ Saturates at 30-50 VUs
 
 **Speedup Factor:**
-- Expected: 50-100x faster (database vs blockchain)
+- Expected: 10-100x (Blockchain slower than Database)
+- Higher speedup = bigger performance gap
 
-## Viewing Results
+### Interpreting Results
 
-### HTML Reports
+1. **Baseline Performance (A1)**
+   - Establishes single-user performance
+   - Should have 0% error rate
+   - Provides baseline speedup factor
 
-Open hasil report di browser:
-
-```bash
-# Windows
-start results/quick-comparison.html
-start results/summary.html
-
-# MacOS
-open results/quick-comparison.html
-
-# Linux
-xdg-open results/quick-comparison.html
-```
-
-### JSON Analysis
-
-Untuk analisis programmatic:
-
-```bash
-# Pretty print JSON
-cat results/quick-comparison.json | jq .
-
-# Extract specific metrics
-cat results/quick-comparison.json | jq '.metrics."http_req_duration{endpoint:database}"'
-```
+2. **Concurrent Load (A2)**
+   - Shows how systems scale under load
+   - Identifies saturation points
+   - Reveals error rates at different load levels
 
 ## Troubleshooting
 
-### Connection Refused
-```
-ERRO[0000] GoError: Get "http://localhost:3069/api/v1/schemas": dial tcp: connect: connection refused
-```
-**Solution:** Pastikan backend sudah running dan port sesuai di config.json
+### Common Issues
 
-### High Error Rate
+**Issue: Connection refused**
 ```
-✗ http_req_failed: rate>0.05
-```
-**Solution:**
-- Check backend logs untuk errors
-- Reduce VUs jika terlalu banyak load
-- Check database connection pool settings
-
-### Timeout
-```
-WARN[0030] Request timeout
-```
-**Solution:**
-- Increase timeout di options: `http_req_timeout: '60s'`
-- Check blockchain node connection
-- Check network latency
-
-## Advanced Usage
-
-### Environment Variables
-
-```bash
-# Override base URL
-BASE_URL=http://staging.example.com:3000 k6 run quick-comparison.js
-
-# Custom test DID
-TEST_DID=did:dcert:xxx k6 run quick-comparison.js
+Solution: Ensure backend server is running on http://localhost:3069
 ```
 
-### Output to InfluxDB (Optional)
-
-```bash
-# Send results to InfluxDB for Grafana visualization
-k6 run --out influxdb=http://localhost:8086/k6 quick-comparison.js
+**Issue: Unexpected error rate**
+```
+Solution: Check backend logs for errors
+        Verify database and blockchain connections
+        Reduce concurrent VUs if blockchain is saturated
 ```
 
-### Cloud Execution (K6 Cloud)
-
-```bash
-# Login to K6 Cloud
-k6 login cloud
-
-# Run test in cloud
-k6 cloud quick-comparison.js
+**Issue: Schema count mismatch**
+```
+Solution: Update EXPECTED_COUNT environment variable
+        Check actual data in database and blockchain
 ```
 
-## Test Structure
-
+**Issue: High blockchain error rate**
 ```
-k6-tests/
-├── config/
-│   └── config.json           # Test configuration
-├── lib/
-│   └── helpers.js            # Helper functions & custom metrics
-├── scenarios/
-│   └── schema-comparison.js  # Test scenarios
-├── results/                  # Generated reports (gitignored)
-│   ├── quick-comparison.html
-│   ├── quick-comparison.json
-│   ├── summary.html
-│   └── summary.json
-├── quick-comparison.js       # Quick 30s comparison test
-├── schema-performance-test.js # Full performance test
-└── README.md                 # This file
+This is expected under high load (50-100 VUs)
+Blockchain RPC has rate limits
+Document the saturation point
 ```
 
 ## Next Steps
 
-1. Run `quick-comparison.js` untuk baseline
-2. Analyze hasil dan identify bottlenecks
-3. Optimize berdasarkan findings
-4. Run `schema-performance-test.js` untuk comprehensive testing
-5. Compare before/after optimization results
+Setelah menjalankan tests:
+
+1. Analyze JSON output untuk detailed metrics
+2. Create visualizations (charts, graphs)
+3. Document findings untuk research paper
+4. Compare results against expected results di TEST_SCENARIOS.md
+5. Run additional scenarios jika diperlukan
+
+## File Structure
+
+```
+k6-tests/
+├── README.md                        # This file
+├── config.js                        # Centralized configuration
+├── utils.js                         # Helper functions and metrics
+├── scenario-a1-baseline.js          # Baseline performance test
+├── scenario-a2-concurrent-load.js   # Concurrent load test
+├── summary.json                     # Output from A1 (generated)
+└── summary-concurrent-load.json     # Output from A2 (generated)
+```
+
+## References
+
+- K6 Documentation: https://k6.io/docs/
+- TEST_SCENARIOS.md - Detailed test scenarios and expected results
+- API Documentation: http://localhost:3069/api-docs
+
+---
+
+**Version:** 1.0
+**Last Updated:** December 4, 2025
+**Compatible with:** GaneshaDCERT Performance API v2.0
