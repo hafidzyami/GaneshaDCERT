@@ -201,6 +201,7 @@ model VCSchema {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  VCSchemaPrices VCSchemaPrice[]
 
   @@id([id, version])
   @@index([id])
@@ -305,4 +306,16 @@ model IssuerVCData {
   @@index([issuer_did])
   @@index([holder_did])
   @@index([vc_id])
+}
+
+model VCSchemaPrice {
+  schemaId  String
+  price     Decimal
+  currency  String
+  version   Int      @default(1)
+  updatedAt DateTime @default(now())
+  VCSchema  VCSchema @relation(fields: [schemaId, version], references: [id, version])
+
+  @@id([schemaId, version])
+  @@index([schemaId])
 }
