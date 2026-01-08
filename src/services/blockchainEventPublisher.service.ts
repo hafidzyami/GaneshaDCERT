@@ -347,7 +347,7 @@ class BlockchainEventPublisher {
         logIndex: eventLog.index,
         blockNumber: BigInt(eventLog.blockNumber),
         eventType,
-        eventData: eventData as any,
+        contractAddress: eventLog.address,
       },
     });
 
@@ -596,7 +596,7 @@ class BlockchainEventPublisher {
 
     return {
       currentBlockchainBlock: currentBlock,
-      checkpoints: checkpoints.map((cp) => ({
+      checkpoints: checkpoints.map((cp: any) => ({
         eventType: cp.eventType,
         lastSyncedBlock: cp.lastSyncedBlock.toString(),
         blockGap: currentBlock - Number(cp.lastSyncedBlock),

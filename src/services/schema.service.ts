@@ -490,25 +490,7 @@ class SchemaService {
       }
 
       // Create in blockchain only - event listener will update database
-      // 1. Create in database
-      createdSchema = await prisma.vCSchema.create({
-        data: {
-          id: uuidv4(),
-          name: data.name,
-          schema: data.schema as Prisma.InputJsonValue,
-          issuer_did: data.issuer_did,
-          issuer_name: issuerName,
-          image_link: uploadedImageUrl,
-          expired_in: data.expired_in ?? null, // Use provided value or null if not provided
-          version: SCHEMA_CONSTANTS.INITIAL_VERSION,
-          isActive: true,
-          updatedAt: new Date(),
-        },
-      });
-
-      this.logSuccess("Create schema in DB", `${createdSchema.id} v1`);
-
-      // 2. Create in blockchain
+      // Create in blockchain
       logger.info("Data :", data);
       logger.info("Schema :", data.schema);
       const schemaString = this.toBlockchainFormat(data.schema);
@@ -628,29 +610,7 @@ class SchemaService {
           ? data.expired_in
           : existingSchema.expired_in;
 
-      // 2. Create new version in database
-      const newVersion = existingSchema.version + 1;
-      newVersionSchema = await prisma.vCSchema.create({
-        data: {
-          id: existingSchema.id,
-          name: existingSchema.name,
-          schema: data.schema as Prisma.InputJsonValue,
-          issuer_did: existingSchema.issuer_did,
-          issuer_name: existingSchema.issuer_name,
-          image_link: finalImageLink,
-          expired_in: finalExpiredIn, // Use new value if provided, otherwise keep old value
-          version: newVersion,
-          isActive: true,
-          updatedAt: new Date(),
-        },
-      });
-
-      this.logSuccess(
-        "Update schema in DB",
-        `${newVersionSchema.id} v${newVersion}`
-      );
-
-      // 3. Update in blockchain
+      // Update in blockchain
       logger.info("Schema: ", data.schema);
       const schemaString = this.toBlockchainFormat(data.schema);
       logger.info("Schema String: ", schemaString);

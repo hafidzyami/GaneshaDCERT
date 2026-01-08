@@ -282,6 +282,36 @@ model VCSchemaPrice {
   @@index([schemaId])
 }
 
+model EventCheckpoint {
+  id              String   @id @default(uuid())
+  contractAddress String
+  eventType       String
+  lastSyncedBlock BigInt
+  lastSyncedAt    DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([contractAddress, eventType])
+  @@index([contractAddress])
+  @@index([eventType])
+}
+
+model ProcessedEvent {
+  id              String   @id @default(uuid())
+  transactionHash String
+  logIndex        Int
+  eventType       String
+  contractAddress String
+  blockNumber     BigInt
+  processedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@unique([transactionHash, logIndex])
+  @@index([transactionHash])
+  @@index([eventType])
+  @@index([blockNumber])
+}
+
 enum RequestStatus {
   PENDING
   APPROVED
