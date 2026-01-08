@@ -13,6 +13,8 @@ import {
   VCSchemaOperationResponseDTO,
   SchemaActiveStatusDTO,
   SchemaDeleteResponseDTO,
+  VCSchemaPrice,
+  VCSchemaPriceResponseDTO
 } from "../dtos/schema.dto";
 import { SCHEMA_CONSTANTS } from "../constants/schema.constants";
 import { v4 as uuidv4 } from "uuid";
@@ -391,6 +393,7 @@ class SchemaService {
       // 1. Create in database
       createdSchema = await prisma.vCSchema.create({
         data: {
+          id: uuidv4(),
           name: data.name,
           schema: data.schema as Prisma.InputJsonValue,
           issuer_did: data.issuer_did,
@@ -399,6 +402,7 @@ class SchemaService {
           expired_in: data.expired_in ?? null, // Use provided value or null if not provided
           version: SCHEMA_CONSTANTS.INITIAL_VERSION,
           isActive: true,
+          updatedAt: new Date(),
         },
       });
 
@@ -548,6 +552,7 @@ class SchemaService {
           expired_in: finalExpiredIn, // Use new value if provided, otherwise keep old value
           version: newVersion,
           isActive: true,
+          updatedAt: new Date(),
         },
       });
 
@@ -797,6 +802,144 @@ class SchemaService {
       throw error;
     }
   }
+
+  /**
+   * Check if a Schema ID is exists
+   * @param  schemaId - Schema ID
+   */
+  async isSchemaIdExists(schemaId: string): Promise<boolean> {
+
+    const schema = await prisma.vCSchema.findFirst({
+      where: {
+        id: schemaId,
+      },
+    });
+    return !!schema;
+  }
+
+  async isSchemaExistOnVCSchemaPrice(schemaId: string): Promise<boolean> {
+    const schemaPrice = await prisma.vCSchemaPrice.findFirst({
+      where: {
+        schemaId,
+      },
+    });
+    return !!schemaPrice;
+  }
+
+  async getIssuerIdBySchemaId(schemaId: string): Promise<string> {
+    const schema = await prisma.vCSchema.findFirst({
+      where: {
+        id: schemaId,
+      },
+    });
+    if (!schema) {
+      throw new NotFoundError('Schema ID does not exist');
+    }
+    return schema.issuer_did;
+  }
+
+  /**
+   * Create Schema Price
+   * @param id - Schema ID
+   * @param price - Price of the schema
+   * @param currency - Currency of the price
+   * @param version - Version number
+   */
+  async createVCSchemaPrice(params: VCSchemaPrice): Promise<VCSchemaPriceResponseDTO> {
+    if (await this.isSchemaIdExists(params.schemaId) === false) {
+      throw new NotFoundError('Schema ID does not exist');
+    }
+
+    if (await this.isSchemaExistOnVCSchemaPrice(params.schemaId)) {
+      throw new BadRequestError('Schema price already exists for this Schema ID and Issuer ID');
+    }
+
+    const issuerId = await this.getIssuerIdBySchemaId(params.schemaId);
+    
+    const result = await prisma.vCSchemaPrice.create({
+      data: {
+        schemaId: params.schemaId,
+        price: params.price,
+        currency: params.currency,
+        version: params.version,
+        updatedAt: new Date(),
+      },
+    });
+
+    if (!result) {
+      throw new BadRequestError('Failed to create schema price');
+    }
+
+    this.logSuccess("Create schema price", `Schema ID: ${params.schemaId}, Price: ${params.price} ${params.currency}`);
+    return {
+      message: 'Schema price created successfully',
+      result: 'Success',
+    };
+  }
+  /**
+   * Update Schema Price
+   * @param id - Schema ID
+   * @param price - Price of the schema
+   * @param currency - Currency of the price
+   * @param issuerId - Issuer ID
+   * @param version - Version number
+   */
+  async updateVCSchemaPrice(params: VCSchemaPrice): Promise<VCSchemaPriceResponseDTO> {
+    const issuerId = await this.getIssuerIdBySchemaId(params.schemaId);
+
+    if (await this.isSchemaExistOnVCSchemaPrice(params.schemaId) === false) {
+      throw new NotFoundError('Schema price does not exist for this Schema ID and Issuer ID');
+    }
+    
+    const result = await prisma.vCSchemaPrice.updateMany({
+      where: {
+        schemaId: params.schemaId,
+      },
+      data: {
+        price: params.price,
+        currency: params.currency,
+        version: params.version,
+      },
+    });
+    if (result.count === 0) {
+      throw new NotFoundError('Schema price not found for update');
+    }
+
+    this.logSuccess("Update schema price", `Schema ID: ${params.schemaId}, New Price: ${params.price} ${params.currency}`);
+    return {
+      message: 'Schema price updated successfully',
+      result: 'Success',
+    };
+  }
+
+
+  /**
+   * Get All Schema Prices
+   * @return List of schema prices
+   */
+  async getAllVCSchemaPrices(): Promise<VCSchemaPrice[]> {
+    const prices = await prisma.vCSchemaPrice.findMany();
+    if (prices.length === 0) {
+      throw new NotFoundError('No schema prices found');
+    }
+    
+    const pricesWithIssuer = await Promise.all(
+      prices.map(async (price) => {
+        const issuerId = await this.getIssuerIdBySchemaId(price.schemaId);
+        return {
+          schemaId: price.schemaId,
+          price: price.price.toNumber(),
+          currency: price.currency,
+          version: price.version,
+          issuer_did: issuerId,
+          updatedAt: price.updatedAt,
+        };
+      })
+    );
+    
+    return pricesWithIssuer;
+  }
+
 }
 
 // Export singleton instance
