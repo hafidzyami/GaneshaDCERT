@@ -7,100 +7,62 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// VC Request
-enum RequestStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum RequestType {
-  ISSUANCE
-  RENEWAL
-  UPDATE
-  REVOKE
-}
-
-enum PaymentStatus {
-  UNPAID
-  PAID
-  CANCELED
-}
-
-enum VCResponseStatus {
-  PENDING
-  PROCESSING
-  CLAIMED
-}
-
-enum VPRequestStatus {
-  PENDING
-  ACCEPT
-  DECLINE
-}
-
-enum VPVerifyStatus {
-  NOT_VERIFIED
-  VALID_VERIFICATION
-  INVALID_VERIFICATION
-}
-
 model VCIssuanceRequest {
   id             String        @id @default(uuid())
-  encrypted_body String
   issuer_did     String
   holder_did     String
   status         RequestStatus @default(PENDING)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
+  encrypted_body String
   vc_id          String?
 }
 
 model VCRenewalRequest {
   id             String        @id @default(uuid())
-  encrypted_body String
   issuer_did     String
   holder_did     String
   status         RequestStatus @default(PENDING)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
+  encrypted_body String
   vc_id          String?
 }
 
 model VCUpdateRequest {
   id             String        @id @default(uuid())
-  encrypted_body String
   issuer_did     String
   holder_did     String
   status         RequestStatus @default(PENDING)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
+  encrypted_body String
   vc_id          String?
 }
 
 model VCRevokeRequest {
   id             String        @id @default(uuid())
-  encrypted_body String
   issuer_did     String
   holder_did     String
   status         RequestStatus @default(PENDING)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
+  encrypted_body String
   vc_id          String?
 }
 
 model IssuerActionLog {
   id               String      @id @default(uuid())
-  action_type      RequestType // Tipe aksi: ISSUANCE, RENEWAL, UPDATE, or REVOKE
+  action_type      RequestType
   issuer_did       String
-  holder_did       String?     // Opsional, karena revoke mungkin tidak selalu memiliki info ini
-  vc_id            String      // VC ID yang terdampak (VC lama untuk UPDATE/RENEW, VC baru untuk ISSUE)
-  new_vc_id        String?     // Hanya diisi untuk aksi UPDATE
-  transaction_hash String?     // Hash transaksi blockchain
+  holder_did       String?
+  vc_id            String
+  new_vc_id        String?
+  transaction_hash String?
   createdAt        DateTime    @default(now())
 
   @@index([issuer_did])
@@ -111,30 +73,30 @@ model IssuerActionLog {
 model VPSharing {
   id           String    @id @default(uuid())
   holder_did   String
-  verifier_did String?   // NULL = initiated by holder, NOT NULL = initiated by verifier
   VP           String
-  is_barcode   Boolean   @default(false)
-  hasClaim     Boolean   @default(false) // Track if VP has been claimed by verifier
   createdAt    DateTime  @default(now())
   deletedAt    DateTime?
+  is_barcode   Boolean   @default(false)
+  hasClaim     Boolean   @default(false)
+  verifier_did String?
 
   @@index([verifier_did])
   @@index([hasClaim])
 }
 
 model VCResponse {
-  id             String      @id @default(uuid())
-  order_id       String      @default(uuid())
-  request_id     String      @default(uuid())
+  id             String           @id @default(uuid())
+  request_id     String           @default(uuid())
   request_type   RequestType
   issuer_did     String
   holder_did     String
+  order_id       String           @default(uuid())
   encrypted_body String
-  status         VCResponseStatus @default(PENDING)
-  processing_at  DateTime?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @default(now()) @updatedAt
+  createdAt      DateTime         @default(now())
   deletedAt      DateTime?
+  status         VCResponseStatus @default(PENDING)
+  updatedAt      DateTime         @default(now()) @updatedAt
+  processing_at  DateTime?
 }
 
 model Order {
@@ -182,8 +144,8 @@ model InstitutionRegistration {
   website    String
   address    String
   status     RequestStatus @default(PENDING)
-  approvedBy String?
   approvedAt DateTime?
+  approvedBy String?
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
   magicLinks MagicLink[]
@@ -227,15 +189,15 @@ model VPRequest {
   id                    String          @id @default(uuid())
   holder_did            String
   verifier_did          String
-  verifier_name         String
-  purpose               String
-  status                VPRequestStatus @default(PENDING)
-  requested_credentials Json            // [{schema_id, schema_name, schema_version}] - What verifier requests
-  credentials           Json?           // [{schema_id, schema_name, schema_version}] - What holder actually provides
-  vp_id                 String?         // NULL for DECLINE, has value for ACCEPT
-  verify_status         VPVerifyStatus  @default(NOT_VERIFIED)
   createdAt             DateTime        @default(now())
+  purpose               String
+  requested_credentials Json
+  status                VPRequestStatus @default(PENDING)
   updatedAt             DateTime        @updatedAt
+  verifier_name         String
+  verify_status         VPVerifyStatus  @default(NOT_VERIFIED)
+  vp_id                 String?
+  credentials           Json?
 
   @@index([holder_did])
   @@index([verifier_did])
@@ -283,25 +245,25 @@ model VCinitiatedByIssuer {
   request_type   RequestType
   issuer_did     String
   holder_did     String
-  vc_id          String?
   encrypted_body String
   status         VCResponseStatus @default(PENDING)
   processing_at  DateTime?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   deletedAt      DateTime?
+  vc_id          String?
 
   @@index([vc_id])
 }
 
 model IssuerVCData {
-  id             String   @id @default(uuid())
   issuer_did     String
-  holder_did     String?
-  vc_id          String?
   encrypted_body String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  id             String   @id @default(uuid())
+  holder_did     String?
+  vc_id          String?
 
   @@index([issuer_did])
   @@index([holder_did])
@@ -318,4 +280,71 @@ model VCSchemaPrice {
 
   @@id([schemaId, version])
   @@index([schemaId])
+}
+
+model EventCheckpoint {
+  id              String   @id @default(uuid())
+  contractAddress String
+  eventType       String
+  lastSyncedBlock BigInt
+  lastSyncedAt    DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([contractAddress, eventType])
+  @@index([contractAddress])
+  @@index([eventType])
+}
+
+model ProcessedEvent {
+  id              String   @id @default(uuid())
+  transactionHash String
+  logIndex        Int
+  eventType       String
+  contractAddress String
+  blockNumber     BigInt
+  processedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@unique([transactionHash, logIndex])
+  @@index([transactionHash])
+  @@index([eventType])
+  @@index([blockNumber])
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum RequestType {
+  ISSUANCE
+  RENEWAL
+  UPDATE
+  REVOKE
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  CANCELED
+}
+
+enum VCResponseStatus {
+  PENDING
+  PROCESSING
+  CLAIMED
+}
+
+enum VPRequestStatus {
+  PENDING
+  ACCEPT
+  DECLINE
+}
+
+enum VPVerifyStatus {
+  NOT_VERIFIED
+  VALID_VERIFICATION
+  INVALID_VERIFICATION
 }

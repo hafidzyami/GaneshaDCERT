@@ -1,0 +1,126 @@
+@startuml three-layer-architecture
+
+!define LIGHTBLUE #E3F2FD
+!define DARKBLUE #1976D2
+!define LIGHTGREEN #E8F5E9
+!define DARKGREEN #388E3C
+!define LIGHTORANGE #FFF3E0
+!define DARKORANGE #F57C00
+!define WHITE #FFFFFF
+!define GRAY #666666
+
+skinparam defaultFontName Arial
+skinparam defaultFontSize 10
+skinparam ArrowThickness 2
+skinparam ArrowColor #333333
+skinparam shadowing false
+skinparam linetype ortho
+
+' Package styling
+skinparam package {
+  BackgroundColor WHITE
+  BorderColor GRAY
+  FontSize 11
+  FontStyle bold
+}
+
+' Component styling
+skinparam component {
+  BackgroundColor LIGHTBLUE
+  BorderColor DARKBLUE
+  FontSize 10
+}
+
+' Database styling
+skinparam database {
+  BackgroundColor LIGHTGREEN
+  BorderColor DARKGREEN
+  FontSize 10
+}
+
+' Actor styling
+skinparam actor {
+  BackgroundColor #F5F5F5
+  BorderColor GRAY
+}
+
+' Rectangle styling
+skinparam rectangle {
+  BackgroundColor LIGHTORANGE
+  BorderColor DARKORANGE
+  FontSize 10
+}
+
+title <b>Three-Layer System Architecture</b>
+
+' ===== CLIENT SIDE =====
+package "Client Side" {
+  actor "Holder" as holder
+  actor "Issuer" as issuer
+  actor "Verifier" as verifier
+}
+
+' ===== SERVER SIDE =====
+package "Server Side" {
+
+  rectangle "API Layer" as api #E3F2FD {
+    component "Authentication" as auth
+    component "Schema API" as schema_api
+    component "Credential API" as cred_api
+    component "Presentation API" as pres_api
+  }
+
+  rectangle "Synchronization Layer" as sync_layer #FFF3E0 {
+    component "Event Listener" as listener
+    component "Event Processor" as processor
+    component "Checkpoint Manager" as checkpoint
+  }
+
+  rectangle "Storage Layer" as storage #E8F5E9 {
+    database "PostgreSQL\n<size:9>(RDBMS)</size>" as postgres {
+      component "VCSchema" as vc_schema
+      component "Credentials" as creds
+      component "EventCheckpoint" as chkpt
+      component "ProcessedEvent" as proc_event
+    }
+  }
+}
+
+' ===== BLOCKCHAIN SIDE =====
+package "Trust Anchor (Blockchain)" {
+
+  rectangle "Smart Contract Layer" as contract_layer #E3F2FD {
+    component "DID Registry" as did_contract
+    component "VC Manager" as vc_contract
+  }
+
+  rectangle "Consensus Layer" as consensus #FFF3E0 {
+    component "Validator Nodes" as validators
+  }
+}
+
+' ===== CONNECTIONS =====
+
+' Client to Server
+holder -down-> api : <size:9>HTTPS</size>
+issuer -down-> api : <size:9>HTTPS</size>
+verifier -down-> api : <size:9>HTTPS</size>
+
+' API to Storage (Read)
+api -down-> postgres : <size:9><b>Read</b></size>
+
+' API to Blockchain (Write)
+api -right-> vc_contract : <size:9><b>Write</b></size>
+
+' Blockchain Events to Sync
+vc_contract -down-> listener : <size:9>Events</size>
+listener -down-> processor
+processor -down-> checkpoint
+
+' Sync to Storage
+sync_layer -down-> postgres : <size:9>Update</size>
+
+' Smart Contract to Consensus
+contract_layer -down-> consensus : <size:9>Validate</size>
+
+@enduml

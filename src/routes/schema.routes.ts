@@ -150,6 +150,271 @@ router.get("/", getAllVCSchemasValidator, vcSchema.getAllVCSchemas);
 
 /**
  * @swagger
+ * /schemas/blockchain:
+ *   get:
+ *     summary: Get all VC schemas from blockchain with pagination
+ *     description: |
+ *       Retrieve VC schemas directly from blockchain with pagination support (Direct blockchain query - slower but always up-to-date).
+ *
+ *       **Note:** This endpoint queries blockchain directly, so it may be slower than the RDBMS endpoint but guarantees the latest data.
+ *
+ *       **Pagination:** Supports page-based navigation with configurable page size.
+ *
+ *       **Filtering:** Can return all versions or only latest versions per schema.
+ *     tags:
+ *       - VC Schema Management
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number (starts from 1)
+ *         example: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 1000
+ *           default: 100
+ *         description: Number of items per page (max 1000)
+ *         example: 100
+ *       - in: query
+ *         name: latestOnly
+ *         schema:
+ *           type: boolean
+ *           default: true
+ *         description: Return only latest versions of each schema
+ *         example: true
+ *     responses:
+ *       200:
+ *         description: Paginated list of VC schemas from blockchain
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 source:
+ *                   type: string
+ *                   example: blockchain
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         example: "did:dcert:schema:diploma_certificate"
+ *                       name:
+ *                         type: string
+ *                         example: "Diploma Certificate"
+ *                       schema:
+ *                         type: string
+ *                         example: "{\"type\":\"object\",\"properties\":{}}"
+ *                       issuerDID:
+ *                         type: string
+ *                         example: "did:dcert:iABCD1234567890"
+ *                       imageLink:
+ *                         type: string
+ *                         example: "https://example.com/image.png"
+ *                       version:
+ *                         type: integer
+ *                         example: 1
+ *                       isActive:
+ *                         type: boolean
+ *                         example: true
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page:
+ *                       type: integer
+ *                       example: 1
+ *                     limit:
+ *                       type: integer
+ *                       example: 100
+ *                     total:
+ *                       type: integer
+ *                       example: 250
+ *                     returned:
+ *                       type: integer
+ *                       example: 100
+ *                     totalPages:
+ *                       type: integer
+ *                       example: 3
+ *                     hasNextPage:
+ *                       type: boolean
+ *                       example: true
+ *                     hasPrevPage:
+ *                       type: boolean
+ *                       example: false
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/blockchain", vcSchema.getAllVCSchemasFromBlockchain);
+
+/**
+ * @swagger
+ * /schemas/blockchain/count:
+ *   get:
+ *     summary: Get total count of schemas from blockchain
+ *     description: |
+ *       Get the total count of all schema versions stored in the blockchain.
+ *     tags:
+ *       - VC Schema Management
+ *     responses:
+ *       200:
+ *         description: Total count retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 source:
+ *                   type: string
+ *                   example: "blockchain"
+ *                 count:
+ *                   type: integer
+ *                   example: 42
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/blockchain/count", vcSchema.getSchemasCountFromBlockchain);
+
+/**
+ * @swagger
+ * /schemas/blockchain/{id}/version/{version}:
+ *   get:
+ *     summary: Get specific schema version from blockchain
+ *     description: |
+ *       Get a specific version of a schema by ID and version number from blockchain.
+ *     tags:
+ *       - VC Schema Management
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Schema ID
+ *         example: "did:dcert:schema:diploma_certificate"
+ *       - in: path
+ *         name: version
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Schema version number
+ *         example: 2
+ *     responses:
+ *       200:
+ *         description: Schema retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 source:
+ *                   type: string
+ *                   example: "blockchain"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "did:dcert:schema:diploma_certificate"
+ *                     name:
+ *                       type: string
+ *                       example: "Diploma Certificate"
+ *                     schema:
+ *                       type: string
+ *                       example: "{\"type\":\"object\",\"properties\":{}}"
+ *                     issuerDID:
+ *                       type: string
+ *                       example: "did:dcert:iABCD1234567890"
+ *                     version:
+ *                       type: integer
+ *                       example: 2
+ *                     isActive:
+ *                       type: boolean
+ *                       example: true
+ *       404:
+ *         description: Schema not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/blockchain/:id/version/:version", vcSchema.getSchemaFromBlockchain);
+
+/**
+ * @swagger
+ * /schemas/blockchain/{id}/latest:
+ *   get:
+ *     summary: Get latest schema version from blockchain
+ *     description: |
+ *       Get the latest version of a schema by ID from blockchain.
+ *     tags:
+ *       - VC Schema Management
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Schema ID
+ *         example: "did:dcert:schema:diploma_certificate"
+ *     responses:
+ *       200:
+ *         description: Latest schema version retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 source:
+ *                   type: string
+ *                   example: "blockchain"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "did:dcert:schema:diploma_certificate"
+ *                     name:
+ *                       type: string
+ *                       example: "Diploma Certificate"
+ *                     schema:
+ *                       type: string
+ *                       example: "{\"type\":\"object\",\"properties\":{}}"
+ *                     issuerDID:
+ *                       type: string
+ *                       example: "did:dcert:iABCD1234567890"
+ *                     version:
+ *                       type: integer
+ *                       example: 3
+ *                     isActive:
+ *                       type: boolean
+ *                       example: true
+ *       404:
+ *         description: Schema not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/blockchain/:id/latest", vcSchema.getLatestSchemaFromBlockchain);
+
+/**
+ * @swagger
  * /schemas/latest:
  *   get:
  *     summary: Get latest schema version
