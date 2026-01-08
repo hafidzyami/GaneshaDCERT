@@ -1,0 +1,76 @@
+@startuml event-synchronization-component
+
+skinparam defaultFontName Arial
+skinparam defaultFontSize 10
+skinparam ArrowThickness 1.5
+skinparam ArrowColor #333333
+skinparam shadowing false
+
+' Color scheme
+skinparam componentBackgroundColor #E3F2FD
+skinparam componentBorderColor #1976D2
+skinparam packageBackgroundColor #FFFFFF
+skinparam packageBorderColor #888888
+skinparam noteBackgroundColor #FFFDE7
+skinparam noteBorderColor #FBC02D
+
+title <b>Event Synchronization Flow</b>
+
+component "Start Event Listener" as start #4CAF50
+component "Get Last Checkpoint" as checkpoint
+
+package "Historical Catch-up\n(batch: 1000 blocks)" as historical {
+  component "Process Event" as h_process
+  component "Event already\nprocessed?" as h_check #FFF3E0
+  component "Skip Event" as h_skip
+  component "Process Event" as h_proc
+  component "Mark as Processed" as h_mark
+  component "Update Checkpoint" as h_update
+  component "More batches?" as h_more #FFF3E0
+}
+
+package "Real-time Listening" as realtime {
+  component "Wait for Event" as r_wait
+  component "Already\nprocessed?" as r_check #FFF3E0
+  component "Skip Event" as r_skip
+  component "Process Event" as r_proc
+  component "Mark as Processed" as r_mark
+  component "Update Checkpoint" as r_update
+  component "Connection\nlost?" as r_conn #FFF3E0
+  component "Resume from\nCheckpoint" as r_resume
+  component "Continue?" as r_continue #FFF3E0
+}
+
+component "Stop" as stop #F44336
+
+start -down-> checkpoint
+
+checkpoint -down-> historical
+checkpoint -down-> realtime
+
+' Historical flow
+h_process -down-> h_check
+h_check -down-> h_skip : yes
+h_check -down-> h_proc : no
+h_proc -down-> h_mark
+h_mark -down-> h_update
+h_update -down-> h_more
+h_skip -down-> h_more
+h_more -up-> h_process : yes
+h_more -down-> stop : no
+
+' Real-time flow
+r_wait -down-> r_check
+r_check -down-> r_skip : yes
+r_check -down-> r_proc : no
+r_proc -down-> r_mark
+r_mark -down-> r_update
+r_update -down-> r_conn
+r_skip -down-> r_conn
+r_conn -down-> r_continue : no
+r_conn -down-> r_resume : yes
+r_resume -down-> stop
+r_continue -up-> r_wait : yes
+r_continue -down-> stop : no
+
+@enduml

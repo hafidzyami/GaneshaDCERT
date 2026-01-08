@@ -1,0 +1,72 @@
+@startuml event-synchronization-flow
+
+skinparam defaultFontName Arial
+skinparam defaultFontSize 10
+skinparam ArrowThickness 1.5
+skinparam ArrowColor #333333
+skinparam shadowing false
+
+' Subtle color scheme
+skinparam activityBackgroundColor #E3F2FD
+skinparam activityBorderColor #1976D2
+skinparam activityDiamondBackgroundColor #FFF3E0
+skinparam activityDiamondBorderColor #F57C00
+skinparam activityStartColor #4CAF50
+skinparam activityEndColor #F44336
+skinparam PartitionBackgroundColor #FFFFFF
+skinparam PartitionBorderColor #888888
+skinparam noteBackgroundColor #FFFDE7
+skinparam noteBorderColor #FBC02D
+
+title <b>Event Synchronization Flow</b>
+
+start
+
+:<b>Start Event Listener</b>;
+
+:<b>Get Last Checkpoint</b>;
+
+partition "Historical Catch-up: Checkpoint-based" {
+  repeat :Process Event;
+
+    if (<b>Event already</b> \n <b>processed?</b>) then (yes)
+      :<b>Skip Event</b>;
+    else (no)
+      :<b>Process Event</b>;
+      :<b>Mark as Processed</b>;
+      :<b>Update Checkpoint</b>;
+    endif
+
+  repeat while (More batches?) is (yes)
+  ->no;
+}
+
+note left
+  <size:9>Batch: 1000 blocks</size>
+end note
+
+partition "Real-time Event Listening" {
+  repeat :Wait for Event;
+
+    if (<b>Already</b> \n <b>processed?</b>) then (yes)
+      :<b>Skip Event</b>;
+    else (no)
+      :<b>Process Event</b>;
+      :<b>Mark as Processed</b>;
+      :<b>Update Checkpoint</b>;
+    endif
+
+    if (<b>Connection</b> \n <b>lost?</b>) then (yes)
+      :<b>Error Recovery:\nResume from Checkpoint</b>;
+      stop
+    else (no)
+      :<b>Continue Listening</b>;
+    endif
+
+  repeat while (More events?) is (yes)
+  ->no;
+}
+
+stop
+
+@enduml

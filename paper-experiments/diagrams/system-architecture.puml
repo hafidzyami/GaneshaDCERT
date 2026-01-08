@@ -1,0 +1,70 @@
+@startuml system-architecture
+
+skinparam componentStyle rectangle
+skinparam monochrome false
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 10
+skinparam defaultTextAlignment center
+skinparam ArrowThickness 1.5
+skinparam ArrowColor #333333
+skinparam padding 1
+skinparam nodesep 10
+skinparam ranksep 15
+skinparam componentPadding 5
+skinparam rectanglePadding 5
+skinparam databasePadding 5
+
+' Subtle color scheme for IEEE conference paper
+skinparam componentBackgroundColor #FAFAFA
+skinparam componentBorderColor #555555
+skinparam databaseBackgroundColor #E3F2FD
+skinparam databaseBorderColor #1976D2
+skinparam actorBackgroundColor #E0E0E0
+skinparam actorBorderColor #555555
+skinparam packageBackgroundColor #FFFFFF
+skinparam packageBorderColor #888888
+skinparam rectangleBackgroundColor #FFF3E0
+skinparam rectangleBorderColor #F57C00
+
+scale 0.7
+
+' Compact layout
+actor User #E0E0E0
+
+rectangle "<b>API Layer</b>" as api #FAFAFA
+
+rectangle "<b>Write Path</b>" as write #FFE0B2
+rectangle "<b>Read Path</b>" as read #C8E6C9
+
+database "<b>Blockchain</b>\n<size:9>(Source of Truth)</size>" as blockchain #E3F2FD
+
+rectangle "<b>Event Sync Layer</b>\n<size:8>Checkpoint | Listener</size>" as sync #F3E5F5
+
+database "<b>PostgreSQL</b>\n<size:9>(RDBMS)</size>\n<size:8>VCSchema | EventCheckpoint</size>" as db #E3F2FD
+
+' Connections - compact spacing
+User -down-> api : <size:9>API Request</size>
+api -down-> write : <size:9>Write </size>
+api -down-> read : <size:9> Read</size>
+
+write -right-> blockchain : <size:9> TX</size>
+blockchain -down-> sync : <size:9>Events</size>
+sync -down-> db : <size:9>Update</size>
+
+read -down-> db : <size:9><b>Query</b></size>
+read .right.> blockchain : <size:8>fallback</size>
+
+' Compact annotations
+note right of blockchain #FFFDE7
+  <size:8><b>Events:</b> Created,</size>
+  <size:8>Updated, Deactivated,</size>
+  <size:8>Reactivated</size>
+end note
+
+note bottom of db #E8F5E9
+  <size:8><b>Indexed Read:</b></size>
+  <size:8>Fast queries</size>
+end note
+
+@enduml

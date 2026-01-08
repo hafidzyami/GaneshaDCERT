@@ -23,7 +23,6 @@ Compare query performance between PostgreSQL database and direct blockchain quer
 
 ### What We're NOT Testing
 
-- ❌ RocksDB cache performance (separate implementation)
 - ❌ Filtered queries (blockchain endpoint doesn't support filters)
 - ❌ Indexed lookups by specific ID (blockchain endpoint doesn't support)
 - ❌ Write performance (only testing reads)

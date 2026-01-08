@@ -1,0 +1,140 @@
+@startuml event-synchronization-sequence
+
+skinparam defaultFontName Arial
+skinparam defaultFontSize 10
+skinparam ArrowThickness 1.5
+skinparam shadowing false
+
+' Color scheme
+skinparam participant {
+  BackgroundColor #E3F2FD
+  BorderColor #1976D2
+}
+
+skinparam database {
+  BackgroundColor #E8F5E9
+  BorderColor #388E3C
+}
+
+skinparam control {
+  BackgroundColor #FFF3E0
+  BorderColor #F57C00
+}
+
+title <b>Event Synchronization Sequence Diagram</b>
+
+participant "Blockchain" as BC
+control "Event Listener" as EL
+control "Event Processor" as EP
+control "Checkpoint Manager" as CM
+database "PostgreSQL" as DB
+
+== Initialization ==
+
+EL -> CM: Get Last Checkpoint
+activate CM
+CM -> DB: Query EventCheckpoint
+activate DB
+DB --> CM: lastSyncedBlock
+deactivate DB
+CM --> EL: Last Block Number
+deactivate CM
+
+== Historical Catch-up Phase ==
+
+EL -> BC: Query Events\n(from lastBlock to currentBlock\nbatch: 1000 blocks)
+activate BC
+BC --> EL: Event Batch
+deactivate BC
+
+loop For Each Event in Batch
+    EL -> DB: Check ProcessedEvent\n(transactionHash, logIndex)
+    activate DB
+    DB --> EL: Event Status
+    deactivate DB
+
+    alt Event Already Processed
+        EL -> EL: Skip Event
+    else New Event
+        EL -> EP: Process Event
+        activate EP
+
+        EP -> EP: Enrich Event Data\n(decode transaction)
+
+        EP -> DB: Begin Transaction
+        activate DB
+
+        EP -> DB: Upsert VCSchema
+        EP -> DB: Insert ProcessedEvent
+
+        EP -> CM: Update Checkpoint
+        activate CM
+        CM -> DB: Upsert EventCheckpoint
+        deactivate CM
+
+        EP -> DB: Commit Transaction
+        deactivate DB
+
+        EP --> EL: Event Processed
+        deactivate EP
+    end
+end
+
+== Real-time Listening Phase ==
+
+EL -> BC: Subscribe to Events
+activate BC
+note right: Listening for:\n- SchemaCreated\n- SchemaUpdated\n- SchemaDeactivated\n- SchemaReactivated
+
+BC --> EL: New Event Emitted
+deactivate BC
+
+EL -> DB: Check ProcessedEvent
+activate DB
+DB --> EL: Not Processed
+deactivate DB
+
+EL -> EP: Process Event
+activate EP
+
+EP -> EP: Enrich Event Data
+
+EP -> DB: Begin Transaction
+activate DB
+
+EP -> DB: Upsert VCSchema
+EP -> DB: Insert ProcessedEvent
+
+EP -> CM: Update Checkpoint
+activate CM
+CM -> DB: Upsert EventCheckpoint
+deactivate CM
+
+EP -> DB: Commit Transaction
+deactivate DB
+
+EP --> EL: Event Processed
+deactivate EP
+
+EL -> BC: Continue Listening
+activate BC
+
+alt Connection Lost
+    BC -x EL: Connection Error
+    deactivate BC
+
+    EL -> CM: Get Last Checkpoint
+    activate CM
+    CM -> DB: Query EventCheckpoint
+    activate DB
+    DB --> CM: lastSyncedBlock
+    deactivate DB
+    CM --> EL: Resume Point
+    deactivate CM
+
+    EL -> BC: Resume from Checkpoint
+    activate BC
+    deactivate BC
+end
+
+@enduml

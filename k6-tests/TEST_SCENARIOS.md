@@ -34,7 +34,6 @@ Compare query performance between PostgreSQL database and direct blockchain quer
 
 ### What We're NOT Testing
 
-- ❌ RocksDB cache performance (separate implementation)
 - ❌ Write performance (only testing reads)
 - ❌ Smart contract-level pagination (would require contract redeployment)
 
@@ -1262,7 +1261,6 @@ Show blockchain data completeness:
 2. Sync to PostgreSQL via event listener
 3. Read from PostgreSQL for performance
 4. Use blockchain queries only for verification
-5. Implement caching layer (RocksDB) for hot data
 
 ---
 

@@ -1,0 +1,175 @@
+@startuml payment-cross-blockchain-flow
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Arial
+
+title Payment System - Cross-Blockchain Flow
+
+actor "Holder" as holder
+participant "Backend API" as api
+participant "Payment Service" as service
+database "VDR Blockchain\n(VCManager)" as vdr
+database "DCERT Blockchain\n(PaymentManager)" as dcert
+participant "Event Listener" as listener
+database "PostgreSQL" as db
+
+== Order Creation Phase ==
+
+holder -> api: POST /orders/create
+activate api
+note right
+  Request Body:
+  {
+    "holderDID": "did:ebsi:holder",
+    "items": [
+      { "vcID": "vc-123", "type": "ISSUANCE" },
+      { "vcID": "vc-456", "type": "RENEWAL" }
+    ]
+  }
+end note
+
+api -> service: createOrderWithVerification(data)
+activate service
+
+loop For Each Item
+  service -> vdr: <b>getVCStatus(vcID)</b>
+  activate vdr
+  note right of vdr
+    <b>Verify VC on VDR Blockchain:</b>
+    • VC exists?
+    • VC active?
+    • Holder owns VC?
+  end note
+
+  vdr --> service: VCStatus{ id, hash, holderDID, status }
+  deactivate vdr
+
+  service -> service: Validate VC\nCalculate price\nStore VC hash
+
+  note right of service
+    <b>Price Calculation:</b>
+    ISSUANCE: 50,000 IDR
+    RENEWAL: 30,000 IDR
+    UPDATE: 20,000 IDR
+
+    <b>VC Hash Saved:</b>
+    Cryptographic proof from VDR
+  end note
+end
+
+service -> service: Calculate total amount
+
+== Create Items on DCERT ==
+
+loop For Each Item
+  service -> dcert: <b>createItem(</b>\n  itemId, price, vcID,\n  <b><color:red>vcHash</color></b>, itemType\n<b>)</b>
+  activate dcert
+  dcert -> dcert: Store item with VC hash
+  dcert --> service: TX Receipt
+  deactivate dcert
+end
+
+== Create Order on DCERT ==
+
+service -> dcert: <b>createOrder(</b>\n  orderId, holderDID,\n  totalAmount, currency,\n  itemIds[]\n<b>)</b>
+activate dcert
+dcert -> dcert: Store order\nStatus: PENDING_PAYMENT
+dcert --> service: TX Receipt
+deactivate dcert
+
+service --> api: { orderId, totalAmount, txHash }
+deactivate service
+
+api --> holder: 201 Created\n{ orderId, amount, items }
+deactivate api
+
+== Event Synchronization ==
+
+dcert -> listener: Event: <b>OrderCreated</b>
+activate listener
+listener -> db: INSERT INTO orders
+db --> listener: Success
+
+dcert -> listener: Event: <b>ItemCreated</b> (x N)
+listener -> db: INSERT INTO items
+db --> listener: Success
+deactivate listener
+
+== Payment Phase ==
+
+holder -> api: POST /payments/create
+activate api
+note right
+  Request Body:
+  {
+    "orderId": "order-123",
+    "method": "QRIS",
+    "amount": 80000
+  }
+end note
+
+api -> dcert: <b>createPayment(</b>\n  paymentId, orderId,\n  method, amount\n<b>)</b>
+activate dcert
+dcert -> dcert: Store payment\nStatus: PENDING
+dcert --> api: TX Receipt
+deactivate dcert
+
+api --> holder: Payment details\n{ paymentId, qrCode }
+deactivate api
+
+dcert -> listener: Event: <b>PaymentCreated</b>
+activate listener
+listener -> db: INSERT INTO payments
+deactivate listener
+
+== Payment Completion ==
+
+holder -> api: Confirm payment\n(from payment gateway callback)
+activate api
+
+api -> dcert: <b>completePayment(</b>\n  paymentId, orderId\n<b>)</b>
+activate dcert
+
+dcert -> dcert: Update payment status → SUCCESS\nUpdate order status → SUCCESS\nMark all items as PAID
+
+dcert --> api: TX Receipt
+deactivate dcert
+
+api --> holder: 200 OK\nPayment completed
+deactivate api
+
+dcert -> listener: Event: <b>PaymentCompleted</b>
+activate listener
+listener -> db: UPDATE payments SET status=SUCCESS
+listener -> db: UPDATE orders SET status=SUCCESS
+listener -> db: UPDATE items SET isPaid=true
+deactivate listener
+
+dcert -> listener: Event: <b>OrderStatusChanged</b>
+dcert -> listener: Event: <b>ItemPaid</b> (x N)
+
+== Verification (Optional) ==
+
+holder -> api: GET /items/:id/verify-integrity
+activate api
+
+api -> dcert: getItem(itemId)
+activate dcert
+dcert --> api: Item{ vcHash: "0xabc..." }
+deactivate dcert
+
+api -> vdr: getVCStatus(vcID)
+activate vdr
+vdr --> api: VCStatus{ hash: "0xabc..." }
+deactivate vdr
+
+api -> api: Compare hashes
+
+alt Hash matches
+  api --> holder: ✅ VC integrity verified
+else Hash mismatch
+  api --> holder: ⚠️ VC hash mismatch\n(VC may have been updated)
+end
+deactivate api
+
+@enduml
