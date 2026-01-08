@@ -15,6 +15,7 @@ export { default as StorageService } from "./storage.service";
 export { default as InstitutionService } from "./institution.service";
 export { default as DIDBlockchainService } from "./blockchain/didBlockchain.service";
 export { default as VCBlockchainService } from "./blockchain/vcBlockchain.service";
+export { default as PaymentService } from "./payment.service";
 export * from "./jwt.service";
 export * from "./email.service";
 
@@ -29,3 +30,4 @@ export { NotificationService as NotificationServiceClass } from "./notification.
 export { InstitutionService as InstitutionServiceClass } from "./institution.service";
 export { DIDBlockchainService as DIDBlockchainServiceClass } from "./blockchain/didBlockchain.service";
 export { VCBlockchainService as VCBlockchainServiceClass } from "./blockchain/vcBlockchain.service";
+export { PaymentService as PaymentServiceClass } from "./payment.service";
