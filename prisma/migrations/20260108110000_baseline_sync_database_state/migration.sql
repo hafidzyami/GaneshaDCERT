@@ -1,0 +1,2 @@
+-- Migration moved to 20260108120000_complete_vcschema_price_setup
+-- This migration is kept for history consistency

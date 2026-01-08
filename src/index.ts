@@ -27,6 +27,7 @@ import {
   presentationRoutes,
   notificationRoutes,
   institutionRoutes,
+  paymentRoutes,
   performanceRoutes,
 } from "./routes";
 
@@ -334,21 +335,24 @@ app.get("/api/v1/health", async (req: Request, res: Response) => {
  *                         type: string
  *                         format: date-time
  */
-app.get("/api/v1/health/blockchain-sync", async (req: Request, res: Response) => {
-  try {
-    const status = await blockchainEventPublisher.getSyncStatus();
-    res.json({
-      success: true,
-      ...status,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to get blockchain sync status",
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+app.get(
+  "/api/v1/health/blockchain-sync",
+  async (req: Request, res: Response) => {
+    try {
+      const status = await blockchainEventPublisher.getSyncStatus();
+      res.json({
+        success: true,
+        ...status,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Failed to get blockchain sync status",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
   }
-});
+);
 
 // API Routes with /api/v1 prefix
 app.use("/api/v1/auth", authRoutes);
@@ -359,7 +363,6 @@ app.use("/api/v1/credentials", credentialRoutes);
 app.use("/api/v1/presentations", presentationRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/institutions", institutionRoutes);
-app.use("/api/v1/performance", performanceRoutes);
 
 // 404 Handler - must be after all routes
 app.use(notFoundHandler);

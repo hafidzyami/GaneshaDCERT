@@ -13,10 +13,12 @@ import {
   reactivateVCSchemaValidator,
   deleteVCSchemaValidator,
   isSchemaActiveValidator,
+  createVCSchemaPriceValidator,
+  updateVCSchemaPriceValidator,
 } from "../validators/schema.validator";
 import { uploadOptionalImage, requireImageFile, requireImageOrLink } from "../middlewares/upload.middleware";
 import { parseSchemaJson } from "../middlewares/parseMultipartJson.middleware";
-import { verifyDIDSignature } from "../middlewares";
+import { verifyDIDSignature, adminAuthMiddleware } from "../middlewares";
 
 const router: Router = express.Router();
 
@@ -704,6 +706,175 @@ router.get(
   isSchemaActiveValidator,
   vcSchema.isSchemaActive
 );
+
+
+// /**
+//  * @swagger
+//  * /schemas/price:
+//  *   post:
+//  *     summary: Create VC schema price
+//  *     description: Create a new price entry for a VC schema
+//  *     tags: [VC Schema Management]
+//  *     requestBody:
+//  *       required: true
+//  *       content:
+//  *         application/json:
+//  *           schema:
+//  *             type: object
+//  *             required:
+//  *               - schemaId
+//  *               - price
+//  *               - currency
+//  *               - issuerId
+//  *               - version
+//  *             properties:
+//  *               schemaId:
+//  *                 type: string
+//  *                 format: uuid
+//  *                 description: Schema ID
+//  *                 example: "550e8400-e29b-41d4-a716-446655440000"
+//  *               price:
+//  *                 type: number
+//  *                 minimum: 0
+//  *                 description: Price amount
+//  *                 example: 50000
+//  *               currency:
+//  *                 type: string
+//  *                 minLength: 3
+//  *                 maxLength: 3
+//  *                 description: Currency code (3 letters)
+//  *                 example: "IDR"
+//  *               issuerId:
+//  *                 type: string
+//  *                 format: uuid
+//  *                 description: Issuer ID
+//  *                 example: "660e8400-e29b-41d4-a716-446655440001"
+//  *               version:
+//  *                 type: integer
+//  *                 description: Schema version number
+//  *                 example: 1
+//  *     responses:
+//  *       200:
+//  *         description: Schema price created successfully
+//  *       400:
+//  *         description: Validation error or creation failed
+//  *       500:
+//  *         description: Internal server error
+//  */
+// router.post(
+//   "/price",
+//   // adminAuthMiddleware,
+//   createVCSchemaPriceValidator,
+//   vcSchema.createVCSchemaPrice
+// );
+
+/**
+ * @swagger
+ * /schemas/price:
+ *   put:
+ *     summary: Update VC schema price
+ *     description: Update an existing price entry for a VC schema
+ *     tags: [VC Schema Management]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - schemaId
+ *               - price
+ *               - currency
+ *               - issuerId
+ *               - version
+ *             properties:
+ *               schemaId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Schema ID
+ *                 example: "550e8400-e29b-41d4-a716-446655440000"
+ *               price:
+ *                 type: number
+ *                 minimum: 0
+ *                 description: New price amount
+ *                 example: 75000
+ *               currency:
+ *                 type: string
+ *                 minLength: 3
+ *                 maxLength: 3
+ *                 description: Currency code (3 letters)
+ *                 example: "IDR"
+ *               issuerId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Issuer ID
+ *                 example: "660e8400-e29b-41d4-a716-446655440001"
+ *               version:
+ *                 type: integer
+ *                 description: Schema version number
+ *                 example: 1
+ *     responses:
+ *       200:
+ *         description: Schema price updated successfully
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Schema price not found
+ *       500:
+ *         description: Internal server error
+ */
+router.put(
+  "/price",
+  adminAuthMiddleware,
+  updateVCSchemaPriceValidator,
+  vcSchema.updateVCSchemaPrice
+);
+
+/**
+ * @swagger
+ * /schemas/allprices:
+ *   get:
+ *     summary: Get all VC schema prices
+ *     description: Retrieve all price entries for VC schemas
+ *     tags: [VC Schema Management]
+ *     responses:
+ *       200:
+ *         description: List of all schema prices
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 count:
+ *                   type: integer
+ *                   description: Number of price entries
+ *                   example: 10
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       schemaId:
+ *                         type: string
+ *                         format: uuid
+ *                         example: "550e8400-e29b-41d4-a716-446655440000"
+ *                       price:
+ *                         type: number
+ *                         example: 50000
+ *                       currency:
+ *                         type: string
+ *                         example: "IDR"
+ *                       issuerId:
+ *                         type: string
+ *                         format: uuid
+ *                         example: "660e8400-e29b-41d4-a716-446655440001"
+ *                       version:
+ *                         type: integer
+ *                         example: 1
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/allprices", adminAuthMiddleware, vcSchema.getAllVCSchemaPrices);
 
 // ============================================
 // 🔹 POST/PUT/PATCH/DELETE ENDPOINTS (Database + Blockchain)

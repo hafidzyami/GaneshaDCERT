@@ -422,3 +422,84 @@ export const deleteVCSchema = asyncHandler(
     );
   }
 );
+
+/**
+ * Create VC schema price
+ */
+export const createVCSchemaPrice = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { schemaId, price, currency, issuerId, version} = req.body;
+
+    const result = await SchemaService.createVCSchemaPrice({
+      schemaId,
+      price,
+      currency,
+      version,
+    });
+
+    return ResponseHelper.success(
+      res,
+      {
+        schemaId,
+        price,
+        currency,
+        issuerId,
+      },
+      result.message
+    );
+  }
+);
+
+/**
+ * Update VC schema price
+ */
+export const updateVCSchemaPrice = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+    const { schemaId, price, currency, version} = req.body;
+
+    const result = await SchemaService.updateVCSchemaPrice({
+      schemaId,
+      price,
+      currency,
+      version,
+    });
+
+    return ResponseHelper.success(
+      res,
+      {
+        schemaId,
+        price,
+        currency,
+      },
+      result.message
+    );
+  }
+);
+
+/**
+ * Get all VC schema prices
+ */
+export const getAllVCSchemaPrices = asyncHandler(
+  async (req: Request, res: Response) => {
+    const prices = await SchemaService.getAllVCSchemaPrices();
+    if (prices.length === 0) {
+      return ResponseHelper.success(res, {
+        count: 0,
+        data: [],
+      });
+    }
+    return ResponseHelper.success(res, {
+      count: prices.length,
+      data: prices,
+    });
+  }
+);
