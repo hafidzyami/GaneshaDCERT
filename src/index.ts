@@ -7,6 +7,8 @@ import {
   DatabaseService,
   DIDBlockchainConfig,
   VCBlockchainConfig,
+  CredentialsHistoryBlockchainConfig,
+  PaymentBlockchainConfig,
   logger,
 } from "./config";
 import {
@@ -34,8 +36,10 @@ import {
 // Schedulers
 import { scheduleVCCleanup } from "./jobs/vcCleanupScheduler";
 
-// Blockchain Event Publisher
+// Blockchain Event Publishers
 import blockchainEventPublisher from "./services/blockchainEventPublisher.service";
+import credentialsHistoryEventPublisher from "./services/credentialsHistoryEventPublisher.service";
+import paymentEventPublisher from "./services/paymentEventPublisher.service";
 
 // Database for performance comparison
 import { PrismaClient } from "@prisma/client";
@@ -273,15 +277,19 @@ app.get("/api/v1/health", async (req: Request, res: Response) => {
   const dbHealth = await DatabaseService.isConnected();
   const didBCHealth = await DIDBlockchainConfig.isConnected();
   const vcBCHealth = await VCBlockchainConfig.isConnected();
+  const credHistoryBCHealth = await CredentialsHistoryBlockchainConfig.isConnected();
+  const paymentBCHealth = await PaymentBlockchainConfig.isConnected();
 
   const response: HealthCheckResponse = {
-    success: dbHealth && didBCHealth && vcBCHealth,
+    success: dbHealth && didBCHealth && vcBCHealth && credHistoryBCHealth && paymentBCHealth,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     services: {
       database: dbHealth,
       didblockchain: didBCHealth,
       vcblockchain: vcBCHealth,
+      credentialsHistoryBlockchain: credHistoryBCHealth,
+      paymentBlockchain: paymentBCHealth,
     },
   };
 
@@ -354,6 +362,68 @@ app.get(
   }
 );
 
+/**
+ * @swagger
+ * /health/credentials-history-sync:
+ *   get:
+ *     summary: Credentials History Blockchain Sync Status
+ *     description: Check credentials history blockchain event synchronization status
+ *     tags:
+ *       - System
+ *     responses:
+ *       200:
+ *         description: Credentials history sync status
+ */
+app.get(
+  "/api/v1/health/credentials-history-sync",
+  async (req: Request, res: Response) => {
+    try {
+      const status = await credentialsHistoryEventPublisher.getSyncStatus();
+      res.json({
+        success: true,
+        ...status,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Failed to get credentials history sync status",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /health/payment-sync:
+ *   get:
+ *     summary: Payment Blockchain Sync Status
+ *     description: Check payment blockchain event synchronization status
+ *     tags:
+ *       - System
+ *     responses:
+ *       200:
+ *         description: Payment sync status
+ */
+app.get(
+  "/api/v1/health/payment-sync",
+  async (req: Request, res: Response) => {
+    try {
+      const status = await paymentEventPublisher.getSyncStatus();
+      res.json({
+        success: true,
+        ...status,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Failed to get payment sync status",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+);
+
 // API Routes with /api/v1 prefix
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/admin/auth", adminAuthRoutes);
@@ -396,19 +466,51 @@ const startServer = async () => {
       logger.warn("VC Blockchain connection failed, but server will continue");
     }
 
+    // Test CredentialsHistory Blockchain Connection
+    const credHistoryBlockchainConnected = await CredentialsHistoryBlockchainConfig.testConnection();
+    if (!credHistoryBlockchainConnected) {
+      logger.warn("CredentialsHistory Blockchain connection failed, but server will continue");
+    }
+
+    // Test Payment Blockchain Connection
+    const paymentBlockchainConnected = await PaymentBlockchainConfig.testConnection();
+    if (!paymentBlockchainConnected) {
+      logger.warn("Payment Blockchain connection failed, but server will continue");
+    }
+
     // Initialize Background Jobs
     logger.info("⏰ Initializing background jobs...");
     scheduleVCCleanup();
     logger.success("   ✓ VC cleanup scheduler started (runs every 5 minutes)");
 
-    // Start Blockchain Event Listener
-    logger.info("🔗 Starting blockchain event listener...");
+    // Start Blockchain Event Listeners
+    logger.info("🔗 Starting blockchain event listeners...");
+
+    // VC Schema Event Listener (Credentials Blockchain)
     try {
       await blockchainEventPublisher.start();
-      logger.success("   ✓ Blockchain event listener started");
+      logger.success("   ✓ VC Schema event listener started");
     } catch (error) {
-      logger.error("   ✗ Failed to start blockchain event listener:", error);
-      logger.warn("   Server will continue without event listener");
+      logger.error("   ✗ Failed to start VC Schema event listener:", error);
+      logger.warn("   Server will continue without VC Schema event listener");
+    }
+
+    // Credentials History Event Listener (History Blockchain)
+    try {
+      await credentialsHistoryEventPublisher.start();
+      logger.success("   ✓ Credentials History event listener started");
+    } catch (error) {
+      logger.error("   ✗ Failed to start Credentials History event listener:", error);
+      logger.warn("   Server will continue without Credentials History event listener");
+    }
+
+    // Payment Event Listener (History Blockchain)
+    try {
+      await paymentEventPublisher.start();
+      logger.success("   ✓ Payment event listener started");
+    } catch (error) {
+      logger.error("   ✗ Failed to start Payment event listener:", error);
+      logger.warn("   Server will continue without Payment event listener");
     }
 
     // Start Express Server
@@ -428,6 +530,8 @@ const startServer = async () => {
 process.on("SIGINT", async () => {
   logger.info("Shutting down gracefully...");
   await blockchainEventPublisher.stop();
+  await credentialsHistoryEventPublisher.stop();
+  await paymentEventPublisher.stop();
   await DatabaseService.disconnect();
   process.exit(0);
 });
@@ -435,6 +539,8 @@ process.on("SIGINT", async () => {
 process.on("SIGTERM", async () => {
   logger.info("Shutting down gracefully...");
   await blockchainEventPublisher.stop();
+  await credentialsHistoryEventPublisher.stop();
+  await paymentEventPublisher.stop();
   await DatabaseService.disconnect();
   process.exit(0);
 });
