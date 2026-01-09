@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import logger from "../../config/logger";
+import DIDBlockchainService from "../blockchain/didBlockchain.service";
 
 /**
  * Credential History Event Processor
@@ -10,6 +11,36 @@ class CredentialHistoryEventProcessor {
 
   constructor(prisma: PrismaClient) {
     this.prisma = prisma;
+  }
+
+  /**
+   * Helper: Convert indexed parameter to string
+   */
+  private enrichIndexedString(value: any): string {
+    if (typeof value === "string") {
+      return value;
+    }
+    if (typeof value === "object" && value !== null) {
+      // If it's an indexed parameter object, try to get the actual value
+      return value.toString();
+    }
+    return String(value);
+  }
+
+  /**
+   * Helper: Fetch DID name from blockchain
+   */
+  private async fetchDIDName(did: string): Promise<string | null> {
+    try {
+      const didDocument = await DIDBlockchainService.getDIDDocument(did);
+      if (didDocument.found && didDocument.details?.name) {
+        return didDocument.details.name;
+      }
+      return null;
+    } catch (error) {
+      logger.warn(`Failed to fetch DID name for ${did}:`, error);
+      return null;
+    }
   }
 
   /**
@@ -26,14 +57,24 @@ class CredentialHistoryEventProcessor {
     blockNumber: bigint;
     transactionHash: string;
   }): Promise<void> {
+    // Enrich indexed parameters
+    const enrichedId = this.enrichIndexedString(eventData.id);
+    const enrichedIssuerDID = this.enrichIndexedString(eventData.issuerDID);
+    const enrichedHolderDID = this.enrichIndexedString(eventData.holderDID);
+    const enrichedHistoryType = this.enrichIndexedString(eventData.historyType);
+    const enrichedVcID = this.enrichIndexedString(eventData.vcID);
+    const enrichedNewVCID = eventData.newVCID
+      ? this.enrichIndexedString(eventData.newVCID)
+      : null;
+
     logger.info(`Processing CredentialHistoryCreated event:`, {
-      id: eventData.id,
-      issuerDID: eventData.issuerDID,
-      holderDID: eventData.holderDID,
-      historyType: eventData.historyType,
+      id: enrichedId,
+      issuerDID: enrichedIssuerDID,
+      holderDID: enrichedHolderDID,
+      historyType: enrichedHistoryType,
       status: eventData.status,
-      vcID: eventData.vcID,
-      newVCID: eventData.newVCID,
+      vcID: enrichedVcID,
+      newVCID: enrichedNewVCID,
     });
 
     try {
@@ -53,26 +94,26 @@ class CredentialHistoryEventProcessor {
       // Upsert credential history to database
       const result = await this.prisma.credentialHistoryBlockchain.upsert({
         where: {
-          id: eventData.id,
+          id: enrichedId,
         },
         create: {
-          id: eventData.id,
-          issuerDID: eventData.issuerDID,
-          holderDID: eventData.holderDID,
-          historyType: eventData.historyType,
+          id: enrichedId,
+          issuerDID: enrichedIssuerDID,
+          holderDID: enrichedHolderDID,
+          historyType: enrichedHistoryType,
           status: status,
-          vcID: eventData.vcID,
-          newVCID: eventData.newVCID || null,
+          vcID: enrichedVcID,
+          newVCID: enrichedNewVCID,
           blockNumber: eventData.blockNumber,
           txHash: eventData.transactionHash,
         },
         update: {
-          issuerDID: eventData.issuerDID,
-          holderDID: eventData.holderDID,
-          historyType: eventData.historyType,
+          issuerDID: enrichedIssuerDID,
+          holderDID: enrichedHolderDID,
+          historyType: enrichedHistoryType,
           status: status,
-          vcID: eventData.vcID,
-          newVCID: eventData.newVCID || null,
+          vcID: enrichedVcID,
+          newVCID: enrichedNewVCID,
           blockNumber: eventData.blockNumber,
           txHash: eventData.transactionHash,
           updatedAt: new Date(),
@@ -80,13 +121,19 @@ class CredentialHistoryEventProcessor {
       });
 
       logger.success(
-        `Credential history upserted in database: ${eventData.id} (status: ${status})`
+        `Credential history upserted in database: ${enrichedId} (status: ${status})`
       );
     } catch (error: any) {
       logger.error("❌ Error handling CredentialHistoryCreated event:", {
         error: error.message,
         stack: error.stack,
-        eventData: eventData,
+        eventData: {
+          id: enrichedId,
+          issuerDID: enrichedIssuerDID,
+          holderDID: enrichedHolderDID,
+          historyType: enrichedHistoryType,
+          vcID: enrichedVcID,
+        },
       });
       throw error;
     }
@@ -102,8 +149,11 @@ class CredentialHistoryEventProcessor {
     blockNumber: bigint;
     transactionHash: string;
   }): Promise<void> {
+    // Enrich indexed parameters
+    const enrichedId = this.enrichIndexedString(eventData.id);
+
     logger.info(`Processing CredentialHistoryStatusChanged event:`, {
-      id: eventData.id,
+      id: enrichedId,
       oldStatus: eventData.oldStatus,
       newStatus: eventData.newStatus,
     });
@@ -125,7 +175,7 @@ class CredentialHistoryEventProcessor {
       // Update status
       const result = await this.prisma.credentialHistoryBlockchain.update({
         where: {
-          id: eventData.id,
+          id: enrichedId,
         },
         data: {
           status: newStatus,
@@ -136,13 +186,15 @@ class CredentialHistoryEventProcessor {
       });
 
       logger.success(
-        `Credential history status updated: ${eventData.id} -> ${newStatus}`
+        `Credential history status updated: ${enrichedId} -> ${newStatus}`
       );
     } catch (error: any) {
       logger.error("❌ Error handling CredentialHistoryStatusChanged event:", {
         error: error.message,
         stack: error.stack,
-        eventData: eventData,
+        eventData: {
+          id: enrichedId,
+        },
       });
       throw error;
     }
@@ -158,17 +210,22 @@ class CredentialHistoryEventProcessor {
     blockNumber: bigint;
     transactionHash: string;
   }): Promise<void> {
+    // Enrich indexed parameters
+    const enrichedId = this.enrichIndexedString(eventData.id);
+    const enrichedIssuerDID = this.enrichIndexedString(eventData.issuerDID);
+    const enrichedHolderDID = this.enrichIndexedString(eventData.holderDID);
+
     logger.info(`Processing CredentialHistoryApproved event:`, {
-      id: eventData.id,
-      issuerDID: eventData.issuerDID,
-      holderDID: eventData.holderDID,
+      id: enrichedId,
+      issuerDID: enrichedIssuerDID,
+      holderDID: enrichedHolderDID,
     });
 
     try {
       // Update status to APPROVED
       const result = await this.prisma.credentialHistoryBlockchain.update({
         where: {
-          id: eventData.id,
+          id: enrichedId,
         },
         data: {
           status: "APPROVED",
@@ -178,12 +235,16 @@ class CredentialHistoryEventProcessor {
         },
       });
 
-      logger.success(`Credential history approved: ${eventData.id}`);
+      logger.success(`Credential history approved: ${enrichedId}`);
     } catch (error: any) {
       logger.error("❌ Error handling CredentialHistoryApproved event:", {
         error: error.message,
         stack: error.stack,
-        eventData: eventData,
+        eventData: {
+          id: enrichedId,
+          issuerDID: enrichedIssuerDID,
+          holderDID: enrichedHolderDID,
+        },
       });
       throw error;
     }
@@ -199,17 +260,22 @@ class CredentialHistoryEventProcessor {
     blockNumber: bigint;
     transactionHash: string;
   }): Promise<void> {
+    // Enrich indexed parameters
+    const enrichedId = this.enrichIndexedString(eventData.id);
+    const enrichedIssuerDID = this.enrichIndexedString(eventData.issuerDID);
+    const enrichedHolderDID = this.enrichIndexedString(eventData.holderDID);
+
     logger.info(`Processing CredentialHistoryRejected event:`, {
-      id: eventData.id,
-      issuerDID: eventData.issuerDID,
-      holderDID: eventData.holderDID,
+      id: enrichedId,
+      issuerDID: enrichedIssuerDID,
+      holderDID: enrichedHolderDID,
     });
 
     try {
       // Update status to REJECTED
       const result = await this.prisma.credentialHistoryBlockchain.update({
         where: {
-          id: eventData.id,
+          id: enrichedId,
         },
         data: {
           status: "REJECTED",
@@ -219,12 +285,16 @@ class CredentialHistoryEventProcessor {
         },
       });
 
-      logger.success(`Credential history rejected: ${eventData.id}`);
+      logger.success(`Credential history rejected: ${enrichedId}`);
     } catch (error: any) {
       logger.error("❌ Error handling CredentialHistoryRejected event:", {
         error: error.message,
         stack: error.stack,
-        eventData: eventData,
+        eventData: {
+          id: enrichedId,
+          issuerDID: enrichedIssuerDID,
+          holderDID: enrichedHolderDID,
+        },
       });
       throw error;
     }
