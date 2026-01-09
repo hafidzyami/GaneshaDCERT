@@ -433,7 +433,7 @@ app.use("/api/v1/credentials", credentialRoutes);
 app.use("/api/v1/presentations", presentationRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/institutions", institutionRoutes);
-app.use("/api/v1/payments", paymentRoutes);
+app.use("/api/v1/payment", paymentRoutes);
 app.use("/api/v1/performance", performanceRoutes);
 
 // 404 Handler - must be after all routes
