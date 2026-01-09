@@ -348,3 +348,104 @@ enum VPVerifyStatus {
   VALID_VERIFICATION
   INVALID_VERIFICATION
 }
+
+// ============================================
+// History Blockchain Models
+// ============================================
+
+enum HistoryStatus {
+  NONE
+  INITIATED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BlockchainOrderStatus {
+  NONE
+  PENDING_PAYMENT
+  SUCCESS
+  CANCELED
+}
+
+enum ItemType {
+  ISSUANCE
+  RENEWAL
+  UPDATE
+}
+
+model CredentialHistoryBlockchain {
+  id          String        @id
+  issuerDID   String
+  holderDID   String
+  historyType String
+  status      HistoryStatus
+  vcID        String
+  newVCID     String?
+  blockNumber BigInt
+  txHash      String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([issuerDID])
+  @@index([holderDID])
+  @@index([status])
+  @@index([vcID])
+  @@index([txHash])
+}
+
+model OrderBlockchain {
+  id          String               @id
+  holderDID   String
+  status      BlockchainOrderStatus
+  amount      BigInt
+  currency    String
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  blockNumber BigInt
+  txHash      String
+
+  items ItemBlockchain[]
+
+  @@index([holderDID])
+  @@index([status])
+  @@index([txHash])
+}
+
+model ItemBlockchain {
+  id          String   @id
+  orderID     String
+  price       BigInt
+  vcID        String
+  vcHash      String
+  itemType    ItemType
+  isPaid      Boolean  @default(false)
+  blockNumber BigInt
+  txHash      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  order OrderBlockchain @relation(fields: [orderID], references: [id])
+
+  @@index([orderID])
+  @@index([vcID])
+  @@index([isPaid])
+  @@index([txHash])
+}
+
+model PaymentBlockchain {
+  id          String   @id
+  orderID     String
+  method      String
+  status      String
+  amount      BigInt
+  paidAt      BigInt?
+  blockNumber BigInt
+  txHash      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([orderID])
+  @@index([status])
+  @@index([txHash])
+}
