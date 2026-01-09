@@ -635,7 +635,7 @@ router.get(
 router.post(
   "/issue-vc",
   processIssuanceVCValidator,
-  credentialController.processIssuanceVC
+  credentialController.approveIssuanceRequest
 );
 
 /**
@@ -868,7 +868,7 @@ router.post(
 router.post(
   "/renew-vc", // The new POST endpoint path
   processRenewalVCValidator, // Apply the validator
-  credentialController.processRenewalVC // Use the specific controller function
+  credentialController.approveRenewalRequest // Use the specific controller function
 );
 
 /**
@@ -972,7 +972,7 @@ router.post(
 router.post(
   "/update-vc", // The new POST endpoint path
   processUpdateVCValidator, // Apply the validator
-  credentialController.processUpdateVC // Use the specific controller function
+  credentialController.approveUpdateRequest // Use the specific controller function
 );
 
 /**

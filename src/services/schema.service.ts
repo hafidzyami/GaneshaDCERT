@@ -936,6 +936,25 @@ class SchemaService {
 
     return pricesWithIssuer;
   }
+
+  /**
+   * Get Schema Price for one specific schema ID
+   * @param schemaId - Schema ID
+   * @return schema price
+   */
+  async getPriceBasedOnSchemaId(schemaId: string): Promise<number> {
+
+    const priceRecord = await prisma.vCSchemaPrice.findFirst({
+      where: {
+        schemaId,
+      },
+    });
+
+    if (!priceRecord) {
+      throw new NotFoundError("Schema price not found for the given Schema ID");
+    }
+    return priceRecord.price.toNumber();
+  }
 }
 
 // Export singleton instance

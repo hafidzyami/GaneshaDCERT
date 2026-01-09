@@ -92,6 +92,7 @@ model VCResponse {
   holder_did     String
   order_id       String           @default(uuid())
   encrypted_body String
+  vc_hash        String?
   createdAt      DateTime         @default(now())
   deletedAt      DateTime?
   status         VCResponseStatus @default(PENDING)
@@ -152,18 +153,18 @@ model InstitutionRegistration {
 }
 
 model VCSchema {
-  id          String   @default(uuid())
-  version     Int      @default(1)
-  name        String
-  schema      Json
-  issuer_did  String
-  issuer_name String?
-  image_link  String?
-  expired_in  Int?     // Expiration in years (0 = lifetime, null = not set)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  VCSchemaPrices VCSchemaPrice[]
+  id             String         @default(uuid())
+  name           String
+  schema         Json
+  issuer_did     String
+  version        Int            @default(1)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  issuer_name    String?
+  image_link     String?
+  expired_in     Int?
+  VCSchemaPrices VCSchemaPrice?
 
   @@id([id, version])
   @@index([id])
@@ -312,6 +313,76 @@ model ProcessedEvent {
   @@index([blockNumber])
 }
 
+model CredentialHistoryBlockchain {
+  id          String        @id
+  issuerDID   String
+  holderDID   String
+  historyType String
+  status      HistoryStatus
+  vcID        String
+  newVCID     String?
+  blockNumber BigInt
+  txHash      String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([issuerDID])
+  @@index([holderDID])
+  @@index([status])
+  @@index([vcID])
+  @@index([txHash])
+}
+
+model OrderBlockchain {
+  id          String                @id
+  holderDID   String
+  status      BlockchainOrderStatus
+  amount      BigInt
+  currency    String
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  blockNumber BigInt
+  txHash      String
+
+  @@index([holderDID])
+  @@index([status])
+  @@index([txHash])
+}
+
+model ItemBlockchain {
+  id          String   @id
+  price       BigInt
+  vcID        String
+  vcHash      String
+  itemType    ItemType
+  isPaid      Boolean  @default(false)
+  blockNumber BigInt
+  txHash      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([vcID])
+  @@index([isPaid])
+  @@index([txHash])
+}
+
+model PaymentBlockchain {
+  id          String   @id
+  orderID     String
+  method      String
+  status      String
+  amount      BigInt
+  paidAt      BigInt?
+  blockNumber BigInt
+  txHash      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([orderID])
+  @@index([status])
+  @@index([txHash])
+}
+
 enum RequestStatus {
   PENDING
   APPROVED
@@ -349,10 +420,6 @@ enum VPVerifyStatus {
   INVALID_VERIFICATION
 }
 
-// ============================================
-// History Blockchain Models
-// ============================================
-
 enum HistoryStatus {
   NONE
   INITIATED
@@ -372,80 +439,4 @@ enum ItemType {
   ISSUANCE
   RENEWAL
   UPDATE
-}
-
-model CredentialHistoryBlockchain {
-  id          String        @id
-  issuerDID   String
-  holderDID   String
-  historyType String
-  status      HistoryStatus
-  vcID        String
-  newVCID     String?
-  blockNumber BigInt
-  txHash      String
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-
-  @@index([issuerDID])
-  @@index([holderDID])
-  @@index([status])
-  @@index([vcID])
-  @@index([txHash])
-}
-
-model OrderBlockchain {
-  id          String               @id
-  holderDID   String
-  status      BlockchainOrderStatus
-  amount      BigInt
-  currency    String
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
-  blockNumber BigInt
-  txHash      String
-
-  items ItemBlockchain[]
-
-  @@index([holderDID])
-  @@index([status])
-  @@index([txHash])
-}
-
-model ItemBlockchain {
-  id          String   @id
-  orderID     String
-  price       BigInt
-  vcID        String
-  vcHash      String
-  itemType    ItemType
-  isPaid      Boolean  @default(false)
-  blockNumber BigInt
-  txHash      String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  order OrderBlockchain @relation(fields: [orderID], references: [id])
-
-  @@index([orderID])
-  @@index([vcID])
-  @@index([isPaid])
-  @@index([txHash])
-}
-
-model PaymentBlockchain {
-  id          String   @id
-  orderID     String
-  method      String
-  status      String
-  amount      BigInt
-  paidAt      BigInt?
-  blockNumber BigInt
-  txHash      String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([orderID])
-  @@index([status])
-  @@index([txHash])
 }
