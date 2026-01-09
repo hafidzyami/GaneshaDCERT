@@ -20,6 +20,16 @@ export const paymentValidators: ValidationChain[] = [
         .withMessage("Item IDs must be a non-empty array"),
 ];
 
+export const getUnpaidItemsValidator: ValidationChain[] = [
+    body("holder_did")
+        .exists({ checkFalsy: true })
+        .withMessage("Holder DID is required")
+        .isString()
+        .withMessage("Holder DID must be a string")
+        .notEmpty()
+        .withMessage("Holder DID cannot be empty"),
+];
+
 
 export const dokuWebhookHeaderValidators: ValidationChain[] = [
     header("client-id")

@@ -33,6 +33,28 @@ export const createPaymentTransaction = asyncHandler(
 );
 
 /**
+ * Get unpaid items for a holder
+ */
+export const getUnpaidItems = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { holder_did } = req.body;
+
+    const result = await PaymentService.getUnpaidItems(holder_did);
+
+    return ResponseHelper.success(
+      res,
+      result,
+      'Unpaid items retrieved successfully'
+    );
+  }
+);
+
+/**
  * Handle DOKU VA payment notification webhook
  * This endpoint is called by DOKU when a payment is completed
  */

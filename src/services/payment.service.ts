@@ -1,11 +1,11 @@
-import { BadRequestError, NotFoundError } from "../utils/errors/AppError";
+import { BadRequestError, InternalServerError, NotFoundError } from "../utils/errors/AppError";
 import { logger } from "../config";
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-
+import { prisma } from "../config/database";
 
 import paymentSignatureUtilInstance from '../utils/paymentSignature';
-
+import paymentBlockchainService from "./blockchain/paymentBlockchain.service";
 
 // General class for payment, using DOKU provider
 class PaymentService {
@@ -16,16 +16,60 @@ class PaymentService {
      * Configuration object containing url, clientId, secretKey, requestTarget, and body
      * Returning response data from DOKU API
      */
-    async createTransaction(config: {
+    async createTransaction(params: {
         holder_did: string;
         item_ids: string[];
     }) {
         try {
 
-            // HARDCODE FOR DEVELOPMENT
-            const amount = 10000;
-            const invoice_number = `INV-${Date.now()}`;
-            const payment_due_date = 60
+            let totalAmount = 0;
+            const items: Array<{ id: string; vcID: string; price: number }> = [];
+            const invoice_number = `INV-${uuidv4()}-${Date.now()}`;
+            for (const itemId of params.item_ids) {
+                const item = await prisma.itemBlockchain.findUnique({
+                    where: { id: itemId },
+                    select: {
+                        id: true,
+                        vcID: true,
+                        price: true,
+                        isPaid: true,
+                    },
+                });
+
+                if (!item) {
+                    throw new NotFoundError(`Item with ID ${itemId} not found`);
+                }
+
+                if (item.isPaid) {
+                    throw new BadRequestError(`Item ${itemId} has already been paid`);
+                }
+
+                const priceInNumber = Number(item.price);
+                totalAmount += priceInNumber;
+                items.push({
+                    id: item.id,
+                    vcID: item.vcID,
+                    price: priceInNumber,
+                });
+            }
+
+            logger.info(`Creating transaction for ${items.length} items, total: ${totalAmount}`, {
+                holder_did: params.holder_did,
+                items: items.map(i => ({ id: i.id, vcID: i.vcID, price: i.price })),
+            });
+            const result = await paymentBlockchainService.createOrder(
+                invoice_number,
+                params.holder_did,
+                totalAmount,
+                "IDR",
+                items.map(item => item.id),
+            );
+
+            if (!result) {
+                throw new InternalServerError("Failed to create order on blockchain");
+            }
+
+            const payment_due_date = 60;
 
             const config = {
                 url: process.env.DOKU_API_URL || '',
@@ -34,7 +78,7 @@ class PaymentService {
                 requestTarget: '/checkout/v1/payment',
                 body: {
                     order: {
-                        amount,
+                        amount: totalAmount,
                         invoice_number
                     },
                     payment: {
@@ -75,6 +119,62 @@ class PaymentService {
             } else {
                 throw new BadRequestError(`Unexpected Error: ${error}`);
             }
+        }
+    }
+
+    /**
+     * Get unpaid items for a holder
+     * @param holder_did - Holder's DID
+     * @returns Array of unpaid items (item_id, vc_id, item_type only)
+     */
+    async getUnpaidItems(holder_did: string) {
+        try {
+            logger.info(`Fetching unpaid items for holder: ${holder_did}`);
+
+            // Get all unpaid items from ItemBlockchain
+            const unpaidItems = await prisma.itemBlockchain.findMany({
+                where: {
+                    isPaid: false,
+                },
+                select: {
+                    id: true,
+                    vcID: true,
+                    itemType: true,
+                    price: true,
+                },
+                orderBy: {
+                    createdAt: 'desc',
+                },
+            });
+
+            // Filter items by holder_did extracted from vcID
+            // vcID format: schema_id:version:holder_did:timestamp
+            const holderUnpaidItems = unpaidItems.filter((item) => {
+                const vcIdParts = item.vcID.split(':');
+                if (vcIdParts.length >= 3) {
+                    const holderDidFromVC = vcIdParts[2];
+                    return holderDidFromVC === holder_did;
+                }
+                return false;
+            });
+
+            logger.info(`Found ${holderUnpaidItems.length} unpaid items for holder ${holder_did}`);
+
+            // Transform data for response (simplified)
+            const transformedItems = holderUnpaidItems.map((item) => ({
+                item_id: item.id,
+                vc_id: item.vcID,
+                item_type: item.itemType,
+            }));
+
+            return {
+                holder_did,
+                total_unpaid_items: transformedItems.length,
+                items: transformedItems,
+            };
+        } catch (error) {
+            logger.error(`Error fetching unpaid items for holder ${holder_did}:`, error);
+            throw new InternalServerError(`Failed to fetch unpaid items: ${error}`);
         }
     }
 
@@ -168,6 +268,13 @@ class PaymentService {
             // 5. Trigger post-payment processes (issue VC, etc)
 
             logger.success('Payment notification processed successfully');
+            const paymentRecordId = notificationData.order?.invoice_number || 'UNKNOWN_ID';
+            // const result = await paymentBlockchainService.createPayment(
+            //     paymentRecordId,
+            //     transactionStatus,
+            //     amount,
+            //     transactionDate
+            // )
 
             // Return standard success response
             return {

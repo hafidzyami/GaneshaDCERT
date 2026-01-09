@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import logger from "../../config/logger";
+import { CredentialService } from "../credential.service";
 
 /**
  * Payment Event Processor
@@ -7,9 +8,11 @@ import logger from "../../config/logger";
  */
 class PaymentEventProcessor {
   private prisma: PrismaClient;
+  private credentialService: CredentialService;
 
   constructor(prisma: PrismaClient) {
     this.prisma = prisma;
+    this.credentialService = new CredentialService({ db: prisma });
   }
 
   /**
@@ -189,10 +192,6 @@ class PaymentEventProcessor {
 
       const itemType = itemTypeMap[eventData.itemType] || "ISSUANCE";
 
-      // Note: We don't have orderID from the event, so we set it to the item ID for now
-      // This should be updated when the item is associated with an order
-      const orderID = eventData.id; // Temporary, will be updated later
-
       // Upsert item to database
       const result = await this.prisma.itemBlockchain.upsert({
         where: {
@@ -200,7 +199,6 @@ class PaymentEventProcessor {
         },
         create: {
           id: eventData.id,
-          orderID: orderID,
           price: eventData.price,
           vcID: eventData.vcID,
           vcHash: eventData.vcHash,
@@ -239,6 +237,7 @@ class PaymentEventProcessor {
 
   /**
    * Handle ItemPaid event
+   * Triggers automatic VC issuance/renewal/update after payment completion
    */
   async handleItemPaid(eventData: {
     id: string;
@@ -253,7 +252,7 @@ class PaymentEventProcessor {
     });
 
     try {
-      // Update item isPaid status
+      // 1. Update item isPaid status
       const result = await this.prisma.itemBlockchain.update({
         where: {
           id: eventData.id,
@@ -266,7 +265,78 @@ class PaymentEventProcessor {
         },
       });
 
-      logger.success(`Item marked as paid: ${eventData.id}`);
+      logger.success(`✅ Item marked as paid: ${eventData.id}`);
+
+      // 2. Get full item details including type and vcHash
+      const item = await this.prisma.itemBlockchain.findUnique({
+        where: { id: eventData.id },
+      });
+
+      if (!item) {
+        logger.error(`❌ Item not found after update: ${eventData.id}`);
+        return;
+      }
+
+      logger.info(`Item details:`, {
+        itemType: item.itemType,
+        vcID: item.vcID,
+        vcHash: item.vcHash,
+      });
+
+      // 3. Trigger appropriate credential operation based on itemType
+      try {
+        switch (item.itemType) {
+          case "ISSUANCE":
+            logger.info(`🚀 Triggering automatic VC issuance for: ${item.vcID}`);
+            await this.credentialService.completeIssuanceAfterPayment(
+              item.vcID,
+              item.vcHash
+            );
+            logger.success(
+              `✅ Automatic issuance completed for VC: ${item.vcID}`
+            );
+            break;
+
+          case "RENEWAL":
+            logger.info(`🚀 Triggering automatic VC renewal for: ${item.vcID}`);
+            await this.credentialService.completeRenewalAfterPayment(
+              item.vcID,
+              item.vcHash
+            );
+            logger.success(
+              `✅ Automatic renewal completed for VC: ${item.vcID}`
+            );
+            break;
+
+          case "UPDATE":
+            logger.info(`🚀 Triggering automatic VC update for: ${item.vcID}`);
+            await this.credentialService.completeUpdateAfterPayment(
+              item.vcID,
+              item.vcHash
+            );
+            logger.success(
+              `✅ Automatic update completed for VC: ${item.vcID}`
+            );
+            break;
+
+          default:
+            logger.warn(
+              `⚠️ Unknown itemType: ${item.itemType} for item ${eventData.id}`
+            );
+        }
+      } catch (credentialError: any) {
+        logger.error(
+          `❌ Failed to complete credential operation for item ${eventData.id}:`,
+          {
+            error: credentialError.message,
+            stack: credentialError.stack,
+            itemType: item.itemType,
+            vcID: item.vcID,
+          }
+        );
+        // Don't throw - we've already marked the item as paid
+        // The admin can retry manually if needed
+      }
     } catch (error: any) {
       logger.error("❌ Error handling ItemPaid event:", {
         error: error.message,
