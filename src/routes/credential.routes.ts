@@ -93,16 +93,17 @@ const router: Router = express.Router();
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: Permintaan kredensial berhasil dibuat
+ *                   example: Credential issuance request created successfully
  *                 data:
  *                   type: object
  *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Verifiable Credential request has been successfully submitted.
  *                     request_id:
  *                       type: string
  *                       format: uuid
- *                     status:
- *                       type: string
- *                       example: PENDING
+ *                       example: 550e8400-e29b-41d4-a716-446655440000
  *       400:
  *         description: Validation error or invalid data
  *       404:
@@ -162,10 +163,13 @@ router.post(
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: "Successfully retrieved ISSUANCE requests."
+ *                   example: Credential requests retrieved successfully
  *                 data:
  *                   type: object
  *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Successfully retrieved ISSUANCE requests.
  *                     count:
  *                       type: integer
  *                       example: 5
@@ -327,13 +331,17 @@ router.get("/", getHolderVCsValidator, credentialController.getHolderVCs);
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: "Verifiable Credential update request submitted successfully."
+ *                   example: Credential update request created successfully
  *                 data:
  *                   type: object
  *                   properties:
+ *                     message:
+ *                       type: string
+ *                       example: Verifiable Credential update request submitted successfully.
  *                     request_id:
  *                       type: string
  *                       format: uuid
+ *                       example: 550e8400-e29b-41d4-a716-446655440000
  *                       description: The ID of the newly created VCUpdateRequest record.
  *       400:
  *         description: Validation error (e.g., missing fields, invalid DIDs).
@@ -392,13 +400,14 @@ router.post(
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: "Verifiable Credential renewal request submitted successfully."
+ *                   example: Verifiable Credential renewal request submitted successfully.
  *                 data:
  *                   type: object
  *                   properties:
- *                     request_id:
+ *                     new_request_id:
  *                       type: string
  *                       format: uuid
+ *                       example: 550e8400-e29b-41d4-a716-446655440000
  *                       description: The ID of the newly created VCRenewalRequest record.
  *       400:
  *         description: Validation error (e.g., missing fields, invalid DIDs).
@@ -544,8 +553,15 @@ router.get(
  * @swagger
  * /credentials/issue-vc:
  *   post:
- *     summary: Process credential issuance (Approve/Reject)
- *     description: Issuer approves or rejects a specific credential issuance request, issuing it on the blockchain if approved.
+ *     summary: Approve/Reject credential issuance request
+ *     description: |
+ *       Issuer approves or rejects a credential issuance request.
+ *       
+ *       **Important:** 
+ *       - If APPROVED and price > 0: Creates payment item on blockchain and returns payment info
+ *       - Holder must complete payment before VC is issued to blockchain
+ *       - VC issuance happens automatically after payment is confirmed
+ *       - Price must be greater than 0 (free credentials not supported)
  *     tags:
  *       - Verifiable Credential (VC) Lifecycle
  *
@@ -592,7 +608,7 @@ router.get(
  *                 description: Expiration date and time for the VC (ISO 8601 format, Required only if action is APPROVED)
  *     responses:
  *       200:
- *         description: Request processed successfully (Approved or Rejected)
+ *         description: Request processed successfully
  *         content:
  *           application/json:
  *             schema:
@@ -603,7 +619,7 @@ router.get(
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: "Verifiable Credential issued successfully on blockchain and database."
+ *                   example: "Verifiable Credential issuance approved. Payment required to complete issuance."
  *                 data:
  *                   type: object
  *                   properties:
@@ -613,24 +629,38 @@ router.get(
  *                     status:
  *                       type: string
  *                       enum: [APPROVED, REJECTED]
- *                     vc_response_id:
+ *                     stage:
  *                       type: string
- *                       format: uuid
- *                       description: Present only if action was APPROVED
- *                     transaction_hash:
- *                       type: string
- *                       description: Blockchain transaction hash (Present only if action was APPROVED)
- *                     block_number:
- *                       type: integer
- *                       description: Blockchain block number (Present only if action was APPROVED)
+ *                       enum: [PAYMENT_PENDING, REJECTED]
+ *                       description: Current stage of the issuance process
+ *                     payment_info:
+ *                       type: object
+ *                       description: Payment information (present when APPROVED)
+ *                       properties:
+ *                         item_id:
+ *                           type: string
+ *                           description: UUID of the payment item
+ *                         price:
+ *                           type: number
+ *                           description: Amount to be paid
+ *                         vc_id:
+ *                           type: string
+ *                           description: VC ID for tracking
+ *                         transaction_hash:
+ *                           type: string
+ *                           description: Payment blockchain transaction hash
  *       400:
- *         description: Validation error, mismatched DIDs, request already processed, missing required fields for approval, or blockchain error.
+ *         description: |
+ *           - Validation error
+ *           - Request already processed
+ *           - Missing required fields
+ *           - Price is 0 or negative (free credentials not supported)
  *       401:
- *         description: Unauthorized (Invalid or missing JWT token).
+ *         description: Unauthorized (Invalid or missing JWT token)
  *       404:
- *         description: Issuance request not found.
+ *         description: Issuance request not found
  *       500:
- *         description: Internal server error.
+ *         description: Internal server error
  */
 router.post(
   "/issue-vc",

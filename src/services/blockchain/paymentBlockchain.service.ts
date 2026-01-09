@@ -65,20 +65,30 @@ class PaymentBlockchainService {
     itemType: number
   ): Promise<TransactionReceipt> {
     try {
+      // Smart contract doesn't accept price = 0 (Error E5)
+      // Set minimum price = 1 for free credentials as workaround
+      const blockchainPrice = price === 0 ? 1 : price;
+
+      if (price === 0) {
+        logger.warn(`[Payment] Free item detected (price = 0). Using minimum blockchain price = 1 for compatibility.`);
+      }
+
       logger.info("[Payment] Creating item", {
         id,
-        price,
+        originalPrice: price,
+        blockchainPrice,
         vcID,
         vcHash,
         itemType,
       });
 
-      const tx = await this.contract.createItem(id, price, vcID, vcHash, itemType);
+      const tx = await this.contract.createItem(id, blockchainPrice, vcID, vcHash, itemType);
 
       const receipt = await tx.wait();
       logger.success(`[Payment] Item created: ${id}`, {
         transactionHash: receipt.hash,
         blockNumber: receipt.blockNumber,
+        price: blockchainPrice,
       });
 
       return receipt;

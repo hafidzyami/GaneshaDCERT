@@ -938,22 +938,55 @@ class SchemaService {
   }
 
   /**
-   * Get Schema Price for one specific schema ID
+   * Get Schema Price for one specific schema ID and version
    * @param schemaId - Schema ID
+   * @param version - Schema version (optional, defaults to latest)
    * @return schema price
    */
-  async getPriceBasedOnSchemaId(schemaId: string): Promise<number> {
+  async getPriceBasedOnSchemaId(schemaId: string, version?: number): Promise<number> {
+    let priceRecord;
 
-    const priceRecord = await prisma.vCSchemaPrice.findFirst({
-      where: {
-        schemaId,
-      },
-    });
+    if (version !== undefined) {
+      // Query with specific version
+      priceRecord = await prisma.vCSchemaPrice.findUnique({
+        where: {
+          schemaId_version: {
+            schemaId,
+            version,
+          },
+        },
+      });
+    } else {
+      // Query latest version (highest version number)
+      priceRecord = await prisma.vCSchemaPrice.findFirst({
+        where: {
+          schemaId,
+        },
+        orderBy: {
+          version: 'desc',
+        },
+      });
+    }
 
     if (!priceRecord) {
-      throw new NotFoundError("Schema price not found for the given Schema ID");
+      throw new NotFoundError(
+        `Schema price not found for Schema ID: ${schemaId}${version !== undefined ? ` version ${version}` : ''}`
+      );
     }
-    return priceRecord.price.toNumber();
+
+    const price = priceRecord.price.toNumber();
+
+    // Allow price = 0 for free credentials
+    // Validate price is not negative
+    if (price < 0) {
+      throw new BadRequestError(
+        `Invalid price for Schema ID: ${schemaId} version ${priceRecord.version}. Price cannot be negative.`
+      );
+    }
+
+    logger.info(`Retrieved price for schema ${schemaId} v${priceRecord.version}: ${price === 0 ? 'FREE' : price}`);
+
+    return price;
   }
 }
 

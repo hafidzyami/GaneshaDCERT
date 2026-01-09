@@ -185,6 +185,12 @@ router.post(
  *                             enum: [ISSUANCE, RENEWAL, UPDATE]
  *                             description: Type of credential operation
  *                             example: "ISSUANCE"
+ *                           date:
+ *                             type: string
+ *                             format: date-time
+ *                             nullable: true
+ *                             description: Request creation date from respective table (VCIssuanceRequest, VCRenewalRequest, or VCUpdateRequest)
+ *                             example: "2024-01-15T10:30:45.123Z"
  *                           price:
  *                             type: number
  *                             description: Price of the item

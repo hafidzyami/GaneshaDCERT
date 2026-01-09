@@ -614,11 +614,21 @@ class CredentialService {
         // Don't fail the issuance if checking/revoking fails
         // The new VC can still be issued
       }
-      
+
       // --- Payment Flow: Create Item on Payment Blockchain ---
-      const price = await SchemaService.getPriceBasedOnSchemaId(schema_id);
+      const price = await SchemaService.getPriceBasedOnSchemaId(schema_id, schema_version);
+      
+      // Validate price - must be greater than 0 for paid credentials
+      if (price <= 0) {
+        logger.error(`Invalid price for credential: ${price}. Price must be greater than 0.`);
+        throw new BadRequestError(
+          "Credential price must be greater than 0. Free credentials are not supported in this flow."
+        );
+      }
+
       const itemId = uuidv4();
 
+      // Price > 0: Normal payment flow
       let paymentReceipt: any;
       try {
         paymentReceipt = await PaymentBlockchainService.createItem(
@@ -1015,11 +1025,11 @@ class CredentialService {
         throw new BadRequestError("hash is required when action is APPROVED.");
       }
 
-      // Extract schema_id from vc_id (format: schema_id:version:holder_did:timestamp)
-      const { schemaId } = extractSchemaAndHolder(vc_id);
+      // Extract schema_id and version from vc_id (format: schema_id:version:holder_did:timestamp)
+      const { schemaId, version } = extractVCID(vc_id);
 
       // --- Payment Flow: Create Item on Payment Blockchain ---
-      const price = await SchemaService.getPriceBasedOnSchemaId(schemaId);
+      const price = await SchemaService.getPriceBasedOnSchemaId(schemaId, parseInt(version, 10));
       const itemId = uuidv4();
 
       let paymentReceipt: any;
@@ -1203,7 +1213,7 @@ class CredentialService {
       );
 
       // --- Payment Flow: Create Item on Payment Blockchain ---
-      const price = await SchemaService.getPriceBasedOnSchemaId(schema_id);
+      const price = await SchemaService.getPriceBasedOnSchemaId(schema_id, schema_version);
       const itemId = uuidv4();
 
       let paymentReceipt: any;

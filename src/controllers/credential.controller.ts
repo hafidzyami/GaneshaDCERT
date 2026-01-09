@@ -115,12 +115,11 @@ export const getCredentialRequestsByType = asyncHandler(
       holder_did as string | undefined // <-- Teruskan 'holder_did' ke service
     );
 
-    // --- PERBAIKAN DI SINI ---
-    // Gunakan 'result.data' dan 'result.message' dari service
+    // Return the full result object (contains message, count, data)
     return ResponseHelper.success(
       res,
-      result.data,
-      result.message
+      result,
+      "Credential requests retrieved successfully"
     );
   }
 );

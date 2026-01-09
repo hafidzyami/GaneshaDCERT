@@ -6,6 +6,7 @@ import { prisma } from "../config/database";
 
 import paymentSignatureUtilInstance from '../utils/paymentSignature';
 import paymentBlockchainService from "./blockchain/paymentBlockchain.service";
+import { ItemType } from "@prisma/client";
 
 // General class for payment, using DOKU provider
 class PaymentService {
@@ -33,6 +34,7 @@ class PaymentService {
                         vcID: true,
                         price: true,
                         isPaid: true,
+                        
                     },
                 });
 
@@ -147,6 +149,8 @@ class PaymentService {
                 },
             });
 
+            // Get dari Database Issuance / RENEWAL / UPDATE Request based on VC ID
+
             // Filter items by holder_did extracted from vcID
             // vcID format: schema_id:version:holder_did:timestamp
             const holderUnpaidItems = unpaidItems.filter((item) => {
@@ -160,12 +164,40 @@ class PaymentService {
 
             logger.info(`Found ${holderUnpaidItems.length} unpaid items for holder ${holder_did}`);
 
-            // Transform data for response (simplified)
-            const transformedItems = holderUnpaidItems.map((item) => ({
-                item_id: item.id,
-                vc_id: item.vcID,
-                item_type: item.itemType,
-            }));
+            // Transform data for response with date from respective tables
+            const transformedItems = await Promise.all(
+                holderUnpaidItems.map(async (item) => {
+                    let requestDate = null;
+
+                    // Get date based on itemType
+                    if (item.itemType === ItemType.ISSUANCE) {
+                        const request = await prisma.vCIssuanceRequest.findFirst({
+                            where: { vc_id: item.vcID },
+                            select: { createdAt: true },
+                        });
+                        requestDate = request?.createdAt;
+                    } else if (item.itemType === ItemType.RENEWAL) {
+                        const request = await prisma.vCRenewalRequest.findFirst({
+                            where: { vc_id: item.vcID },
+                            select: { createdAt: true },
+                        });
+                        requestDate = request?.createdAt;
+                    } else if (item.itemType === ItemType.UPDATE) {
+                        const request = await prisma.vCUpdateRequest.findFirst({
+                            where: { vc_id: item.vcID },
+                            select: { createdAt: true },
+                        });
+                        requestDate = request?.createdAt;
+                    }
+
+                    return {
+                        item_id: item.id,
+                        vc_id: item.vcID,
+                        item_type: item.itemType,
+                        date: requestDate,
+                    };
+                })
+            );
 
             return {
                 holder_did,
