@@ -70,9 +70,46 @@ router.post(
 );
 
 /**
- * Test endpoint without DID signature verification
- * Use this for testing payment integration without authentication
- * TODO: Remove or secure this endpoint in production
+ * @swagger
+ * /payment/test-transaction:
+ *   post:
+ *     summary: Create payment transaction (Test Mode)
+ *     description: |
+ *       Create a new payment transaction through DOKU payment gateway without DID signature verification.
+ *
+ *
+ *       - No authentication required
+ *       - Should be removed or secured in production
+ *       - Use `/payment/transaction` for production with proper authentication
+ *     tags:
+ *       - Payment
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - holder_did
+ *               - item_ids
+ *             properties:
+ *               holder_did:
+ *                 type: string
+ *                 example: "did:example:123456789"
+ *                 description: Holder's DID
+ *               item_ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["item1", "item2"]
+ *                 description: Array of item IDs
+ *     responses:
+ *       200:
+ *         description: Payment transaction created successfully
+ *       400:
+ *         description: Invalid request data
+ *       500:
+ *         description: Server error
  */
 router.post(
   "/test-transaction",
@@ -84,7 +121,7 @@ router.post(
 
 /**
  * @swagger
- * /transfer-va/notification:
+ * /payment/transfer-va/notification:
  *   post:
  *     summary: DOKU VA Payment Notification Webhook
  *     description: Receives payment notification from DOKU when Virtual Account payment is completed
