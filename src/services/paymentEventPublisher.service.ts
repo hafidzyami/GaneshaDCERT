@@ -182,7 +182,7 @@ class PaymentEventPublisher {
   }
 
   /**
-   * Catch up with historical events
+   * Catch up with historical events (with batching to avoid RPC limits)
    */
   private async catchUpHistoricalEvents(): Promise<void> {
     try {
@@ -190,9 +190,11 @@ class PaymentEventPublisher {
         await PaymentBlockchainConfig.provider.getBlockNumber();
       logger.info(`[Payment] Current blockchain block: ${currentBlock}`);
 
+      const BATCH_SIZE = 1000; // Query 1000 blocks at a time to avoid RPC limits
+
       for (const eventType of this.eventTypes) {
         const lastProcessed = this.lastProcessedBlock[eventType] || BigInt(0);
-        const fromBlock = Number(lastProcessed) + 1;
+        let fromBlock = Number(lastProcessed) + 1;
 
         if (fromBlock > currentBlock) {
           logger.info(
@@ -205,20 +207,43 @@ class PaymentEventPublisher {
           `[Payment] Catching up ${eventType} from block ${fromBlock} to ${currentBlock}`
         );
 
-        const filter = this.contract.filters[eventType]();
-        const events = await this.contract.queryFilter(
-          filter,
-          fromBlock,
-          currentBlock
-        );
+        let totalEvents = 0;
 
-        logger.info(`[Payment] Found ${events.length} ${eventType} events`);
+        // Process in batches
+        while (fromBlock <= currentBlock) {
+          const toBlock = Math.min(fromBlock + BATCH_SIZE - 1, currentBlock);
 
-        for (const event of events) {
-          await this.processEvent(eventType, event as ethers.EventLog);
+          logger.debug(
+            `[Payment] ${eventType}: Querying blocks ${fromBlock} to ${toBlock}`
+          );
+
+          const filter = this.contract.filters[eventType]();
+          const events = await this.contract.queryFilter(
+            filter,
+            fromBlock,
+            toBlock
+          );
+
+          logger.debug(
+            `[Payment] Found ${events.length} ${eventType} events in batch`
+          );
+
+          for (const event of events) {
+            await this.processEvent(eventType, event as ethers.EventLog);
+          }
+
+          totalEvents += events.length;
+
+          // Update checkpoint after each batch
+          await this.updateCheckpoint(eventType, BigInt(toBlock));
+
+          // Move to next batch
+          fromBlock = toBlock + 1;
         }
 
-        await this.updateCheckpoint(eventType, BigInt(currentBlock));
+        logger.info(
+          `[Payment] ${eventType}: Processed ${totalEvents} events total`
+        );
       }
 
       logger.success("[Payment] Historical events catch-up completed");
