@@ -16,6 +16,20 @@ class PaymentEventProcessor {
   }
 
   /**
+   * Helper: Convert indexed parameter to string
+   */
+  private enrichIndexedString(value: any): string {
+    if (typeof value === "string") {
+      return value;
+    }
+    if (typeof value === "object" && value !== null) {
+      // If it's an indexed parameter object, try to get the actual value
+      return value.toString();
+    }
+    return String(value);
+  }
+
+  /**
    * Handle OrderCreated event
    */
   async handleOrderCreated(eventData: {
@@ -28,12 +42,17 @@ class PaymentEventProcessor {
     blockNumber: bigint;
     transactionHash: string;
   }): Promise<void> {
+    // Enrich indexed parameters
+    const enrichedId = this.enrichIndexedString(eventData.id);
+    const enrichedHolderDID = this.enrichIndexedString(eventData.holderDID);
+    const enrichedCurrency = this.enrichIndexedString(eventData.currency);
+
     logger.info(`Processing OrderCreated event:`, {
-      id: eventData.id,
-      holderDID: eventData.holderDID,
+      id: enrichedId,
+      holderDID: enrichedHolderDID,
       status: eventData.status,
       amount: eventData.amount.toString(),
-      currency: eventData.currency,
+      currency: enrichedCurrency,
     });
 
     try {
@@ -56,23 +75,23 @@ class PaymentEventProcessor {
       // Upsert order to database
       const result = await this.prisma.orderBlockchain.upsert({
         where: {
-          id: eventData.id,
+          id: enrichedId,
         },
         create: {
-          id: eventData.id,
-          holderDID: eventData.holderDID,
+          id: enrichedId,
+          holderDID: enrichedHolderDID,
           status: status,
           amount: eventData.amount,
-          currency: eventData.currency,
+          currency: enrichedCurrency,
           blockNumber: eventData.blockNumber,
           txHash: eventData.transactionHash,
           createdAt: new Date(Number(eventData.timestamp) * 1000),
         },
         update: {
-          holderDID: eventData.holderDID,
+          holderDID: enrichedHolderDID,
           status: status,
           amount: eventData.amount,
-          currency: eventData.currency,
+          currency: enrichedCurrency,
           blockNumber: eventData.blockNumber,
           txHash: eventData.transactionHash,
           updatedAt: new Date(),
@@ -80,14 +99,16 @@ class PaymentEventProcessor {
       });
 
       logger.success(
-        `Order upserted in database: ${eventData.id} (status: ${status})`
+        `Order upserted in database: ${enrichedId} (status: ${status})`
       );
     } catch (error: any) {
       logger.error("❌ Error handling OrderCreated event:", {
         error: error.message,
         stack: error.stack,
         eventData: {
-          ...eventData,
+          id: enrichedId,
+          holderDID: enrichedHolderDID,
+          currency: enrichedCurrency,
           amount: eventData.amount.toString(),
           timestamp: eventData.timestamp.toString(),
         },
@@ -107,8 +128,11 @@ class PaymentEventProcessor {
     blockNumber: bigint;
     transactionHash: string;
   }): Promise<void> {
+    // Enrich indexed parameters
+    const enrichedId = this.enrichIndexedString(eventData.id);
+
     logger.info(`Processing OrderStatusChanged event:`, {
-      id: eventData.id,
+      id: enrichedId,
       oldStatus: eventData.oldStatus,
       newStatus: eventData.newStatus,
     });
@@ -133,7 +157,7 @@ class PaymentEventProcessor {
       // Update order status
       const result = await this.prisma.orderBlockchain.update({
         where: {
-          id: eventData.id,
+          id: enrichedId,
         },
         data: {
           status: newStatus,
@@ -144,14 +168,14 @@ class PaymentEventProcessor {
       });
 
       logger.success(
-        `Order status updated: ${eventData.id} -> ${newStatus}`
+        `Order status updated: ${enrichedId} -> ${newStatus}`
       );
     } catch (error: any) {
       logger.error("❌ Error handling OrderStatusChanged event:", {
         error: error.message,
         stack: error.stack,
         eventData: {
-          ...eventData,
+          id: enrichedId,
           timestamp: eventData.timestamp.toString(),
         },
       });
@@ -172,10 +196,15 @@ class PaymentEventProcessor {
     blockNumber: bigint;
     transactionHash: string;
   }): Promise<void> {
+    // Enrich indexed parameters
+    const enrichedId = this.enrichIndexedString(eventData.id);
+    const enrichedVcID = this.enrichIndexedString(eventData.vcID);
+    const enrichedVcHash = this.enrichIndexedString(eventData.vcHash);
+
     logger.info(`Processing ItemCreated event:`, {
-      id: eventData.id,
-      vcID: eventData.vcID,
-      vcHash: eventData.vcHash,
+      id: enrichedId,
+      vcID: enrichedVcID,
+      vcHash: enrichedVcHash,
       price: eventData.price.toString(),
       itemType: eventData.itemType,
     });
@@ -195,13 +224,13 @@ class PaymentEventProcessor {
       // Upsert item to database
       const result = await this.prisma.itemBlockchain.upsert({
         where: {
-          id: eventData.id,
+          id: enrichedId,
         },
         create: {
-          id: eventData.id,
+          id: enrichedId,
           price: eventData.price,
-          vcID: eventData.vcID,
-          vcHash: eventData.vcHash,
+          vcID: enrichedVcID,
+          vcHash: enrichedVcHash,
           itemType: itemType,
           isPaid: false,
           blockNumber: eventData.blockNumber,
@@ -209,8 +238,8 @@ class PaymentEventProcessor {
         },
         update: {
           price: eventData.price,
-          vcID: eventData.vcID,
-          vcHash: eventData.vcHash,
+          vcID: enrichedVcID,
+          vcHash: enrichedVcHash,
           itemType: itemType,
           blockNumber: eventData.blockNumber,
           txHash: eventData.transactionHash,
@@ -219,14 +248,16 @@ class PaymentEventProcessor {
       });
 
       logger.success(
-        `Item upserted in database: ${eventData.id} (type: ${itemType})`
+        `Item upserted in database: ${enrichedId} (type: ${itemType})`
       );
     } catch (error: any) {
       logger.error("❌ Error handling ItemCreated event:", {
         error: error.message,
         stack: error.stack,
         eventData: {
-          ...eventData,
+          id: enrichedId,
+          vcID: enrichedVcID,
+          vcHash: enrichedVcHash,
           price: eventData.price.toString(),
           timestamp: eventData.timestamp.toString(),
         },
@@ -246,16 +277,20 @@ class PaymentEventProcessor {
     blockNumber: bigint;
     transactionHash: string;
   }): Promise<void> {
+    // Enrich indexed parameters
+    const enrichedId = this.enrichIndexedString(eventData.id);
+    const enrichedVcID = this.enrichIndexedString(eventData.vcID);
+
     logger.info(`Processing ItemPaid event:`, {
-      id: eventData.id,
-      vcID: eventData.vcID,
+      id: enrichedId,
+      vcID: enrichedVcID,
     });
 
     try {
       // 1. Update item isPaid status
       const result = await this.prisma.itemBlockchain.update({
         where: {
-          id: eventData.id,
+          id: enrichedId,
         },
         data: {
           isPaid: true,
@@ -265,15 +300,15 @@ class PaymentEventProcessor {
         },
       });
 
-      logger.success(`✅ Item marked as paid: ${eventData.id}`);
+      logger.success(`✅ Item marked as paid: ${enrichedId}`);
 
       // 2. Get full item details including type and vcHash
       const item = await this.prisma.itemBlockchain.findUnique({
-        where: { id: eventData.id },
+        where: { id: enrichedId },
       });
 
       if (!item) {
-        logger.error(`❌ Item not found after update: ${eventData.id}`);
+        logger.error(`❌ Item not found after update: ${enrichedId}`);
         return;
       }
 
@@ -321,12 +356,12 @@ class PaymentEventProcessor {
 
           default:
             logger.warn(
-              `⚠️ Unknown itemType: ${item.itemType} for item ${eventData.id}`
+              `⚠️ Unknown itemType: ${item.itemType} for item ${enrichedId}`
             );
         }
       } catch (credentialError: any) {
         logger.error(
-          `❌ Failed to complete credential operation for item ${eventData.id}:`,
+          `❌ Failed to complete credential operation for item ${enrichedId}:`,
           {
             error: credentialError.message,
             stack: credentialError.stack,
@@ -342,7 +377,8 @@ class PaymentEventProcessor {
         error: error.message,
         stack: error.stack,
         eventData: {
-          ...eventData,
+          id: enrichedId,
+          vcID: enrichedVcID,
           timestamp: eventData.timestamp.toString(),
         },
       });
@@ -363,11 +399,17 @@ class PaymentEventProcessor {
     blockNumber: bigint;
     transactionHash: string;
   }): Promise<void> {
+    // Enrich indexed parameters
+    const enrichedId = this.enrichIndexedString(eventData.id);
+    const enrichedOrderID = this.enrichIndexedString(eventData.orderID);
+    const enrichedMethod = this.enrichIndexedString(eventData.method);
+    const enrichedStatus = this.enrichIndexedString(eventData.status);
+
     logger.info(`Processing PaymentCreated event:`, {
-      id: eventData.id,
-      orderID: eventData.orderID,
-      method: eventData.method,
-      status: eventData.status,
+      id: enrichedId,
+      orderID: enrichedOrderID,
+      method: enrichedMethod,
+      status: enrichedStatus,
       amount: eventData.amount.toString(),
     });
 
@@ -375,22 +417,22 @@ class PaymentEventProcessor {
       // Upsert payment to database
       const result = await this.prisma.paymentBlockchain.upsert({
         where: {
-          id: eventData.id,
+          id: enrichedId,
         },
         create: {
-          id: eventData.id,
-          orderID: eventData.orderID,
-          method: eventData.method,
-          status: eventData.status,
+          id: enrichedId,
+          orderID: enrichedOrderID,
+          method: enrichedMethod,
+          status: enrichedStatus,
           amount: eventData.amount,
           paidAt: null,
           blockNumber: eventData.blockNumber,
           txHash: eventData.transactionHash,
         },
         update: {
-          orderID: eventData.orderID,
-          method: eventData.method,
-          status: eventData.status,
+          orderID: enrichedOrderID,
+          method: enrichedMethod,
+          status: enrichedStatus,
           amount: eventData.amount,
           blockNumber: eventData.blockNumber,
           txHash: eventData.transactionHash,
@@ -399,14 +441,17 @@ class PaymentEventProcessor {
       });
 
       logger.success(
-        `Payment upserted in database: ${eventData.id} (status: ${eventData.status})`
+        `Payment upserted in database: ${enrichedId} (status: ${enrichedStatus})`
       );
     } catch (error: any) {
       logger.error("❌ Error handling PaymentCreated event:", {
         error: error.message,
         stack: error.stack,
         eventData: {
-          ...eventData,
+          id: enrichedId,
+          orderID: enrichedOrderID,
+          method: enrichedMethod,
+          status: enrichedStatus,
           amount: eventData.amount.toString(),
           timestamp: eventData.timestamp.toString(),
         },
@@ -427,21 +472,27 @@ class PaymentEventProcessor {
     blockNumber: bigint;
     transactionHash: string;
   }): Promise<void> {
+    // Enrich indexed parameters
+    const enrichedId = this.enrichIndexedString(eventData.id);
+    const enrichedOrderID = this.enrichIndexedString(eventData.orderID);
+    const enrichedOldStatus = this.enrichIndexedString(eventData.oldStatus);
+    const enrichedNewStatus = this.enrichIndexedString(eventData.newStatus);
+
     logger.info(`Processing PaymentStatusChanged event:`, {
-      id: eventData.id,
-      orderID: eventData.orderID,
-      oldStatus: eventData.oldStatus,
-      newStatus: eventData.newStatus,
+      id: enrichedId,
+      orderID: enrichedOrderID,
+      oldStatus: enrichedOldStatus,
+      newStatus: enrichedNewStatus,
     });
 
     try {
       // Update payment status
       const result = await this.prisma.paymentBlockchain.update({
         where: {
-          id: eventData.id,
+          id: enrichedId,
         },
         data: {
-          status: eventData.newStatus,
+          status: enrichedNewStatus,
           blockNumber: eventData.blockNumber,
           txHash: eventData.transactionHash,
           updatedAt: new Date(),
@@ -449,14 +500,17 @@ class PaymentEventProcessor {
       });
 
       logger.success(
-        `Payment status updated: ${eventData.id} -> ${eventData.newStatus}`
+        `Payment status updated: ${enrichedId} -> ${enrichedNewStatus}`
       );
     } catch (error: any) {
       logger.error("❌ Error handling PaymentStatusChanged event:", {
         error: error.message,
         stack: error.stack,
         eventData: {
-          ...eventData,
+          id: enrichedId,
+          orderID: enrichedOrderID,
+          oldStatus: enrichedOldStatus,
+          newStatus: enrichedNewStatus,
           timestamp: eventData.timestamp.toString(),
         },
       });
@@ -475,9 +529,13 @@ class PaymentEventProcessor {
     blockNumber: bigint;
     transactionHash: string;
   }): Promise<void> {
+    // Enrich indexed parameters
+    const enrichedId = this.enrichIndexedString(eventData.id);
+    const enrichedOrderID = this.enrichIndexedString(eventData.orderID);
+
     logger.info(`Processing PaymentCompleted event:`, {
-      id: eventData.id,
-      orderID: eventData.orderID,
+      id: enrichedId,
+      orderID: enrichedOrderID,
       amount: eventData.amount.toString(),
     });
 
@@ -485,7 +543,7 @@ class PaymentEventProcessor {
       // Update payment with paidAt timestamp
       const result = await this.prisma.paymentBlockchain.update({
         where: {
-          id: eventData.id,
+          id: enrichedId,
         },
         data: {
           paidAt: eventData.timestamp,
@@ -495,13 +553,14 @@ class PaymentEventProcessor {
         },
       });
 
-      logger.success(`Payment completed: ${eventData.id}`);
+      logger.success(`Payment completed: ${enrichedId}`);
     } catch (error: any) {
       logger.error("❌ Error handling PaymentCompleted event:", {
         error: error.message,
         stack: error.stack,
         eventData: {
-          ...eventData,
+          id: enrichedId,
+          orderID: enrichedOrderID,
           amount: eventData.amount.toString(),
           timestamp: eventData.timestamp.toString(),
         },

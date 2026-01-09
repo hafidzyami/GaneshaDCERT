@@ -92,12 +92,12 @@ model VCResponse {
   holder_did     String
   order_id       String           @default(uuid())
   encrypted_body String
-  vc_hash        String?
   createdAt      DateTime         @default(now())
   deletedAt      DateTime?
   status         VCResponseStatus @default(PENDING)
   updatedAt      DateTime         @default(now()) @updatedAt
   processing_at  DateTime?
+  vc_hash        String?
 }
 
 model Order {
@@ -229,17 +229,17 @@ model PushToken {
 }
 
 model Institution {
-  id         String   @id @default(uuid())
-  did        String   @unique
-  email      String   @unique
+  id         String    @id @default(uuid())
+  did        String    @unique
+  email      String    @unique
   name       String
   phone      String
   country    String
   website    String
   address    String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
   lastActive DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
 }
 
 model VCinitiatedByIssuer {
