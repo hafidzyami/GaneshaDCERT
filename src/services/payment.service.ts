@@ -198,6 +198,7 @@ class PaymentService {
                         vc_id: item.vcID,
                         item_type: item.itemType,
                         date: requestDate,
+                        price: item.price.toString(),
                     };
                 })
             );
