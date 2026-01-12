@@ -277,11 +277,17 @@ app.get("/api/v1/health", async (req: Request, res: Response) => {
   const dbHealth = await DatabaseService.isConnected();
   const didBCHealth = await DIDBlockchainConfig.isConnected();
   const vcBCHealth = await VCBlockchainConfig.isConnected();
-  const credHistoryBCHealth = await CredentialsHistoryBlockchainConfig.isConnected();
+  const credHistoryBCHealth =
+    await CredentialsHistoryBlockchainConfig.isConnected();
   const paymentBCHealth = await PaymentBlockchainConfig.isConnected();
 
   const response: HealthCheckResponse = {
-    success: dbHealth && didBCHealth && vcBCHealth && credHistoryBCHealth && paymentBCHealth,
+    success:
+      dbHealth &&
+      didBCHealth &&
+      vcBCHealth &&
+      credHistoryBCHealth &&
+      paymentBCHealth,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     services: {
@@ -405,24 +411,21 @@ app.get(
  *       200:
  *         description: Payment sync status
  */
-app.get(
-  "/api/v1/health/payment-sync",
-  async (req: Request, res: Response) => {
-    try {
-      const status = await paymentEventPublisher.getSyncStatus();
-      res.json({
-        success: true,
-        ...status,
-      });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        message: "Failed to get payment sync status",
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
+app.get("/api/v1/health/payment-sync", async (req: Request, res: Response) => {
+  try {
+    const status = await paymentEventPublisher.getSyncStatus();
+    res.json({
+      success: true,
+      ...status,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to get payment sync status",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
   }
-);
+});
 
 // API Routes with /api/v1 prefix
 app.use("/api/v1/auth", authRoutes);
@@ -452,30 +455,47 @@ const startServer = async () => {
     logger.info(`   Port: ${PORT}`);
 
     // Connect to Database
+    logger.info("📦 Connecting to database...");
     await DatabaseService.connect();
+    logger.success("   ✓ Database connected");
 
-    // Test DID Blockchain Connection
+    // Test Blockchain Connections
+    logger.info("⛓️  Testing blockchain connections...");
+
     const didBlockchainConnected = await DIDBlockchainConfig.testConnection();
-    if (!didBlockchainConnected) {
-      logger.warn("DID Blockchain connection failed, but server will continue");
+    if (didBlockchainConnected) {
+      logger.success("   ✓ DID Blockchain connected");
+    } else {
+      logger.warn(
+        "   ⚠ DID Blockchain connection failed, server will continue"
+      );
     }
 
-    // Test VC Blockchain Connection
     const vcBlockchainConnected = await VCBlockchainConfig.testConnection();
-    if (!vcBlockchainConnected) {
-      logger.warn("VC Blockchain connection failed, but server will continue");
+    if (vcBlockchainConnected) {
+      logger.success("   ✓ VC Blockchain connected");
+    } else {
+      logger.warn("   ⚠ VC Blockchain connection failed, server will continue");
     }
 
-    // Test CredentialsHistory Blockchain Connection
-    const credHistoryBlockchainConnected = await CredentialsHistoryBlockchainConfig.testConnection();
-    if (!credHistoryBlockchainConnected) {
-      logger.warn("CredentialsHistory Blockchain connection failed, but server will continue");
+    const credHistoryBlockchainConnected =
+      await CredentialsHistoryBlockchainConfig.testConnection();
+    if (credHistoryBlockchainConnected) {
+      logger.success("   ✓ CredentialsHistory Blockchain connected");
+    } else {
+      logger.warn(
+        "   ⚠ CredentialsHistory Blockchain connection failed, server will continue"
+      );
     }
 
-    // Test Payment Blockchain Connection
-    const paymentBlockchainConnected = await PaymentBlockchainConfig.testConnection();
-    if (!paymentBlockchainConnected) {
-      logger.warn("Payment Blockchain connection failed, but server will continue");
+    const paymentBlockchainConnected =
+      await PaymentBlockchainConfig.testConnection();
+    if (paymentBlockchainConnected) {
+      logger.success("   ✓ Payment Blockchain connected");
+    } else {
+      logger.warn(
+        "   ⚠ Payment Blockchain connection failed, server will continue"
+      );
     }
 
     // Initialize Background Jobs
@@ -500,28 +520,49 @@ const startServer = async () => {
       await credentialsHistoryEventPublisher.start();
       logger.success("   ✓ Credentials History event listener started");
     } catch (error) {
-      logger.error("   ✗ Failed to start Credentials History event listener:", error);
-      logger.warn("   Server will continue without Credentials History event listener");
+      logger.error(
+        "   ✗ Failed to start Credentials History event listener:",
+        error
+      );
+      logger.warn(
+        "   Server will continue without Credentials History event listener"
+      );
     }
 
     // Payment Event Listener (History Blockchain)
     try {
       await paymentEventPublisher.start();
       logger.success("   ✓ Payment event listener started");
-    } catch (error) {
-      logger.error("   ✗ Failed to start Payment event listener:", error);
+    } catch (error: any) {
+      logger.error("   ✗ Failed to start Payment event listener:", {
+        message: error?.message,
+        stack: error?.stack,
+        name: error?.name,
+        error: error,
+      });
       logger.warn("   Server will continue without Payment event listener");
     }
 
     // Start Express Server
+    logger.info("🎯 Starting HTTP server...");
     app.listen(PORT, () => {
-      logger.success("GaneshaDCERT API Server is running!");
+      logger.success("=".repeat(60));
+      logger.success("✅ GaneshaDCERT API Server is running!");
+      logger.success("=".repeat(60));
       logger.info(`   🌐 API: http://localhost:${PORT}`);
       logger.info(`   📖 Swagger Docs: http://localhost:${PORT}/api-docs`);
       logger.info(`   🔍 Health Check: http://localhost:${PORT}/api/v1/health`);
+      logger.success("=".repeat(60));
     });
   } catch (error) {
-    logger.error("Failed to start server", error);
+    logger.error("=".repeat(60));
+    logger.error("❌ FATAL: Failed to start server");
+    logger.error("=".repeat(60));
+    logger.error("Error details:", error);
+    if (error instanceof Error) {
+      logger.error("Stack trace:", error.stack);
+    }
+    logger.error("=".repeat(60));
     process.exit(1);
   }
 };

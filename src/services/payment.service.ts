@@ -318,6 +318,53 @@ class PaymentService {
             throw new BadRequestError('Failed to process payment notification');
         }
     }
+
+    /**
+     * Get item from blockchain by ID
+     * @param id - Item ID
+     * @returns Item data from blockchain
+     */
+    async getItemFromBlockchain(id: string) {
+        try {
+            logger.info(`Fetching item from blockchain: ${id}`);
+
+            const itemData = await paymentBlockchainService.getItem(id);
+
+            if (!itemData) {
+                throw new NotFoundError(`Item with ID ${id} not found on blockchain`);
+            }
+
+            // Map itemType enum number to string
+            const itemTypeMap: { [key: number]: string } = {
+                0: "ISSUANCE",
+                1: "RENEWAL",
+                2: "UPDATE",
+            };
+
+            const result = {
+                id: id,
+                price: itemData.price.toString(),
+                vcID: itemData.vcID,
+                vcHash: itemData.vcHash,
+                itemType: itemTypeMap[Number(itemData.itemType)] || "UNKNOWN",
+                isPaid: itemData.isPaid,
+            };
+
+            logger.success(`Item fetched from blockchain: ${id}`);
+            return result;
+        } catch (error: any) {
+            logger.error(`Error fetching item from blockchain:`, {
+                id,
+                error: error.message,
+            });
+
+            if (error instanceof NotFoundError) {
+                throw error;
+            }
+
+            throw new InternalServerError(`Failed to fetch item from blockchain: ${error.message}`);
+        }
+    }
 }
 
 const paymentServiceInstance = new PaymentService();

@@ -21,10 +21,10 @@ const envSchema = z.object({
   JWT_SECRET: z.string(),
 
   // Credentials Blockchain
-  BLOCKCHAIN_RPC_URL: z.string().url(),
+  CREDENTIALS_BLOCKCHAIN_RPC_URL: z.string().url(),
   DID_CONTRACT_ADDRESS: z.string().length(42, "Invalid DID Ethereum address"),
   VC_CONTRACT_ADDRESS: z.string().length(42, "Invalid VC Ethereum address"),
-  ACCOUNT_PRIVATE_KEY: z.string().min(64, "Invalid private key"),
+  CREDENTIALS_ACCOUNT_PRIVATE_KEY: z.string().min(64, "Invalid private key"),
 
   // History Blockchain
   HISTORY_BLOCKCHAIN_RPC_URL: z.string().url(),

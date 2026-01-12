@@ -12,6 +12,7 @@ import {
   vaPaymentNotificationHeaderValidators,
   vaPaymentNotificationBodyValidators,
   getUnpaidItemsValidator,
+  getItemFromBlockchainValidator,
 } from "../validators/payment.validator";
 
 const router: Router = express.Router();
@@ -469,6 +470,123 @@ router.post(
   vaPaymentNotificationHeaderValidators,
   vaPaymentNotificationBodyValidators,
   paymentController.handleVAPaymentNotification
+);
+
+/**
+ * @swagger
+ * /payment/blockchain/item/{id}:
+ *   get:
+ *     summary: Get item from blockchain by ID
+ *     description: |
+ *       Retrieve item details directly from the PaymentManager smart contract on blockchain.
+ *
+ *       **Returns:**
+ *       - Item ID
+ *       - Price (in wei/smallest unit)
+ *       - VC ID (Verifiable Credential ID)
+ *       - VC Hash (Hash of the credential)
+ *       - Item Type (ISSUANCE, RENEWAL, or UPDATE)
+ *       - Payment Status (isPaid)
+ *
+ *       **Note:**
+ *       - This fetches real-time data from blockchain
+ *       - Data may differ from database if sync is delayed
+ *     tags:
+ *       - Payment
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Item ID (UUID format)
+ *         example: "550e8400-e29b-41d4-a716-446655440000"
+ *     responses:
+ *       200:
+ *         description: Item retrieved successfully from blockchain
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Item retrieved from blockchain successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       description: Item ID
+ *                       example: "550e8400-e29b-41d4-a716-446655440000"
+ *                     price:
+ *                       type: string
+ *                       description: Item price (as string to preserve precision)
+ *                       example: "50000"
+ *                     vcID:
+ *                       type: string
+ *                       description: Verifiable Credential ID
+ *                       example: "schema123:1:did:dcert:holder:1234567890"
+ *                     vcHash:
+ *                       type: string
+ *                       description: Hash of the verifiable credential
+ *                       example: "0x1234567890abcdef..."
+ *                     itemType:
+ *                       type: string
+ *                       enum: [ISSUANCE, RENEWAL, UPDATE]
+ *                       description: Type of credential operation
+ *                       example: "ISSUANCE"
+ *                     isPaid:
+ *                       type: boolean
+ *                       description: Payment status
+ *                       example: false
+ *       400:
+ *         description: Validation error - Invalid item ID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Validation error"
+ *                 errors:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       field:
+ *                         type: string
+ *                         example: "id"
+ *                       message:
+ *                         type: string
+ *                         example: "Item ID is required"
+ *       404:
+ *         description: Item not found on blockchain
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Item with ID 550e8400-e29b-41d4-a716-446655440000 not found on blockchain"
+ *       500:
+ *         description: Internal server error or blockchain connection issue
+ */
+router.get(
+  "/blockchain/item/:id",
+  getItemFromBlockchainValidator,
+  paymentController.getItemFromBlockchain
 );
 
 export default router;

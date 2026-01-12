@@ -30,6 +30,16 @@ export const getUnpaidItemsValidator: ValidationChain[] = [
         .withMessage("Holder DID cannot be empty"),
 ];
 
+export const getItemFromBlockchainValidator: ValidationChain[] = [
+    param("id")
+        .exists({ checkFalsy: true })
+        .withMessage("Item ID is required")
+        .isString()
+        .withMessage("Item ID must be a string")
+        .notEmpty()
+        .withMessage("Item ID cannot be empty"),
+];
+
 
 export const dokuWebhookHeaderValidators: ValidationChain[] = [
     header("client-id")
