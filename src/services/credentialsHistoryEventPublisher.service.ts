@@ -13,7 +13,7 @@ class CredentialsHistoryEventPublisher {
   private contractAddress: string;
   private processor: CredentialHistoryEventProcessor;
   private isRunning: boolean = false;
-  private lastProcessedBlock: { [eventType: string]: bigint } = {};
+  private lastProcessedBlock: { [eventType: string]: number } = {};
 
   // Event types to listen for
   private eventTypes = [
@@ -28,6 +28,166 @@ class CredentialsHistoryEventPublisher {
     this.contractAddress =
       CredentialsHistoryBlockchainConfig.contract.target as string;
     this.processor = new CredentialHistoryEventProcessor(prisma);
+  }
+
+  /**
+   * Enrich event data by decoding transaction input
+   * This is needed for indexed string parameters which are hashed in events
+   */
+  private async enrichEventDataFromTransaction(
+    eventType: string,
+    eventLog: ethers.EventLog,
+    eventData: any
+  ): Promise<any> {
+    try {
+      // Get transaction details
+      const tx = await CredentialsHistoryBlockchainConfig.provider.getTransaction(
+        eventLog.transactionHash
+      );
+      if (!tx) {
+        logger.warn(
+          `[CredentialsHistory] Transaction not found: ${eventLog.transactionHash}`
+        );
+        return eventData;
+      }
+
+      // Decode transaction input data
+      const decodedData = this.contract.interface.parseTransaction({
+        data: tx.data,
+        value: tx.value,
+      });
+
+      if (!decodedData) {
+        logger.warn(
+          `[CredentialsHistory] Could not decode transaction data for ${eventLog.transactionHash}`
+        );
+        return eventData;
+      }
+
+      logger.info(`[CredentialsHistory] Decoded transaction function: ${decodedData.name}`);
+
+      // Extract actual values from function arguments based on event type
+      // Only replace INDEXED parameters (hashed in events)
+      switch (eventType) {
+        case "CredentialHistoryCreated":
+          // event CredentialHistoryCreated(string indexed id, string indexed issuerDID, string indexed holderDID, string historyType, uint8 status, string vcID, string newVCID)
+
+          if (decodedData.name === "createCredentialHistoryInitiatedByIssuer" ||
+              decodedData.name === "createCredentialHistoryInitiatedByHolder") {
+            // createCredentialHistoryInitiatedByIssuer(string _id, string _issuerDID, string _holderDID, string _type, string _vcID)
+            // createCredentialHistoryInitiatedByHolder(string _id, string _issuerDID, string _holderDID, string _type, string _vcID)
+            return {
+              id: String(decodedData.args[0]),              // _id
+              issuerDID: String(decodedData.args[1]),       // _issuerDID
+              holderDID: String(decodedData.args[2]),       // _holderDID
+              historyType: String(decodedData.args[3]),     // _type (from tx, not event!)
+              vcID: String(decodedData.args[4]),            // _vcID (from tx, not event!)
+              status: eventData.status,                     // from event (not in function params)
+              newVCID: eventData.newVCID,                   // from event (not in function params)
+              blockNumber: eventData.blockNumber,
+              transactionHash: eventData.transactionHash,
+            };
+          } else if (decodedData.name === "createCredentialHistoryInitiatedByIssuerWithNewVC" ||
+                     decodedData.name === "createCredentialHistoryInitiatedByHolderWithNewVC") {
+            // createCredentialHistoryInitiatedByIssuerWithNewVC(string _id, string _issuerDID, string _holderDID, string _type, string _oldVCID, string _newVCID)
+            // createCredentialHistoryInitiatedByHolderWithNewVC(string _id, string _issuerDID, string _holderDID, string _type, string _oldVCID, string _newVCID)
+            return {
+              id: String(decodedData.args[0]),              // _id
+              issuerDID: String(decodedData.args[1]),       // _issuerDID
+              holderDID: String(decodedData.args[2]),       // _holderDID
+              historyType: String(decodedData.args[3]),     // _type (from tx, not event!)
+              vcID: String(decodedData.args[4]),            // _oldVCID (from tx, not event!)
+              newVCID: String(decodedData.args[5]),         // _newVCID (from tx, not event!)
+              status: eventData.status,                     // from event (not in function params)
+              blockNumber: eventData.blockNumber,
+              transactionHash: eventData.transactionHash,
+            };
+          }
+          break;
+
+        case "CredentialHistoryStatusChanged":
+          // event CredentialHistoryStatusChanged(string indexed id, uint8 oldStatus, uint8 newStatus)
+          // updateHistoryStatus(string _historyId, uint _newStatus)
+          if (decodedData.name === "updateHistoryStatus") {
+            return {
+              id: String(decodedData.args[0]),              // indexed - from tx
+              oldStatus: eventData.oldStatus,               // NOT indexed - from event
+              newStatus: eventData.newStatus,               // NOT indexed - from event
+              blockNumber: eventData.blockNumber,
+              transactionHash: eventData.transactionHash,
+            };
+          }
+          break;
+
+        case "CredentialHistoryApproved":
+          // event CredentialHistoryApproved(string indexed id, string indexed issuerDID, string indexed holderDID)
+          // approveCredentialHistory(string _historyId)
+          if (decodedData.name === "approveCredentialHistory") {
+            const historyId = String(decodedData.args[0]);
+
+            // issuerDID and holderDID are indexed but not in function params, need to query blockchain
+            let issuerDID = eventData.issuerDID;
+            let holderDID = eventData.holderDID;
+            try {
+              const historyData = await this.contract.getCredentialHistory(historyId);
+              issuerDID = String(historyData.issuerDID);
+              holderDID = String(historyData.holderDID);
+              logger.debug(`[CredentialsHistory] Fetched DIDs from blockchain for history ${historyId}: issuer=${issuerDID}, holder=${holderDID}`);
+            } catch (error) {
+              logger.warn(`[CredentialsHistory] Could not fetch history data for ${historyId}, using event DIDs:`, error);
+            }
+
+            return {
+              id: historyId,                                // indexed - from tx
+              issuerDID: issuerDID,                         // indexed - from blockchain query
+              holderDID: holderDID,                         // indexed - from blockchain query
+              blockNumber: eventData.blockNumber,
+              transactionHash: eventData.transactionHash,
+            };
+          }
+          break;
+
+        case "CredentialHistoryRejected":
+          // event CredentialHistoryRejected(string indexed id, string indexed issuerDID, string indexed holderDID)
+          // rejectCredentialHistory(string _historyId)
+          if (decodedData.name === "rejectCredentialHistory") {
+            const historyId = String(decodedData.args[0]);
+
+            // issuerDID and holderDID are indexed but not in function params, need to query blockchain
+            let issuerDID = eventData.issuerDID;
+            let holderDID = eventData.holderDID;
+            try {
+              const historyData = await this.contract.getCredentialHistory(historyId);
+              issuerDID = String(historyData.issuerDID);
+              holderDID = String(historyData.holderDID);
+              logger.debug(`[CredentialsHistory] Fetched DIDs from blockchain for history ${historyId}: issuer=${issuerDID}, holder=${holderDID}`);
+            } catch (error) {
+              logger.warn(`[CredentialsHistory] Could not fetch history data for ${historyId}, using event DIDs:`, error);
+            }
+
+            return {
+              id: historyId,                                // indexed - from tx
+              issuerDID: issuerDID,                         // indexed - from blockchain query
+              holderDID: holderDID,                         // indexed - from blockchain query
+              blockNumber: eventData.blockNumber,
+              transactionHash: eventData.transactionHash,
+            };
+          }
+          break;
+      }
+
+      // If no match, return original eventData
+      logger.warn(
+        `[CredentialsHistory] No enrichment pattern for ${eventType} with function ${decodedData.name}`
+      );
+      return eventData;
+    } catch (error) {
+      logger.error(
+        `[CredentialsHistory] Error enriching event data from transaction:`,
+        error
+      );
+      return eventData; // Return original data on error
+    }
   }
 
   /**
@@ -90,7 +250,7 @@ class CredentialsHistoryEventPublisher {
 
       for (const checkpoint of checkpoints) {
         this.lastProcessedBlock[checkpoint.eventType] =
-          checkpoint.lastSyncedBlock;
+          Number(checkpoint.lastSyncedBlock);
       }
 
       logger.info(
@@ -106,7 +266,7 @@ class CredentialsHistoryEventPublisher {
    */
   private async updateCheckpoint(
     eventType: string,
-    blockNumber: bigint
+    blockNumber: number
   ): Promise<void> {
     try {
       await prisma.eventCheckpoint.upsert({
@@ -168,7 +328,7 @@ class CredentialsHistoryEventPublisher {
     transactionHash: string,
     logIndex: number,
     eventType: string,
-    blockNumber: bigint
+    blockNumber: number
   ): Promise<void> {
     try {
       await prisma.processedEvent.create({
@@ -199,8 +359,8 @@ class CredentialsHistoryEventPublisher {
       const BATCH_SIZE = 1000; // Query 1000 blocks at a time to avoid RPC limits
 
       for (const eventType of this.eventTypes) {
-        const lastProcessed = this.lastProcessedBlock[eventType] || BigInt(0);
-        let fromBlock = Number(lastProcessed) + 1;
+        const lastProcessed = this.lastProcessedBlock[eventType] || 0;
+        let fromBlock = lastProcessed + 1;
 
         if (fromBlock > currentBlock) {
           logger.info(
@@ -241,7 +401,7 @@ class CredentialsHistoryEventPublisher {
           totalEvents += events.length;
 
           // Update checkpoint after each batch
-          await this.updateCheckpoint(eventType, BigInt(toBlock));
+          await this.updateCheckpoint(eventType, toBlock);
 
           // Move to next batch
           fromBlock = toBlock + 1;
@@ -267,37 +427,69 @@ class CredentialsHistoryEventPublisher {
   private listenToRealtimeEvents(): void {
     logger.info("[CredentialsHistory] Starting real-time event listeners...");
 
-    this.contract.on("CredentialHistoryCreated", async (id, issuerDID, holderDID, historyType, status, vcID, newVCID, event) => {
+    this.contract.on("CredentialHistoryCreated", async (id, issuerDID, holderDID, historyType, status, vcID, newVCID, timestamp, event) => {
       try {
         const eventLog = event.log as ethers.EventLog;
-        await this.processEvent("CredentialHistoryCreated", eventLog);
+        const eventData = {
+          id: id,                    // indexed - will be hash, enriched from tx
+          issuerDID: issuerDID,      // indexed - will be hash, enriched from tx
+          holderDID: holderDID,      // indexed - will be hash, enriched from tx
+          historyType: String(historyType),
+          status: Number(status),
+          vcID: String(vcID),
+          newVCID: String(newVCID),
+          blockNumber: Number(eventLog.blockNumber),
+          transactionHash: eventLog.transactionHash,
+        };
+        await this.processEvent("CredentialHistoryCreated", eventLog, eventData);
       } catch (error) {
         logger.error("[CredentialsHistory] Error processing CredentialHistoryCreated:", error);
       }
     });
 
-    this.contract.on("CredentialHistoryStatusChanged", async (id, oldStatus, newStatus, event) => {
+    this.contract.on("CredentialHistoryStatusChanged", async (id, oldStatus, newStatus, timestamp, event) => {
       try {
         const eventLog = event.log as ethers.EventLog;
-        await this.processEvent("CredentialHistoryStatusChanged", eventLog);
+        const eventData = {
+          id: id,                    // indexed - will be hash, enriched from tx
+          oldStatus: Number(oldStatus),
+          newStatus: Number(newStatus),
+          blockNumber: Number(eventLog.blockNumber),
+          transactionHash: eventLog.transactionHash,
+        };
+        await this.processEvent("CredentialHistoryStatusChanged", eventLog, eventData);
       } catch (error) {
         logger.error("[CredentialsHistory] Error processing CredentialHistoryStatusChanged:", error);
       }
     });
 
-    this.contract.on("CredentialHistoryApproved", async (id, issuerDID, holderDID, event) => {
+    this.contract.on("CredentialHistoryApproved", async (id, issuerDID, holderDID, timestamp, event) => {
       try {
         const eventLog = event.log as ethers.EventLog;
-        await this.processEvent("CredentialHistoryApproved", eventLog);
+        const eventData = {
+          id: id,                    // indexed - will be hash, enriched from tx
+          issuerDID: issuerDID,      // indexed - will be hash, enriched from tx
+          holderDID: holderDID,      // indexed - will be hash, enriched from tx
+          blockNumber: Number(eventLog.blockNumber),
+          transactionHash: eventLog.transactionHash,
+        };
+        await this.processEvent("CredentialHistoryApproved", eventLog, eventData);
       } catch (error) {
         logger.error("[CredentialsHistory] Error processing CredentialHistoryApproved:", error);
       }
     });
 
-    this.contract.on("CredentialHistoryRejected", async (id, issuerDID, holderDID, event) => {
+    this.contract.on("CredentialHistoryRejected", async (id, issuerDID, holderDID, timestamp, event) => {
       try {
         const eventLog = event.log as ethers.EventLog;
-        await this.processEvent("CredentialHistoryRejected", eventLog);
+        const eventData = {
+          id: id,                    // indexed - will be hash, enriched from tx
+          issuerDID: issuerDID,      // indexed - will be hash, enriched from tx
+          holderDID: holderDID,      // indexed - will be hash, enriched from tx
+          blockNumber: Number(eventLog.blockNumber),
+          transactionHash: eventLog.transactionHash,
+        };
+        await this.processEvent("CredentialHistoryRejected", eventLog, eventData);
       } catch (error) {
         logger.error("[CredentialsHistory] Error processing CredentialHistoryRejected:", error);
       }
@@ -313,7 +505,8 @@ class CredentialsHistoryEventPublisher {
    */
   private async processEvent(
     eventType: string,
-    event: ethers.EventLog
+    event: ethers.EventLog,
+    eventData?: any
   ): Promise<void> {
     // Check idempotency
     const alreadyProcessed = await this.isEventProcessed(
@@ -329,8 +522,15 @@ class CredentialsHistoryEventPublisher {
     }
 
     try {
-      // Extract event data
-      const eventData = this.extractEventData(eventType, event);
+      // Extract event data from event logs if not provided
+      if (!eventData) {
+        eventData = this.extractEventData(eventType, event);
+      }
+
+      // ALWAYS enrich event data from transaction input
+      // This is needed because indexed strings are hashed in events
+      logger.info(`[CredentialsHistory] Enriching ${eventType} event data from transaction...`);
+      eventData = await this.enrichEventDataFromTransaction(eventType, event, eventData);
 
       // Route to processor
       await this.routeToProcessor(eventType, eventData);
@@ -340,11 +540,11 @@ class CredentialsHistoryEventPublisher {
         event.transactionHash,
         event.index,
         eventType,
-        BigInt(event.blockNumber)
+        Number(event.blockNumber)
       );
 
       // Update checkpoint
-      await this.updateCheckpoint(eventType, BigInt(event.blockNumber));
+      await this.updateCheckpoint(eventType, Number(event.blockNumber));
 
       logger.success(
         `[CredentialsHistory] Processed ${eventType} at block ${event.blockNumber}`
@@ -360,19 +560,20 @@ class CredentialsHistoryEventPublisher {
 
   /**
    * Extract event data based on event type
+   * Note: Indexed strings will be hashed - enrichment happens later via enrichEventDataFromTransaction
    */
   private extractEventData(eventType: string, event: ethers.EventLog): any {
     const baseData = {
-      blockNumber: BigInt(event.blockNumber),
+      blockNumber: Number(event.blockNumber),
       transactionHash: event.transactionHash,
     };
 
     switch (eventType) {
       case "CredentialHistoryCreated":
         return {
-          id: String(event.args[0]),
-          issuerDID: String(event.args[1]),
-          holderDID: String(event.args[2]),
+          id: String(event.args[0]),          // indexed
+          issuerDID: String(event.args[1]),   // indexed
+          holderDID: String(event.args[2]),   // indexed
           historyType: String(event.args[3]),
           status: Number(event.args[4]),
           vcID: String(event.args[5]),
@@ -382,7 +583,7 @@ class CredentialsHistoryEventPublisher {
 
       case "CredentialHistoryStatusChanged":
         return {
-          id: String(event.args[0]),
+          id: String(event.args[0]),          // indexed
           oldStatus: Number(event.args[1]),
           newStatus: Number(event.args[2]),
           ...baseData,
@@ -390,17 +591,17 @@ class CredentialsHistoryEventPublisher {
 
       case "CredentialHistoryApproved":
         return {
-          id: String(event.args[0]),
-          issuerDID: String(event.args[1]),
-          holderDID: String(event.args[2]),
+          id: String(event.args[0]),          // indexed
+          issuerDID: String(event.args[1]),   // indexed
+          holderDID: String(event.args[2]),   // indexed
           ...baseData,
         };
 
       case "CredentialHistoryRejected":
         return {
-          id: String(event.args[0]),
-          issuerDID: String(event.args[1]),
-          holderDID: String(event.args[2]),
+          id: String(event.args[0]),          // indexed
+          issuerDID: String(event.args[1]),   // indexed
+          holderDID: String(event.args[2]),   // indexed
           ...baseData,
         };
 

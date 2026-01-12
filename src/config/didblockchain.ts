@@ -19,7 +19,7 @@ class DIDsBlockchainConfig {
   public static get provider(): ethers.JsonRpcProvider {
     if (!DIDsBlockchainConfig._provider) {
       DIDsBlockchainConfig._provider = new ethers.JsonRpcProvider(
-        env.BLOCKCHAIN_RPC_URL
+        env.CREDENTIALS_BLOCKCHAIN_RPC_URL
       );
     }
     return DIDsBlockchainConfig._provider;
@@ -27,7 +27,7 @@ class DIDsBlockchainConfig {
 
   public static get signer(): ethers.Wallet {
     if (!DIDsBlockchainConfig._signer) {
-      const privateKey = env.ACCOUNT_PRIVATE_KEY.trim();
+      const privateKey = env.CREDENTIALS_ACCOUNT_PRIVATE_KEY.trim();
       DIDsBlockchainConfig._signer = new ethers.Wallet(
         privateKey,
         DIDsBlockchainConfig.provider

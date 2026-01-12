@@ -71,3 +71,25 @@ export const handleVAPaymentNotification = asyncHandler(
     return res.status(200).json(result);
   }
 );
+
+/**
+ * Get item from blockchain by ID
+ */
+export const getItemFromBlockchain = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { id } = req.params;
+
+    const result = await PaymentService.getItemFromBlockchain(id);
+
+    return ResponseHelper.success(
+      res,
+      result,
+      'Item retrieved from blockchain successfully'
+    );
+  }
+);
