@@ -113,11 +113,12 @@ class PaymentBlockchainService {
 
   /**
    * Create payment in blockchain
+   * Function signature: createPayment(string _id, string _orderID, string _status, uint256 _amount)
+   * Note: method is NOT set here, it will be set in completePayment
    */
   async createPayment(
     id: string,
     orderID: string,
-    method: string,
     status: string,
     amount: number
   ): Promise<TransactionReceipt> {
@@ -125,7 +126,6 @@ class PaymentBlockchainService {
       logger.info("[Payment] Creating payment", {
         id,
         orderID,
-        method,
         status,
         amount,
       });
@@ -133,7 +133,6 @@ class PaymentBlockchainService {
       const tx = await this.contract.createPayment(
         id,
         orderID,
-        method,
         status,
         amount
       );
@@ -234,22 +233,27 @@ class PaymentBlockchainService {
 
   /**
    * Complete payment (all-in-one: update payment status + order status + mark items as paid)
+   * Function signature: completePayment(string _paymentId, string _orderId, string _method, string _successStatus)
+   * Note: method is set here when payment is completed
    */
   async completePayment(
     paymentId: string,
     orderId: string,
+    method: string,
     successStatus: string
   ): Promise<TransactionReceipt> {
     try {
       logger.info("[Payment] Completing payment", {
         paymentId,
         orderId,
+        method,
         successStatus,
       });
 
       const tx = await this.contract.completePayment(
         paymentId,
         orderId,
+        method,
         successStatus
       );
       const receipt = await tx.wait();

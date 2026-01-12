@@ -156,14 +156,14 @@ class PaymentEventPublisher {
 
         case "PaymentCreated":
           // event PaymentCreated(string indexed id, string indexed orderID, string method, string status, uint256 amount, uint256 timestamp)
-          // createPayment(string _id, string _orderID, string _method, string _status, uint256 _amount)
+          // createPayment(string _id, string _orderID, string _status, uint256 _amount) - method removed from function
           if (decodedData.name === "createPayment") {
             return {
               id: String(decodedData.args[0]),        // _id
               orderID: String(decodedData.args[1]),   // _orderID
-              method: String(decodedData.args[2]),    // _method (from tx, not event!)
-              status: String(decodedData.args[3]),    // _status (from tx, not event!)
-              amount: Number(decodedData.args[4]),    // _amount (from tx, not event!)
+              method: eventData.method,               // from event (empty string - will be set in completePayment)
+              status: String(decodedData.args[2]),    // _status (from tx, was args[3])
+              amount: Number(decodedData.args[3]),    // _amount (from tx, was args[4])
               timestamp: eventData.timestamp,         // from event (not in function params)
               blockNumber: eventData.blockNumber,
               transactionHash: eventData.transactionHash,
@@ -206,11 +206,12 @@ class PaymentEventPublisher {
 
         case "PaymentCompleted":
           // event PaymentCompleted(string indexed id, string indexed orderID, uint256 amount, uint256 timestamp)
-          // completePayment(string _paymentId, string _orderId, string _successStatus)
+          // completePayment(string _paymentId, string _orderId, string _method, string _successStatus)
           if (decodedData.name === "completePayment") {
             return {
               id: String(decodedData.args[0]),        // _paymentId
               orderID: String(decodedData.args[1]),   // _orderId
+              method: String(decodedData.args[2]),    // _method (NEW - from tx)
               amount: eventData.amount,               // from event (not in function params)
               timestamp: eventData.timestamp,         // from event (not in function params)
               blockNumber: eventData.blockNumber,
@@ -608,12 +609,13 @@ class PaymentEventPublisher {
 
     this.contract.on(
       "PaymentCompleted",
-      async (id, orderID, amount, timestamp, event) => {
+      async (id, orderID, method, amount, timestamp, event) => {
         try {
           const eventLog = event.log as ethers.EventLog;
           const eventData = {
             id: id,                       // indexed - will be hash, enriched from tx
             orderID: orderID,             // indexed - will be hash, enriched from tx
+            method: String(method),       // not indexed - safe to convert
             amount: Number(amount),       // not indexed uint - safe to convert
             timestamp: Number(timestamp), // not indexed uint - safe to convert
             blockNumber: Number(eventLog.blockNumber),
@@ -749,10 +751,12 @@ class PaymentEventPublisher {
         };
 
       case "PaymentCreated":
+        // event PaymentCreated(string indexed id, string indexed orderID, string method, string status, uint256 amount, uint256 timestamp)
+        // Note: method will be empty string "" when created, will be set later in completePayment
         return {
           id: String(args[0]),
           orderID: String(args[1]),
-          method: String(args[2]),
+          method: String(args[2]),          // empty string "" from event
           status: String(args[3]),
           amount: Number(args[4]),
           timestamp: Number(args[5]),
@@ -772,11 +776,13 @@ class PaymentEventPublisher {
         };
 
       case "PaymentCompleted":
+        // event PaymentCompleted(string indexed id, string indexed orderID, string method, uint256 amount, uint256 timestamp)
         return {
           id: String(args[0]),
           orderID: String(args[1]),
-          amount: Number(args[2]),
-          timestamp: Number(args[3]),
+          method: String(args[2]),          // method from event (set in completePayment)
+          amount: Number(args[3]),
+          timestamp: Number(args[4]),
           blockNumber: Number(event.blockNumber),
           transactionHash: event.transactionHash,
         };

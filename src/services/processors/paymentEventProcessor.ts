@@ -486,10 +486,12 @@ class PaymentEventProcessor {
 
   /**
    * Handle PaymentCompleted event
+   * Note: method is set when payment is completed (from completePayment function)
    */
   async handlePaymentCompleted(eventData: {
     id: string;
     orderID: string;
+    method: string;
     amount: number;
     timestamp: number;
     blockNumber: number;
@@ -498,16 +500,18 @@ class PaymentEventProcessor {
     logger.info(`Processing PaymentCompleted event:`, {
       id: eventData.id,
       orderID: eventData.orderID,
+      method: eventData.method,
       amount: eventData.amount,
     });
 
     try {
-      // Update payment with paidAt timestamp
+      // Update payment with method and paidAt timestamp
       const result = await this.prisma.paymentBlockchain.update({
         where: {
           id: eventData.id,
         },
         data: {
+          method: eventData.method,
           paidAt: eventData.timestamp,
           blockNumber: eventData.blockNumber,
           txHash: eventData.transactionHash,
@@ -515,7 +519,7 @@ class PaymentEventProcessor {
         },
       });
 
-      logger.success(`Payment completed: ${eventData.id}`);
+      logger.success(`Payment completed: ${eventData.id} (method: ${eventData.method})`);
     } catch (error: any) {
       logger.error("❌ Error handling PaymentCompleted event:", {
         error: error.message,
@@ -523,6 +527,7 @@ class PaymentEventProcessor {
         eventData: {
           id: eventData.id,
           orderID: eventData.orderID,
+          method: eventData.method,
           amount: eventData.amount,
           timestamp: eventData.timestamp,
         },
