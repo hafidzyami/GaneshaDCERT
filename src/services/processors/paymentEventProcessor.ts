@@ -133,6 +133,21 @@ class PaymentEventProcessor {
 
       const newStatus = statusMap[eventData.newStatus] || "NONE";
 
+      // Check if order exists first
+      const existingOrder = await this.prisma.orderBlockchain.findUnique({
+        where: { id: eventData.id },
+      });
+
+      if (!existingOrder) {
+        logger.warn(
+          `⚠️ Order not found in database: ${eventData.id}. Skipping status update.`
+        );
+        logger.info(
+          `This can happen if the database was reset but blockchain still has historical events.`
+        );
+        return; // Gracefully skip this event
+      }
+
       // Update order status
       const result = await this.prisma.orderBlockchain.update({
         where: {
@@ -265,6 +280,18 @@ class PaymentEventProcessor {
     });
 
     try {
+      // Check if item exists first
+      const existingItem = await this.prisma.itemBlockchain.findUnique({
+        where: { id: eventData.id },
+      });
+
+      if (!existingItem) {
+        logger.warn(
+          `⚠️ Item not found in database: ${eventData.id}. Skipping paid status update.`
+        );
+        return; // Gracefully skip this event
+      }
+
       // 1. Update item isPaid status
       const result = await this.prisma.itemBlockchain.update({
         where: {
@@ -452,6 +479,18 @@ class PaymentEventProcessor {
     });
 
     try {
+      // Check if payment exists first
+      const existingPayment = await this.prisma.paymentBlockchain.findUnique({
+        where: { id: eventData.id },
+      });
+
+      if (!existingPayment) {
+        logger.warn(
+          `⚠️ Payment not found in database: ${eventData.id}. Skipping status update.`
+        );
+        return; // Gracefully skip this event
+      }
+
       // Update payment status
       const result = await this.prisma.paymentBlockchain.update({
         where: {
@@ -505,6 +544,18 @@ class PaymentEventProcessor {
     });
 
     try {
+      // Check if payment exists first
+      const existingPayment = await this.prisma.paymentBlockchain.findUnique({
+        where: { id: eventData.id },
+      });
+
+      if (!existingPayment) {
+        logger.warn(
+          `⚠️ Payment not found in database: ${eventData.id}. Skipping completion update.`
+        );
+        return; // Gracefully skip this event
+      }
+
       // Update payment with method and paidAt timestamp
       const result = await this.prisma.paymentBlockchain.update({
         where: {

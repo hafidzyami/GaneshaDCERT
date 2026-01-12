@@ -71,7 +71,17 @@ class PaymentService {
                 throw new InternalServerError("Failed to create order on blockchain");
             }
 
-            const payment_due_date = 60;
+            const paymentRecordId = uuidv4();
+
+            // masukin blockchain
+            await paymentBlockchainService.createPayment(
+                paymentRecordId,
+                invoice_number,
+                'PENDING',
+                totalAmount
+            );
+            
+            const payment_due_date = 3;
 
             const config = {
                 url: process.env.DOKU_API_URL || '',
@@ -114,12 +124,29 @@ class PaymentService {
                 headers
             });
 
-            return response.data.response.payment.url;
+            logger.success(`Transaction created successfully: ${invoice_number}`);
+            
+            // Return the payment URL from DOKU response
+            logger.info('DOKU Response Data:', response.data);
+            const paymentUrl = response.data?.response?.payment?.url || response.data?.payment?.url;
+            
+            if (!paymentUrl) {
+                logger.error('Payment URL not found in DOKU response:', response.data);
+                throw new InternalServerError('Payment URL not received from payment gateway');
+            }
+
+            return paymentUrl;
         } catch (error) {
+            logger.error('Error in createTransaction:', error);
+            
             if (axios.isAxiosError(error)) {
-                throw new BadRequestError(`DOKU API Error: ${error.response?.data?.message || error.message}`);
+                const errorMessage = error.response?.data?.message || error.message;
+                logger.error('DOKU API Error details:', error.response?.data);
+                throw new BadRequestError(`DOKU API Error: ${errorMessage}`);
+            } else if (error instanceof BadRequestError || error instanceof NotFoundError || error instanceof InternalServerError) {
+                throw error;
             } else {
-                throw new BadRequestError(`Unexpected Error: ${error}`);
+                throw new InternalServerError(`Unexpected Error: ${error}`);
             }
         }
     }
@@ -291,13 +318,31 @@ class PaymentService {
             // 5. Trigger post-payment processes (issue VC, etc)
 
             logger.success('Payment notification processed successfully');
-            const paymentRecordId = notificationData.order?.invoice_number || 'UNKNOWN_ID';
-            // const result = await paymentBlockchainService.createPayment(
-            //     paymentRecordId,
-            //     transactionStatus,
-            //     amount,
-            //     transactionDate
-            // )
+
+            const paymentRecord = await prisma.paymentBlockchain.findFirst({
+                where: {
+                    orderID: invoiceNumber,
+                    status: {
+                        not: 'SUCCESS'
+                    }
+                },
+                select: {
+                    id: true
+                },
+                orderBy: {
+                    createdAt: 'desc'
+                }
+            });
+
+            if (!paymentRecord) {
+                throw new NotFoundError(`Payment record not found for invoice ${invoiceNumber}`);
+            }
+
+            const paymentRecordId = paymentRecord.id;
+
+            if (transactionStatus === 'SUCCESS') {
+                await paymentBlockchainService.completePayment(paymentRecordId, invoiceNumber, serviceId, transactionStatus);
+            }
 
             // Return standard success response
             return {
@@ -309,6 +354,14 @@ class PaymentService {
             throw new BadRequestError('Failed to process payment notification');
         }
     }
+
+
+
+
+
+
+
+
 
     /**
      * Get item from blockchain by ID

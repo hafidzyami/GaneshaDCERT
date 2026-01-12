@@ -91,11 +91,23 @@ class PaymentEventPublisher {
 
         case "OrderStatusChanged":
           // event OrderStatusChanged(string indexed id, uint8 oldStatus, uint8 newStatus, uint256 timestamp)
-          // updateOrderStatus(string _orderId, uint _newStatus)
+          // Can be called from:
+          // 1. updateOrderStatus(string _orderId, uint _newStatus)
+          // 2. completePayment(string _paymentId, string _orderId, string _method, string _successStatus)
           if (decodedData.name === "updateOrderStatus") {
             return {
               id: String(decodedData.args[0]),          // _orderId
               newStatus: Number(decodedData.args[1]),   // _newStatus
+              oldStatus: eventData.oldStatus,           // from event
+              timestamp: eventData.timestamp,           // from event
+              blockNumber: eventData.blockNumber,
+              transactionHash: eventData.transactionHash,
+            };
+          } else if (decodedData.name === "completePayment") {
+            // OrderStatusChanged is also emitted by completePayment
+            return {
+              id: String(decodedData.args[1]),          // _orderId (args[1], not args[0]!)
+              newStatus: eventData.newStatus,           // from event (SUCCESS = 2)
               oldStatus: eventData.oldStatus,           // from event
               timestamp: eventData.timestamp,           // from event
               blockNumber: eventData.blockNumber,
@@ -125,7 +137,9 @@ class PaymentEventPublisher {
 
         case "ItemPaid":
           // event ItemPaid(string indexed id, string indexed vcID, uint256 timestamp)
-          // markItemAsPaid(string _itemId) - only has itemId parameter
+          // Can be called from:
+          // 1. markItemAsPaid(string _itemId) - only has itemId parameter
+          // 2. completePayment(string _paymentId, string _orderId, string _method, string _successStatus)
           if (decodedData.name === "markItemAsPaid") {
             const itemId = String(decodedData.args[0]);
 
@@ -151,6 +165,52 @@ class PaymentEventPublisher {
               blockNumber: eventData.blockNumber,
               transactionHash: eventData.transactionHash,
             };
+          } else if (decodedData.name === "completePayment") {
+            // ItemPaid is emitted by completePayment (in a loop for each item in order)
+            // We need to find which item ID matches the hash in the event
+            const orderId = String(decodedData.args[1]); // _orderId from tx
+            const itemIdHash = this.extractIndexedString(eventData.id); // hash from event
+
+            try {
+              // Query order to get item IDs
+              const orderData = await this.contract.getOrder(orderId);
+              const itemIds = orderData.items; // array of item ID strings
+
+              // Find which item ID hashes to the event hash
+              let matchedItemId = null;
+              for (const itemId of itemIds) {
+                const computedHash = ethers.id(String(itemId)); // keccak256 hash
+                if (computedHash === itemIdHash) {
+                  matchedItemId = String(itemId);
+                  break;
+                }
+              }
+
+              if (matchedItemId) {
+                // Query item to get vcID
+                const itemData = await this.contract.getItem(matchedItemId);
+                return {
+                  id: matchedItemId,
+                  vcID: String(itemData.vcID),
+                  timestamp: eventData.timestamp,
+                  blockNumber: eventData.blockNumber,
+                  transactionHash: eventData.transactionHash,
+                };
+              } else {
+                logger.warn(
+                  `[Payment] Could not find item ID matching hash ${itemIdHash} in order ${orderId}`
+                );
+                // Fallback: return hash as-is
+                return eventData;
+              }
+            } catch (error) {
+              logger.warn(
+                `[Payment] Error enriching ItemPaid from completePayment:`,
+                error
+              );
+              // Fallback: return hash as-is
+              return eventData;
+            }
           }
           break;
 
@@ -173,7 +233,9 @@ class PaymentEventPublisher {
 
         case "PaymentStatusChanged":
           // event PaymentStatusChanged(string indexed id, string indexed orderID, string oldStatus, string newStatus, uint256 timestamp)
-          // updatePaymentStatus(string _paymentId, string _newStatus)
+          // Can be called from:
+          // 1. updatePaymentStatus(string _paymentId, string _newStatus)
+          // 2. completePayment(string _paymentId, string _orderId, string _method, string _successStatus)
           if (decodedData.name === "updatePaymentStatus") {
             const paymentId = String(decodedData.args[0]);
 
@@ -198,6 +260,17 @@ class PaymentEventPublisher {
               oldStatus: eventData.oldStatus, // NOT indexed - from event
               newStatus: eventData.newStatus, // NOT indexed - from event
               timestamp: eventData.timestamp, // NOT indexed - from event
+              blockNumber: eventData.blockNumber,
+              transactionHash: eventData.transactionHash,
+            };
+          } else if (decodedData.name === "completePayment") {
+            // PaymentStatusChanged is also emitted by completePayment
+            return {
+              id: String(decodedData.args[0]),        // _paymentId
+              orderID: String(decodedData.args[1]),   // _orderId
+              oldStatus: eventData.oldStatus,         // from event
+              newStatus: eventData.newStatus,         // from event
+              timestamp: eventData.timestamp,         // from event
               blockNumber: eventData.blockNumber,
               transactionHash: eventData.transactionHash,
             };
@@ -484,10 +557,9 @@ class PaymentEventPublisher {
       async (id, holderDID, status, amount, currency, timestamp, event) => {
         try {
           const eventLog = event.log as ethers.EventLog;
-          // Don't convert indexed strings - they're hashes and will be enriched later
           const eventData = {
-            id: id,                       // indexed - will be hash, enriched from tx
-            holderDID: holderDID,         // indexed - will be hash, enriched from tx
+            id: this.extractIndexedString(id),                // indexed string
+            holderDID: this.extractIndexedString(holderDID),  // indexed string
             status: Number(status),       // not indexed uint - safe to convert
             amount: Number(amount),       // not indexed uint - safe to convert
             currency: String(currency),   // not indexed - safe to convert
@@ -508,7 +580,7 @@ class PaymentEventPublisher {
         try {
           const eventLog = event.log as ethers.EventLog;
           const eventData = {
-            id: id,                       // indexed - will be hash, enriched from tx
+            id: this.extractIndexedString(id),                // indexed string
             oldStatus: Number(oldStatus), // not indexed uint - safe to convert
             newStatus: Number(newStatus), // not indexed uint - safe to convert
             timestamp: Number(timestamp), // not indexed uint - safe to convert
@@ -527,10 +599,9 @@ class PaymentEventPublisher {
       async (id, vcID, vcHash, price, itemType, timestamp, event) => {
         try {
           const eventLog = event.log as ethers.EventLog;
-          // Don't convert indexed strings - they're hashes and will be enriched later
           const eventData = {
-            id: id,                       // indexed - will be hash, enriched from tx
-            vcID: vcID,                   // indexed - will be hash, enriched from tx
+            id: this.extractIndexedString(id),                // indexed string
+            vcID: this.extractIndexedString(vcID),            // indexed string
             vcHash: String(vcHash),       // not indexed - safe to convert
             price: Number(price),         // not indexed uint - safe to convert
             itemType: Number(itemType),   // not indexed uint - safe to convert
@@ -549,8 +620,8 @@ class PaymentEventPublisher {
       try {
         const eventLog = event.log as ethers.EventLog;
         const eventData = {
-          id: id,                       // indexed - will be hash, enriched from tx
-          vcID: vcID,                   // indexed - will be hash, enriched from tx
+          id: this.extractIndexedString(id),                // indexed string
+          vcID: this.extractIndexedString(vcID),            // indexed string
           timestamp: Number(timestamp), // not indexed uint - safe to convert
           blockNumber: Number(eventLog.blockNumber),
           transactionHash: eventLog.transactionHash,
@@ -567,8 +638,8 @@ class PaymentEventPublisher {
         try {
           const eventLog = event.log as ethers.EventLog;
           const eventData = {
-            id: id,                       // indexed - will be hash, enriched from tx
-            orderID: orderID,             // indexed - will be hash, enriched from tx
+            id: this.extractIndexedString(id),                // indexed string
+            orderID: this.extractIndexedString(orderID),      // indexed string
             method: String(method),       // not indexed - safe to convert
             status: String(status),       // not indexed - safe to convert
             amount: Number(amount),       // not indexed uint - safe to convert
@@ -589,8 +660,8 @@ class PaymentEventPublisher {
         try {
           const eventLog = event.log as ethers.EventLog;
           const eventData = {
-            id: id,                       // indexed - will be hash, enriched from tx
-            orderID: orderID,             // indexed - will be hash, enriched from tx
+            id: this.extractIndexedString(id),                // indexed string
+            orderID: this.extractIndexedString(orderID),      // indexed string
             oldStatus: String(oldStatus), // not indexed - safe to convert
             newStatus: String(newStatus), // not indexed - safe to convert
             timestamp: Number(timestamp), // not indexed uint - safe to convert
@@ -613,8 +684,8 @@ class PaymentEventPublisher {
         try {
           const eventLog = event.log as ethers.EventLog;
           const eventData = {
-            id: id,                       // indexed - will be hash, enriched from tx
-            orderID: orderID,             // indexed - will be hash, enriched from tx
+            id: this.extractIndexedString(id),                // indexed string
+            orderID: this.extractIndexedString(orderID),      // indexed string
             method: String(method),       // not indexed - safe to convert
             amount: Number(amount),       // not indexed uint - safe to convert
             timestamp: Number(timestamp), // not indexed uint - safe to convert
@@ -698,6 +769,17 @@ class PaymentEventPublisher {
   }
 
   /**
+   * Helper function to extract string value from indexed event parameter
+   * Indexed strings come as { hash: "0x...", _isIndexed: true } objects
+   */
+  private extractIndexedString(arg: any): string {
+    if (arg && typeof arg === 'object' && arg.hash && arg._isIndexed) {
+      return String(arg.hash);
+    }
+    return String(arg);
+  }
+
+  /**
    * Extract event data based on event type
    * Note: Indexed strings will be hashed - enrichment happens later via enrichEventDataFromTransaction
    */
@@ -707,8 +789,8 @@ class PaymentEventPublisher {
     switch (eventType) {
       case "OrderCreated":
         return {
-          id: String(args[0]),
-          holderDID: String(args[1]),
+          id: this.extractIndexedString(args[0]),          // indexed string
+          holderDID: this.extractIndexedString(args[1]),   // indexed string
           status: Number(args[2]),
           amount: Number(args[3]),
           currency: String(args[4]),
@@ -719,7 +801,7 @@ class PaymentEventPublisher {
 
       case "OrderStatusChanged":
         return {
-          id: String(args[0]),
+          id: this.extractIndexedString(args[0]),          // indexed string
           oldStatus: Number(args[1]),
           newStatus: Number(args[2]),
           timestamp: Number(args[3]),
@@ -729,8 +811,8 @@ class PaymentEventPublisher {
 
       case "ItemCreated":
         return {
-          id: String(args[0]),
-          vcID: String(args[1]),
+          id: this.extractIndexedString(args[0]),          // indexed string
+          vcID: this.extractIndexedString(args[1]),        // indexed string
           issuerDID: String(args[2]),
           holderDID: String(args[3]),
           vcHash: String(args[4]),
@@ -743,8 +825,8 @@ class PaymentEventPublisher {
 
       case "ItemPaid":
         return {
-          id: String(args[0]),
-          vcID: String(args[1]),
+          id: this.extractIndexedString(args[0]),          // indexed string
+          vcID: this.extractIndexedString(args[1]),        // indexed string
           timestamp: Number(args[2]),
           blockNumber: Number(event.blockNumber),
           transactionHash: event.transactionHash,
@@ -754,8 +836,8 @@ class PaymentEventPublisher {
         // event PaymentCreated(string indexed id, string indexed orderID, string method, string status, uint256 amount, uint256 timestamp)
         // Note: method will be empty string "" when created, will be set later in completePayment
         return {
-          id: String(args[0]),
-          orderID: String(args[1]),
+          id: this.extractIndexedString(args[0]),          // indexed string
+          orderID: this.extractIndexedString(args[1]),     // indexed string
           method: String(args[2]),          // empty string "" from event
           status: String(args[3]),
           amount: Number(args[4]),
@@ -766,8 +848,8 @@ class PaymentEventPublisher {
 
       case "PaymentStatusChanged":
         return {
-          id: String(args[0]),
-          orderID: String(args[1]),
+          id: this.extractIndexedString(args[0]),          // indexed string
+          orderID: this.extractIndexedString(args[1]),     // indexed string
           oldStatus: String(args[2]),
           newStatus: String(args[3]),
           timestamp: Number(args[4]),
@@ -778,8 +860,8 @@ class PaymentEventPublisher {
       case "PaymentCompleted":
         // event PaymentCompleted(string indexed id, string indexed orderID, string method, uint256 amount, uint256 timestamp)
         return {
-          id: String(args[0]),
-          orderID: String(args[1]),
+          id: this.extractIndexedString(args[0]),          // indexed string
+          orderID: this.extractIndexedString(args[1]),     // indexed string
           method: String(args[2]),          // method from event (set in completePayment)
           amount: Number(args[3]),
           timestamp: Number(args[4]),
