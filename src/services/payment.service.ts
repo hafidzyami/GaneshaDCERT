@@ -155,8 +155,11 @@ class PaymentService {
             // vcID format: schema_id:version:holder_did:timestamp
             const holderUnpaidItems = unpaidItems.filter((item) => {
                 const vcIdParts = item.vcID.split(':');
-                if (vcIdParts.length >= 3) {
-                    const holderDidFromVC = vcIdParts[2];
+                if (vcIdParts.length >= 4) {
+                    // vcID format: schema_id:version:holder_did:timestamp
+                    // holder_did itself contains 'did:method:identifier', so we need to reconstruct it
+                    const holderDidFromVC = `${vcIdParts[2]}:${vcIdParts[3]}:${vcIdParts[4]}`;
+                    console.log("hasil: ", holderDidFromVC)
                     return holderDidFromVC === holder_did;
                 }
                 return false;
