@@ -347,6 +347,8 @@ class PaymentService {
 
             const result = {
                 id: id,
+                issuerDID: itemData.issuerDID,
+                holderDID: itemData.holderDID,
                 price: itemData.price.toString(),
                 vcID: itemData.vcID,
                 vcHash: itemData.vcHash,

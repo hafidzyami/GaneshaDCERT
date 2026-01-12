@@ -168,6 +168,8 @@ class PaymentEventProcessor {
   async handleItemCreated(eventData: {
     id: string;
     vcID: string;
+    issuerDID: string;
+    holderDID: string;
     vcHash: string;
     price: number;
     itemType: number;
@@ -178,6 +180,8 @@ class PaymentEventProcessor {
     logger.info(`Processing ItemCreated event:`, {
       id: eventData.id,
       vcID: eventData.vcID,
+      issuerDID: eventData.issuerDID,
+      holderDID: eventData.holderDID,
       vcHash: eventData.vcHash,
       price: eventData.price,
       itemType: eventData.itemType,
@@ -202,6 +206,8 @@ class PaymentEventProcessor {
         },
         create: {
           id: eventData.id,
+          issuerDID: eventData.issuerDID,
+          holderDID: eventData.holderDID,
           price: eventData.price,
           vcID: eventData.vcID,
           vcHash: eventData.vcHash,
@@ -211,6 +217,8 @@ class PaymentEventProcessor {
           txHash: eventData.transactionHash,
         },
         update: {
+          issuerDID: eventData.issuerDID,
+          holderDID: eventData.holderDID,
           price: eventData.price,
           vcID: eventData.vcID,
           vcHash: eventData.vcHash,

@@ -105,16 +105,18 @@ class PaymentEventPublisher {
           break;
 
         case "ItemCreated":
-          // event ItemCreated(string indexed id, string indexed vcID, string vcHash, uint256 price, uint8 itemType, uint256 timestamp)
-          // createItem(string _id, uint256 _price, string _vcID, string _vcHash, uint8 _itemType)
+          // event ItemCreated(string indexed id, string indexed vcID, string issuerDID, string holderDID, string vcHash, uint256 price, uint8 itemType, uint256 timestamp)
+          // createItem(string _id, uint256 _price, string _vcID, string _issuerDID, string _holderDID, string _vcHash, uint8 _itemType)
           if (decodedData.name === "createItem") {
             return {
               id: String(decodedData.args[0]),          // _id
-              vcID: String(decodedData.args[2]),        // _vcID (args[2], not args[1]!)
-              vcHash: String(decodedData.args[3]),      // _vcHash (args[3], not args[2]!)
-              price: Number(decodedData.args[1]),       // _price (args[1], not args[3]!)
-              itemType: Number(decodedData.args[4]),    // _itemType
-              timestamp: eventData.timestamp,           // from event (uint256)
+              vcID: String(decodedData.args[2]),        // _vcID
+              issuerDID: String(decodedData.args[3]),   // _issuerDID (from tx, not event!)
+              holderDID: String(decodedData.args[4]),   // _holderDID (from tx, not event!)
+              vcHash: String(decodedData.args[5]),      // _vcHash (from tx, not event!)
+              price: Number(decodedData.args[1]),       // _price (from tx, not event!)
+              itemType: Number(decodedData.args[6]),    // _itemType (from tx, not event!)
+              timestamp: eventData.timestamp,           // from event (not in function params)
               blockNumber: eventData.blockNumber,
               transactionHash: eventData.transactionHash,
             };
@@ -727,10 +729,12 @@ class PaymentEventPublisher {
         return {
           id: String(args[0]),
           vcID: String(args[1]),
-          vcHash: String(args[2]),
-          price: Number(args[3]),
-          itemType: Number(args[4]),
-          timestamp: Number(args[5]),
+          issuerDID: String(args[2]),
+          holderDID: String(args[3]),
+          vcHash: String(args[4]),
+          price: Number(args[5]),
+          itemType: Number(args[6]),
+          timestamp: Number(args[7]),
           blockNumber: Number(event.blockNumber),
           transactionHash: event.transactionHash,
         };

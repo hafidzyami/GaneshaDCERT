@@ -352,6 +352,8 @@ model OrderBlockchain {
 
 model ItemBlockchain {
   id          String   @id
+  issuerDID   String   @default("")
+  holderDID   String   @default("")
   price       BigInt
   vcID        String
   vcHash      String
@@ -363,6 +365,8 @@ model ItemBlockchain {
   updatedAt   DateTime @updatedAt
 
   @@index([vcID])
+  @@index([issuerDID])
+  @@index([holderDID])
   @@index([isPaid])
   @@index([txHash])
 }
