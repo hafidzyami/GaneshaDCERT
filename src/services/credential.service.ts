@@ -635,6 +635,8 @@ class CredentialService {
           itemId,
           price,
           vc_id,
+          issuer_did,
+          holder_did,
           vc_hash,
           0
         );
@@ -1038,6 +1040,8 @@ class CredentialService {
           itemId,
           price,
           vc_id,
+          issuer_did,
+          holder_did,
           data.hash,
           1
         );
@@ -1222,8 +1226,10 @@ class CredentialService {
           itemId,
           price,
           new_vc_id, // Use new_vc_id for tracking
+          issuer_did,
+          holder_did,
           new_vc_hash,
-          0
+          2 // itemType = 2 for UPDATE (0=ISSUANCE, 1=RENEWAL, 2=UPDATE)
         );
         logger.info(
           `Payment item created for update. Item ID: ${itemId}, TX: ${paymentReceipt.hash}`

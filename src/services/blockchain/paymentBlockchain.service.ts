@@ -56,11 +56,14 @@ class PaymentBlockchainService {
   /**
    * Create item in blockchain
    * itemType: 0 = ISSUANCE, 1 = RENEWAL, 2 = UPDATE
+   * Function signature: createItem(string _id, uint256 _price, string _vcID, string _issuerDID, string _holderDID, string _vcHash, uint8 _itemType)
    */
   async createItem(
     id: string,
     price: number,
     vcID: string,
+    issuerDID: string,
+    holderDID: string,
     vcHash: string,
     itemType: number
   ): Promise<TransactionReceipt> {
@@ -78,11 +81,21 @@ class PaymentBlockchainService {
         originalPrice: price,
         blockchainPrice,
         vcID,
+        issuerDID,
+        holderDID,
         vcHash,
         itemType,
       });
 
-      const tx = await this.contract.createItem(id, blockchainPrice, vcID, vcHash, itemType);
+      const tx = await this.contract.createItem(
+        id,
+        blockchainPrice,
+        vcID,
+        issuerDID,
+        holderDID,
+        vcHash,
+        itemType
+      );
 
       const receipt = await tx.wait();
       logger.success(`[Payment] Item created: ${id}`, {
@@ -288,6 +301,8 @@ class PaymentBlockchainService {
       const item = await this.contract.getItem(id);
 
       return {
+        issuerDID: item.issuerDID,
+        holderDID: item.holderDID,
         price: Number(item.price),
         vcID: item.vcID,
         vcHash: item.vcHash,
@@ -377,6 +392,8 @@ class PaymentBlockchainService {
       const items = await this.contract.getItemsByOrder(orderId);
 
       return items.map((item: any) => ({
+        issuerDID: item.issuerDID,
+        holderDID: item.holderDID,
         price: Number(item.price),
         vcID: item.vcID,
         vcHash: item.vcHash,

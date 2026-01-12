@@ -133,9 +133,10 @@ class PaymentService {
         try {
             logger.info(`Fetching unpaid items for holder: ${holder_did}`);
 
-            // Get all unpaid items from ItemBlockchain
-            const unpaidItems = await prisma.itemBlockchain.findMany({
+            // Get unpaid items from ItemBlockchain filtered by holderDID
+            const holderUnpaidItems = await prisma.itemBlockchain.findMany({
                 where: {
+                    holderDID: holder_did,
                     isPaid: false,
                 },
                 select: {
@@ -143,26 +144,12 @@ class PaymentService {
                     vcID: true,
                     itemType: true,
                     price: true,
+                    issuerDID: true,
+                    holderDID: true,
                 },
                 orderBy: {
                     createdAt: 'desc',
                 },
-            });
-
-            // Get dari Database Issuance / RENEWAL / UPDATE Request based on VC ID
-
-            // Filter items by holder_did extracted from vcID
-            // vcID format: schema_id:version:holder_did:timestamp
-            const holderUnpaidItems = unpaidItems.filter((item) => {
-                const vcIdParts = item.vcID.split(':');
-                if (vcIdParts.length >= 4) {
-                    // vcID format: schema_id:version:holder_did:timestamp
-                    // holder_did itself contains 'did:method:identifier', so we need to reconstruct it
-                    const holderDidFromVC = `${vcIdParts[2]}:${vcIdParts[3]}:${vcIdParts[4]}`;
-                    console.log("hasil: ", holderDidFromVC)
-                    return holderDidFromVC === holder_did;
-                }
-                return false;
             });
 
             logger.info(`Found ${holderUnpaidItems.length} unpaid items for holder ${holder_did}`);
