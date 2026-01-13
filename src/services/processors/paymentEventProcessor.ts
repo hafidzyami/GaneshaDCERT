@@ -524,6 +524,69 @@ class PaymentEventProcessor {
   }
 
   /**
+   * Handle PaymentFailed event
+   * Note: method is set when payment fails (from failedPayment function)
+   */
+  async handlePaymentFailed(eventData: {
+    id: string;
+    orderID: string;
+    method: string;
+    amount: number;
+    timestamp: number;
+    blockNumber: number;
+    transactionHash: string;
+  }): Promise<void> {
+    logger.info(`Processing PaymentFailed event:`, {
+      id: eventData.id,
+      orderID: eventData.orderID,
+      method: eventData.method,
+      amount: eventData.amount,
+    });
+
+    try {
+      // Check if payment exists first
+      const existingPayment = await this.prisma.paymentBlockchain.findUnique({
+        where: { id: eventData.id },
+      });
+
+      if (!existingPayment) {
+        logger.warn(
+          `⚠️ Payment not found in database: ${eventData.id}. Skipping failed update.`
+        );
+        return; // Gracefully skip this event
+      }
+
+      // Update payment with method (paidAt remains null for failed payments)
+      const result = await this.prisma.paymentBlockchain.update({
+        where: {
+          id: eventData.id,
+        },
+        data: {
+          method: eventData.method,
+          blockNumber: eventData.blockNumber,
+          txHash: eventData.transactionHash,
+          updatedAt: new Date(),
+        },
+      });
+
+      logger.success(`Payment marked as failed: ${eventData.id} (method: ${eventData.method})`);
+    } catch (error: any) {
+      logger.error("❌ Error handling PaymentFailed event:", {
+        error: error.message,
+        stack: error.stack,
+        eventData: {
+          id: eventData.id,
+          orderID: eventData.orderID,
+          method: eventData.method,
+          amount: eventData.amount,
+          timestamp: eventData.timestamp,
+        },
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Handle PaymentCompleted event
    * Note: method is set when payment is completed (from completePayment function)
    */

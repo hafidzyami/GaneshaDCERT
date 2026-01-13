@@ -6,6 +6,7 @@ import { prisma } from "../config/database";
 
 import paymentSignatureUtilInstance from '../utils/paymentSignature';
 import paymentBlockchainService from "./blockchain/paymentBlockchain.service";
+import blockchainTransactionQueueService from "./blockchain/blockchainTransactionQueue.service";
 import { ItemType } from "@prisma/client";
 
 // General class for payment, using DOKU provider
@@ -73,13 +74,15 @@ class PaymentService {
 
             const paymentRecordId = uuidv4();
 
-            // masukin blockchain
-            await paymentBlockchainService.createPayment(
-                paymentRecordId,
-                invoice_number,
-                'PENDING',
-                totalAmount
-            );
+            // Queue blockchain transaction for async processing
+            await blockchainTransactionQueueService.queueCreatePayment({
+                paymentId: paymentRecordId,
+                orderID: invoice_number,
+                status: 'PENDING',
+                amount: totalAmount
+            });
+
+            logger.info(`Payment queued for blockchain: ${paymentRecordId}`);
             
             const payment_due_date = 3;
 
@@ -340,8 +343,25 @@ class PaymentService {
 
             const paymentRecordId = paymentRecord.id;
 
+            // Handle payment based on status (queue for async processing)
             if (transactionStatus === 'SUCCESS') {
-                await paymentBlockchainService.completePayment(paymentRecordId, invoiceNumber, serviceId, transactionStatus);
+                await blockchainTransactionQueueService.queueCompletePayment({
+                    paymentId: paymentRecordId,
+                    orderId: invoiceNumber,
+                    method: serviceId,
+                    successStatus: transactionStatus
+                });
+                logger.success(`Payment completion queued for invoice ${invoiceNumber}`);
+            } else if (transactionStatus === 'FAILED' || transactionStatus === 'EXPIRED' || transactionStatus === 'CANCELED') {
+                await blockchainTransactionQueueService.queueFailedPayment({
+                    paymentId: paymentRecordId,
+                    orderId: invoiceNumber,
+                    method: serviceId,
+                    failedStatus: transactionStatus
+                });
+                logger.warn(`Payment failure queued for invoice ${invoiceNumber} with status: ${transactionStatus}`);
+            } else {
+                logger.info(`Payment status ${transactionStatus} for invoice ${invoiceNumber} - no action taken`);
             }
 
             // Return standard success response

@@ -90,7 +90,9 @@ export interface ProcessIssuanceVCResponseDTO {
     item_id: string;        // UUID of payment item
     price: number;          // Amount to be paid
     vc_id: string;          // VC ID for tracking
-    transaction_hash: string; // Payment blockchain TX hash
+    transaction_hash?: string; // Payment blockchain TX hash (legacy - only when sync)
+    blockchain_status?: string; // Blockchain transaction status (PENDING, PROCESSING, CONFIRMED, FAILED)
+    transaction_id?: string;    // Transaction ID for tracking async blockchain operations
   };
   
   // VC issuance information (only after payment completed)
@@ -148,7 +150,9 @@ export interface ProcessRenewalVCResponseDTO {
     item_id: string;
     price: number;
     vc_id: string;
-    transaction_hash: string;
+    transaction_hash?: string; // Payment blockchain TX hash (legacy - only when sync)
+    blockchain_status?: string; // Blockchain transaction status (PENDING, PROCESSING, CONFIRMED, FAILED)
+    transaction_id?: string;    // Transaction ID for tracking async blockchain operations
   };
   
   // VC renewal information (only after payment completed)
@@ -184,7 +188,9 @@ export interface ProcessUpdateVCResponseDTO {
     item_id: string;
     price: number;
     vc_id: string;
-    transaction_hash: string;
+    transaction_hash?: string; // Payment blockchain TX hash (legacy - only when sync)
+    blockchain_status?: string; // Blockchain transaction status (PENDING, PROCESSING, CONFIRMED, FAILED)
+    transaction_id?: string;    // Transaction ID for tracking async blockchain operations
   };
   
   // VC update information (only after payment completed)

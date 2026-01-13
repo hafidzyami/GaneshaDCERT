@@ -445,3 +445,42 @@ enum ItemType {
   RENEWAL
   UPDATE
 }
+
+enum BlockchainTransactionStatus {
+  PENDING
+  PROCESSING
+  CONFIRMED
+  FAILED
+}
+
+enum BlockchainTransactionType {
+  CREATE_ITEM
+  CREATE_ORDER
+  CREATE_PAYMENT
+  COMPLETE_PAYMENT
+  FAILED_PAYMENT
+  UPDATE_ORDER_STATUS
+  UPDATE_PAYMENT_STATUS
+  MARK_ITEM_AS_PAID
+}
+
+model BlockchainTransaction {
+  id            String                       @id @default(uuid())
+  type          BlockchainTransactionType
+  status        BlockchainTransactionStatus  @default(PENDING)
+  payload       String                        // JSON payload
+  txHash        String?                       // Transaction hash setelah confirmed
+  blockNumber   BigInt?
+  error         String?                       // Error message jika failed
+  retryCount    Int                           @default(0)
+  maxRetries    Int                           @default(3)
+  createdAt     DateTime                      @default(now())
+  processedAt   DateTime?
+  confirmedAt   DateTime?
+  failedAt      DateTime?
+  updatedAt     DateTime                      @updatedAt
+
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+}

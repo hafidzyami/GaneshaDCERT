@@ -232,6 +232,47 @@ class PaymentBlockchainService {
   }
 
   /**
+   * Fail payment
+   * Function signature: failedPayment(string _paymentId, string _orderId, string _method, string _failedStatus)
+   * Note: method is set here when payment fails
+   */
+  async failedPayment(
+    paymentId: string,
+    orderId: string,
+    method: string,
+    failedStatus: string
+  ): Promise<TransactionReceipt> {
+    try {
+      logger.info("[Payment] Marking payment as failed", {
+        paymentId,
+        orderId,
+        method,
+        failedStatus,
+      });
+
+      const tx = await this.contract.failedPayment(
+        paymentId,
+        orderId,
+        method,
+        failedStatus
+      );
+      const receipt = await tx.wait();
+
+      logger.success(`[Payment] Payment marked as failed: ${paymentId}`, {
+        transactionHash: receipt.hash,
+        blockNumber: receipt.blockNumber,
+      });
+
+      return receipt;
+    } catch (error: any) {
+      logger.error("[Payment] Failed to mark payment as failed", error);
+      throw new Error(
+        `Failed to mark payment as failed in blockchain: ${error.message}`
+      );
+    }
+  }
+
+  /**
    * Complete payment (all-in-one: update payment status + order status + mark items as paid)
    * Function signature: completePayment(string _paymentId, string _orderId, string _method, string _successStatus)
    * Note: method is set here when payment is completed

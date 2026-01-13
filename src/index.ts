@@ -41,6 +41,9 @@ import blockchainEventPublisher from "./services/blockchainEventPublisher.servic
 import credentialsHistoryEventPublisher from "./services/credentialsHistoryEventPublisher.service";
 import paymentEventPublisher from "./services/paymentEventPublisher.service";
 
+// Blockchain Transaction Worker
+import blockchainTransactionWorker from "./workers/blockchainTransactionWorker";
+
 // Database for performance comparison
 import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
@@ -543,6 +546,21 @@ const startServer = async () => {
       logger.warn("   Server will continue without Payment event listener");
     }
 
+    // Start Blockchain Transaction Worker
+    logger.info("🔨 Starting blockchain transaction worker...");
+    try {
+      await blockchainTransactionWorker.start();
+      logger.success("   ✓ Blockchain transaction worker started");
+    } catch (error: any) {
+      logger.error("   ✗ Failed to start blockchain transaction worker:", {
+        message: error?.message,
+        stack: error?.stack,
+        name: error?.name,
+        error: error,
+      });
+      logger.warn("   Server will continue without blockchain transaction worker");
+    }
+
     // Start Express Server
     logger.info("🎯 Starting HTTP server...");
     app.listen(PORT, () => {
@@ -573,6 +591,7 @@ process.on("SIGINT", async () => {
   await blockchainEventPublisher.stop();
   await credentialsHistoryEventPublisher.stop();
   await paymentEventPublisher.stop();
+  await blockchainTransactionWorker.stop();
   await DatabaseService.disconnect();
   process.exit(0);
 });
@@ -582,6 +601,7 @@ process.on("SIGTERM", async () => {
   await blockchainEventPublisher.stop();
   await credentialsHistoryEventPublisher.stop();
   await paymentEventPublisher.stop();
+  await blockchainTransactionWorker.stop();
   await DatabaseService.disconnect();
   process.exit(0);
 });

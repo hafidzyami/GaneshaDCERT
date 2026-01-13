@@ -55,6 +55,7 @@ import {
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 import NotificationService from "./notification.service";
 import PaymentBlockchainService from "./blockchain/paymentBlockchain.service";
+import blockchainTransactionQueueService from "./blockchain/blockchainTransactionQueue.service";
 import StorageService from "./storage.service";
 import SchemaService from "./schema.service";
 import { v4 as uuidv4 } from "uuid";
@@ -629,24 +630,25 @@ class CredentialService {
       const itemId = uuidv4();
 
       // Price > 0: Normal payment flow
-      let paymentReceipt: any;
+      // Queue blockchain transaction for async processing
+      let queueResult: any;
       try {
-        paymentReceipt = await PaymentBlockchainService.createItem(
+        queueResult = await blockchainTransactionQueueService.queueCreateItem({
           itemId,
           price,
-          vc_id,
-          issuer_did,
-          holder_did,
-          vc_hash,
-          0
-        );
+          vcID: vc_id,
+          issuerDID: issuer_did,
+          holderDID: holder_did,
+          vcHash: vc_hash,
+          itemType: 0 // ISSUANCE
+        });
         logger.info(
-          `Payment item created on blockchain. Item ID: ${itemId}, TX: ${paymentReceipt.hash}`
+          `Payment item queued for blockchain. Item ID: ${itemId}, Status: ${queueResult.status}`
         );
-      } catch (paymentError: any) {
-        logger.error("Failed to create payment item:", paymentError);
+      } catch (queueError: any) {
+        logger.error("Failed to queue payment item:", queueError);
         throw new InternalServerError(
-          `Failed to create payment item on blockchain: ${paymentError.message}`
+          `Failed to queue payment item: ${queueError.message}`
         );
       }
 
@@ -699,7 +701,7 @@ class CredentialService {
       // Return response with payment information
       return {
         message:
-          "Verifiable Credential issuance approved. Payment required to complete issuance.",
+          "Verifiable Credential issuance approved. Payment item is being created on blockchain.",
         request_id: updatedRequest.id,
         status: updatedRequest.status,
         stage: "PAYMENT_PENDING",
@@ -707,7 +709,8 @@ class CredentialService {
           item_id: itemId,
           price: price,
           vc_id: vc_id,
-          transaction_hash: paymentReceipt.hash,
+          blockchain_status: queueResult.status, // PENDING
+          transaction_id: queueResult.transaction_id,
         },
       };
     } else {
@@ -1034,24 +1037,25 @@ class CredentialService {
       const price = await SchemaService.getPriceBasedOnSchemaId(schemaId, parseInt(version, 10));
       const itemId = uuidv4();
 
-      let paymentReceipt: any;
+      // Queue blockchain transaction for async processing
+      let queueResult: any;
       try {
-        paymentReceipt = await PaymentBlockchainService.createItem(
+        queueResult = await blockchainTransactionQueueService.queueCreateItem({
           itemId,
           price,
-          vc_id,
-          issuer_did,
-          holder_did,
-          data.hash,
-          1
-        );
+          vcID: vc_id,
+          issuerDID: issuer_did,
+          holderDID: holder_did,
+          vcHash: data.hash,
+          itemType: 1 // RENEWAL
+        });
         logger.info(
-          `Payment item created for renewal. Item ID: ${itemId}, TX: ${paymentReceipt.hash}`
+          `Payment item queued for renewal. Item ID: ${itemId}, Status: ${queueResult.status}`
         );
-      } catch (paymentError: any) {
-        logger.error("Failed to create payment item for renewal:", paymentError);
+      } catch (queueError: any) {
+        logger.error("Failed to queue payment item for renewal:", queueError);
         throw new InternalServerError(
-          `Failed to create payment item on blockchain: ${paymentError.message}`
+          `Failed to queue payment item: ${queueError.message}`
         );
       }
 
@@ -1107,7 +1111,7 @@ class CredentialService {
       // Return response with payment information
       return {
         message:
-          "Verifiable Credential renewal approved. Payment required to complete renewal.",
+          "Verifiable Credential renewal approved. Payment item is being created on blockchain.",
         request_id: updatedRequest.id,
         status: updatedRequest.status,
         stage: "PAYMENT_PENDING",
@@ -1115,7 +1119,8 @@ class CredentialService {
           item_id: itemId,
           price: price,
           vc_id: vc_id,
-          transaction_hash: paymentReceipt.hash,
+          blockchain_status: queueResult.status, // PENDING
+          transaction_id: queueResult.transaction_id,
         },
       };
     } else {
@@ -1220,24 +1225,25 @@ class CredentialService {
       const price = await SchemaService.getPriceBasedOnSchemaId(schema_id, schema_version);
       const itemId = uuidv4();
 
-      let paymentReceipt: any;
+      // Queue blockchain transaction for async processing
+      let queueResult: any;
       try {
-        paymentReceipt = await PaymentBlockchainService.createItem(
+        queueResult = await blockchainTransactionQueueService.queueCreateItem({
           itemId,
           price,
-          new_vc_id, // Use new_vc_id for tracking
-          issuer_did,
-          holder_did,
-          new_vc_hash,
-          2 // itemType = 2 for UPDATE (0=ISSUANCE, 1=RENEWAL, 2=UPDATE)
-        );
+          vcID: new_vc_id, // Use new_vc_id for tracking
+          issuerDID: issuer_did,
+          holderDID: holder_did,
+          vcHash: new_vc_hash,
+          itemType: 2 // UPDATE
+        });
         logger.info(
-          `Payment item created for update. Item ID: ${itemId}, TX: ${paymentReceipt.hash}`
+          `Payment item queued for update. Item ID: ${itemId}, Status: ${queueResult.status}`
         );
-      } catch (paymentError: any) {
-        logger.error("Failed to create payment item for update:", paymentError);
+      } catch (queueError: any) {
+        logger.error("Failed to queue payment item for update:", queueError);
         throw new InternalServerError(
-          `Failed to create payment item on blockchain: ${paymentError.message}`
+          `Failed to queue payment item: ${queueError.message}`
         );
       }
 
@@ -1292,7 +1298,7 @@ class CredentialService {
       // Return response with payment information
       return {
         message:
-          "Verifiable Credential update approved. Payment required to complete update.",
+          "Verifiable Credential update approved. Payment item is being created on blockchain.",
         request_id: updatedRequest.id,
         status: updatedRequest.status,
         stage: "PAYMENT_PENDING",
@@ -1300,7 +1306,8 @@ class CredentialService {
           item_id: itemId,
           price: price,
           vc_id: new_vc_id,
-          transaction_hash: paymentReceipt.hash,
+          blockchain_status: queueResult.status, // PENDING
+          transaction_id: queueResult.transaction_id,
         },
       };
     } else {

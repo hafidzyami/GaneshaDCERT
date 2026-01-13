@@ -23,6 +23,7 @@ class PaymentEventPublisher {
     "ItemPaid",
     "PaymentCreated",
     "PaymentStatusChanged",
+    "PaymentFailed",
     "PaymentCompleted",
   ];
 
@@ -277,8 +278,24 @@ class PaymentEventPublisher {
           }
           break;
 
+        case "PaymentFailed":
+          // event PaymentFailed(string indexed id, string indexed orderID, string method, uint256 amount, uint256 timestamp)
+          // failedPayment(string _paymentId, string _orderId, string _method, string _failedStatus)
+          if (decodedData.name === "failedPayment") {
+            return {
+              id: String(decodedData.args[0]),        // _paymentId
+              orderID: String(decodedData.args[1]),   // _orderId
+              method: String(decodedData.args[2]),    // _method (from tx)
+              amount: eventData.amount,               // from event (not in function params)
+              timestamp: eventData.timestamp,         // from event (not in function params)
+              blockNumber: eventData.blockNumber,
+              transactionHash: eventData.transactionHash,
+            };
+          }
+          break;
+
         case "PaymentCompleted":
-          // event PaymentCompleted(string indexed id, string indexed orderID, uint256 amount, uint256 timestamp)
+          // event PaymentCompleted(string indexed id, string indexed orderID, string method, uint256 amount, uint256 timestamp)
           // completePayment(string _paymentId, string _orderId, string _method, string _successStatus)
           if (decodedData.name === "completePayment") {
             return {
@@ -679,6 +696,27 @@ class PaymentEventPublisher {
     );
 
     this.contract.on(
+      "PaymentFailed",
+      async (id, orderID, method, amount, timestamp, event) => {
+        try {
+          const eventLog = event.log as ethers.EventLog;
+          const eventData = {
+            id: this.extractIndexedString(id),                // indexed string
+            orderID: this.extractIndexedString(orderID),      // indexed string
+            method: String(method),       // not indexed - safe to convert
+            amount: Number(amount),       // not indexed uint - safe to convert
+            timestamp: Number(timestamp), // not indexed uint - safe to convert
+            blockNumber: Number(eventLog.blockNumber),
+            transactionHash: eventLog.transactionHash,
+          };
+          await this.processEvent("PaymentFailed", eventLog, eventData);
+        } catch (error) {
+          logger.error("[Payment] Error processing PaymentFailed:", error);
+        }
+      }
+    );
+
+    this.contract.on(
       "PaymentCompleted",
       async (id, orderID, method, amount, timestamp, event) => {
         try {
@@ -857,6 +895,18 @@ class PaymentEventPublisher {
           transactionHash: event.transactionHash,
         };
 
+      case "PaymentFailed":
+        // event PaymentFailed(string indexed id, string indexed orderID, string method, uint256 amount, uint256 timestamp)
+        return {
+          id: this.extractIndexedString(args[0]),          // indexed string
+          orderID: this.extractIndexedString(args[1]),     // indexed string
+          method: String(args[2]),          // method from event (set in failedPayment)
+          amount: Number(args[3]),
+          timestamp: Number(args[4]),
+          blockNumber: Number(event.blockNumber),
+          transactionHash: event.transactionHash,
+        };
+
       case "PaymentCompleted":
         // event PaymentCompleted(string indexed id, string indexed orderID, string method, uint256 amount, uint256 timestamp)
         return {
@@ -908,6 +958,10 @@ class PaymentEventPublisher {
 
       case "PaymentStatusChanged":
         await this.processor.handlePaymentStatusChanged(eventData);
+        break;
+
+      case "PaymentFailed":
+        await this.processor.handlePaymentFailed(eventData);
         break;
 
       case "PaymentCompleted":
