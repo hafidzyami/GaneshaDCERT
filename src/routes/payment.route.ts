@@ -4,7 +4,10 @@ import {
   validatePaymentConfig,
   validateMinimumAmount,
   validateMaximumAmount,
-  validatePaymentRequest
+  validatePaymentRequest,
+  verifyDokuWebhookSignature,
+  validateWebhookPaymentAmount,
+  checkWebhookIdempotency,
 } from "../middlewares/payment.middleware";
 import { verifyDIDSignature } from "../middlewares/didAuth.middleware";
 import {
@@ -13,6 +16,7 @@ import {
   vaPaymentNotificationBodyValidators,
   getUnpaidItemsValidator,
   getItemFromBlockchainValidator,
+  getOrderFromBlockchainValidator,
 } from "../validators/payment.validator";
 
 const router: Router = express.Router();
@@ -316,11 +320,19 @@ router.post(
  *       - Paylater (Kredivo, Akulaku)
  *       - Convenience Store (Alfamart, Indomaret)
  *
+ *       **Security Verification:**
+ *       1. HMAC-SHA256 signature verification
+ *       2. Client-Id validation against configured credentials
+ *       3. Timestamp validation (prevents replay attacks within 5 minutes)
+ *       4. Amount validation against database
+ *       5. Idempotency check (prevents duplicate processing)
+ *
  *       **Automatic Process:**
  *       1. Verify DOKU signature
- *       2. Update order status to SUCCESS
- *       3. Mark items as paid
- *       4. Trigger automatic VC issuance to blockchain
+ *       2. Validate payment amount matches database
+ *       3. Update order status to SUCCESS
+ *       4. Mark items as paid
+ *       5. Trigger automatic VC issuance to blockchain
  *     tags:
  *       - Payment
  *     parameters:
@@ -469,7 +481,129 @@ router.post(
   "/transfer-va/notification",
   vaPaymentNotificationHeaderValidators,
   vaPaymentNotificationBodyValidators,
+  verifyDokuWebhookSignature,        // Step 1: Verify DOKU signature (HMAC-SHA256)
+  validateWebhookPaymentAmount,       // Step 2: Validate amount matches database
+  checkWebhookIdempotency,            // Step 3: Check for duplicate notifications
   paymentController.handleVAPaymentNotification
+);
+
+/**
+ * @swagger
+ * /payment/blockchain/order/{id}:
+ *   get:
+ *     summary: Get order from blockchain by ID
+ *     description: |
+ *       Retrieve order details directly from the PaymentManager smart contract on blockchain.
+ *
+ *       **Returns:**
+ *       - Order ID (Invoice Number)
+ *       - Holder DID
+ *       - Status (NONE, PENDING_PAYMENT, SUCCESS, or CANCELED)
+ *       - Amount (total order amount)
+ *       - Currency
+ *       - Items (array of item IDs in this order)
+ *
+ *       **Note:**
+ *       - This fetches real-time data from blockchain
+ *       - Data may differ from database if sync is delayed
+ *     tags:
+ *       - Payment
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Order ID (Invoice Number)
+ *         example: "INV-550e8400-1234567890"
+ *     responses:
+ *       200:
+ *         description: Order retrieved successfully from blockchain
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Order retrieved from blockchain successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       description: Order ID (Invoice Number)
+ *                       example: "INV-550e8400-1234567890"
+ *                     holderDID:
+ *                       type: string
+ *                       description: Holder's DID
+ *                       example: "did:dcert:uABCD1234567890-xyz_12345678901234567890abcd"
+ *                     status:
+ *                       type: string
+ *                       enum: [NONE, PENDING_PAYMENT, SUCCESS, CANCELED]
+ *                       description: Order status
+ *                       example: "PENDING_PAYMENT"
+ *                     amount:
+ *                       type: string
+ *                       description: Total order amount (as string to preserve precision)
+ *                       example: "150000"
+ *                     currency:
+ *                       type: string
+ *                       description: Currency code
+ *                       example: "IDR"
+ *                     items:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       description: Array of item IDs included in this order
+ *                       example: ["550e8400-e29b-41d4-a716-446655440000", "660e8400-e29b-41d4-a716-446655440001"]
+ *       400:
+ *         description: Validation error - Invalid order ID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Validation error"
+ *                 errors:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       field:
+ *                         type: string
+ *                         example: "id"
+ *                       message:
+ *                         type: string
+ *                         example: "Order ID is required"
+ *       404:
+ *         description: Order not found on blockchain
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Order with ID INV-550e8400-1234567890 not found on blockchain"
+ *       500:
+ *         description: Internal server error or blockchain connection issue
+ */
+router.get(
+  "/blockchain/order/:id",
+  getOrderFromBlockchainValidator,
+  paymentController.getOrderFromBlockchain
 );
 
 /**

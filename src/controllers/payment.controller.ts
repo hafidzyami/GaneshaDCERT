@@ -73,6 +73,28 @@ export const handleVAPaymentNotification = asyncHandler(
 );
 
 /**
+ * Get order from blockchain by ID
+ */
+export const getOrderFromBlockchain = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { id } = req.params;
+
+    const result = await PaymentService.getOrderFromBlockchain(id);
+
+    return ResponseHelper.success(
+      res,
+      result,
+      'Order retrieved from blockchain successfully'
+    );
+  }
+);
+
+/**
  * Get item from blockchain by ID
  */
 export const getItemFromBlockchain = asyncHandler(

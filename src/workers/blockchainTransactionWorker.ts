@@ -4,6 +4,7 @@ import logger from '../config/logger';
 import blockchainTransactionQueueService from '../services/blockchain/blockchainTransactionQueue.service';
 import paymentBlockchainService from '../services/blockchain/paymentBlockchain.service';
 import PaymentEventProcessor from '../services/processors/paymentEventProcessor';
+import { uint248ToNumber } from '../utils/blockchain.helper';
 
 /**
  * Blockchain Transaction Worker
@@ -93,7 +94,7 @@ class BlockchainTransactionWorker {
           logger.warn(`[BlockchainWorker] ⚠️  Item already exists on blockchain: ${itemId}, syncing from blockchain...`);
           isAlreadyExist = true;
 
-          // Get existing item from blockchain
+          // Get existing item from blockchain (for status/isPaid info)
           const existingItem = await paymentBlockchainService.getItem(itemId);
 
           // Create a pseudo-receipt for existing item
@@ -102,13 +103,14 @@ class BlockchainTransactionWorker {
             blockNumber: 0, // We don't know the original block number
           };
 
-          // Sync to database
+          // Sync to database using ORIGINAL job data for strings
+          // (blockchain returns bytes32 hashes for DIDs which can't be decoded)
           await this.processor.handleItemCreated({
             id: itemId,
-            vcID: String(existingItem.vcID),
-            issuerDID: String(existingItem.issuerDID),
-            holderDID: String(existingItem.holderDID),
-            vcHash: String(existingItem.vcHash),
+            vcID: vcID, // Use original from job.data
+            issuerDID: issuerDID, // Use original from job.data
+            holderDID: holderDID, // Use original from job.data
+            vcHash: vcHash, // Use original from job.data
             price: Number(existingItem.price),
             itemType: Number(existingItem.itemType),
             timestamp: Date.now() / 1000,
@@ -213,7 +215,7 @@ class BlockchainTransactionWorker {
           logger.warn(`[BlockchainWorker] ⚠️  Order already exists on blockchain: ${orderId}, syncing from blockchain...`);
           isAlreadyExist = true;
 
-          // Get existing order from blockchain
+          // Get existing order from blockchain (for status info)
           const existingOrder = await paymentBlockchainService.getOrder(orderId);
 
           // Create a pseudo-receipt for existing order
@@ -222,13 +224,14 @@ class BlockchainTransactionWorker {
             blockNumber: 0,
           };
 
-          // Sync to database
+          // Sync to database using ORIGINAL job data for strings
+          // (blockchain returns bytes32 hashes for DIDs which can't be decoded)
           await this.processor.handleOrderCreated({
             id: orderId,
-            holderDID: String(existingOrder.holderDID),
+            holderDID: holderDID, // Use original from job.data
             status: Number(existingOrder.status),
             amount: Number(existingOrder.amount),
-            currency: String(existingOrder.currency),
+            currency: currency, // Use original from job.data
             timestamp: Date.now() / 1000,
             blockNumber: 0,
             transactionHash: 'already-exists',
@@ -325,7 +328,7 @@ class BlockchainTransactionWorker {
           logger.warn(`[BlockchainWorker] ⚠️  Payment already exists on blockchain: ${paymentId}, syncing from blockchain...`);
           isAlreadyExist = true;
 
-          // Get existing payment from blockchain
+          // Get existing payment from blockchain (for amount info)
           const existingPayment = await paymentBlockchainService.getPayment(paymentId);
 
           // Create a pseudo-receipt for existing payment
@@ -334,12 +337,13 @@ class BlockchainTransactionWorker {
             blockNumber: 0,
           };
 
-          // Sync to database
+          // Sync to database using ORIGINAL job data for strings
+          // method/status from blockchain may be decoded properly since they're short
           await this.processor.handlePaymentCreated({
             id: paymentId,
-            orderID: String(existingPayment.orderID),
-            method: String(existingPayment.method),
-            status: String(existingPayment.status),
+            orderID: orderID, // Use original from job.data
+            method: existingPayment.method || '', // May be decoded bytes32
+            status: status, // Use original from job.data
             amount: Number(existingPayment.amount),
             timestamp: Date.now() / 1000,
             blockNumber: 0,
@@ -422,12 +426,107 @@ class BlockchainTransactionWorker {
         },
       });
 
-      const receipt = await paymentBlockchainService.completePayment(
-        paymentId,
-        orderId,
-        method,
-        successStatus
-      );
+      let receipt;
+      let isAlreadyCompleted = false;
+
+      try {
+        receipt = await paymentBlockchainService.completePayment(
+          paymentId,
+          orderId,
+          method,
+          successStatus
+        );
+      } catch (error: any) {
+        // Check if order is already completed
+        if (error.message && error.message.includes('Order is not pending payment')) {
+          logger.warn(`[BlockchainWorker] ⚠️  Order already completed on blockchain: ${orderId}, syncing from blockchain...`);
+          isAlreadyCompleted = true;
+
+          // Get existing order and payment from blockchain (for status info)
+          const existingOrder = await paymentBlockchainService.getOrder(orderId);
+          const existingPayment = await paymentBlockchainService.getPayment(paymentId);
+
+          // Create a pseudo-receipt for existing payment
+          receipt = {
+            hash: 'already-completed',
+            blockNumber: 0,
+          };
+
+          // Sync all events to database using ORIGINAL job data for strings
+          const timestamp = Date.now() / 1000;
+
+          // 1. PaymentCompleted event
+          logger.info(`[BlockchainWorker] Syncing PaymentCompleted event for ${paymentId}...`);
+          await this.processor.handlePaymentCompleted({
+            id: paymentId,
+            orderID: orderId, // Use original from job.data
+            method: method, // Use original from job.data
+            amount: Number(existingPayment.amount),
+            timestamp: timestamp,
+            blockNumber: 0,
+            transactionHash: 'already-completed',
+          });
+
+          // 2. PaymentStatusChanged event
+          logger.info(`[BlockchainWorker] Syncing PaymentStatusChanged event for ${paymentId}...`);
+          await this.processor.handlePaymentStatusChanged({
+            id: paymentId,
+            orderID: orderId, // Use original from job.data
+            oldStatus: 'PENDING',
+            newStatus: successStatus, // Use original from job.data
+            timestamp: timestamp,
+            blockNumber: 0,
+            transactionHash: 'already-completed',
+          });
+
+          // 3. OrderStatusChanged event
+          logger.info(`[BlockchainWorker] Syncing OrderStatusChanged event for ${orderId}...`);
+          await this.processor.handleOrderStatusChanged({
+            id: orderId,
+            oldStatus: 0, // PENDING
+            newStatus: Number(existingOrder.status),
+            timestamp: timestamp,
+            blockNumber: 0,
+            transactionHash: 'already-completed',
+          });
+
+          // 4. ItemPaid events (for each item in order)
+          // Get bytes32 item IDs from blockchain order, then match with database items
+          logger.info(`[BlockchainWorker] Syncing ItemPaid events for order ${orderId}...`);
+
+          const itemBytes32Array = existingOrder.items as string[];
+
+          // Get all unpaid items from database and match by bytes32
+          const allUnpaidItems = await prisma.itemBlockchain.findMany({
+            where: { isPaid: false },
+            select: { id: true, vcID: true }
+          });
+
+          for (const dbItem of allUnpaidItems) {
+            const itemBytes32 = invoiceToBytes32(dbItem.id);
+
+            // Check if this item belongs to the order
+            if (itemBytes32Array.includes(itemBytes32)) {
+              // Check if item is paid on blockchain
+              const blockchainItem = await paymentBlockchainService.getItem(dbItem.id);
+
+              if (blockchainItem.isPaid) {
+                await this.processor.handleItemPaid({
+                  id: dbItem.id,
+                  vcID: dbItem.vcID,
+                  timestamp: timestamp,
+                  blockNumber: 0,
+                  transactionHash: 'already-completed',
+                });
+              }
+            }
+          }
+
+          logger.success(`[BlockchainWorker] ✅ Payment completion synced from blockchain: ${paymentId}`);
+        } else {
+          throw error;
+        }
+      }
 
       await prisma.blockchainTransaction.update({
         where: { id: transactionId },
@@ -436,68 +535,78 @@ class BlockchainTransactionWorker {
           txHash: receipt.hash,
           blockNumber: receipt.blockNumber,
           confirmedAt: new Date(),
+          error: isAlreadyCompleted ? 'Payment already completed on blockchain, synced to database' : null,
         },
       });
 
-      logger.success(`[BlockchainWorker] ✅ COMPLETE_PAYMENT confirmed: ${paymentId} (tx: ${receipt.hash})`);
+      if (!isAlreadyCompleted) {
+        logger.success(`[BlockchainWorker] ✅ COMPLETE_PAYMENT confirmed: ${paymentId} (tx: ${receipt.hash})`);
 
-      // Immediately process the events to update database
-      // Note: completePayment emits multiple events
-      const timestamp = Date.now() / 1000;
+        // Immediately process the events to update database
+        // Note: completePayment emits multiple events
+        const timestamp = Date.now() / 1000;
 
-      // 1. PaymentCompleted event
-      logger.info(`[BlockchainWorker] Processing PaymentCompleted event for ${paymentId}...`);
-      const payment = await paymentBlockchainService.getPayment(paymentId);
-      await this.processor.handlePaymentCompleted({
-        id: paymentId,
-        orderID: orderId,
-        method: method,
-        amount: Number(payment.amount),
-        timestamp: timestamp,
-        blockNumber: receipt.blockNumber,
-        transactionHash: receipt.hash,
-      });
-
-      // 2. PaymentStatusChanged event
-      logger.info(`[BlockchainWorker] Processing PaymentStatusChanged event for ${paymentId}...`);
-      await this.processor.handlePaymentStatusChanged({
-        id: paymentId,
-        orderID: orderId,
-        oldStatus: 'PENDING',
-        newStatus: successStatus,
-        timestamp: timestamp,
-        blockNumber: receipt.blockNumber,
-        transactionHash: receipt.hash,
-      });
-
-      // 3. OrderStatusChanged event
-      logger.info(`[BlockchainWorker] Processing OrderStatusChanged event for ${orderId}...`);
-      await this.processor.handleOrderStatusChanged({
-        id: orderId,
-        oldStatus: 0, // PENDING
-        newStatus: 2, // SUCCESS
-        timestamp: timestamp,
-        blockNumber: receipt.blockNumber,
-        transactionHash: receipt.hash,
-      });
-
-      // 4. ItemPaid events (for each item in order)
-      logger.info(`[BlockchainWorker] Processing ItemPaid events for order ${orderId}...`);
-      const order = await paymentBlockchainService.getOrder(orderId);
-      const itemIds = order.items; // Array of item IDs
-
-      for (const itemId of itemIds) {
-        const item = await paymentBlockchainService.getItem(itemId);
-        await this.processor.handleItemPaid({
-          id: itemId,
-          vcID: String(item.vcID),
+        // 1. PaymentCompleted event
+        logger.info(`[BlockchainWorker] Processing PaymentCompleted event for ${paymentId}...`);
+        const payment = await paymentBlockchainService.getPayment(paymentId);
+        await this.processor.handlePaymentCompleted({
+          id: paymentId,
+          orderID: orderId,
+          method: method,
+          amount: Number(payment.amount),
           timestamp: timestamp,
           blockNumber: receipt.blockNumber,
           transactionHash: receipt.hash,
         });
-      }
 
-      logger.success(`[BlockchainWorker] ✅ All events processed for COMPLETE_PAYMENT: ${paymentId}`);
+        // 2. PaymentStatusChanged event
+        logger.info(`[BlockchainWorker] Processing PaymentStatusChanged event for ${paymentId}...`);
+        await this.processor.handlePaymentStatusChanged({
+          id: paymentId,
+          orderID: orderId,
+          oldStatus: 'PENDING',
+          newStatus: successStatus,
+          timestamp: timestamp,
+          blockNumber: receipt.blockNumber,
+          transactionHash: receipt.hash,
+        });
+
+        // 3. OrderStatusChanged event
+        logger.info(`[BlockchainWorker] Processing OrderStatusChanged event for ${orderId}...`);
+        await this.processor.handleOrderStatusChanged({
+          id: orderId,
+          oldStatus: 0, // PENDING
+          newStatus: 2, // SUCCESS
+          timestamp: timestamp,
+          blockNumber: receipt.blockNumber,
+          transactionHash: receipt.hash,
+        });
+
+        // 4. ItemPaid events (for each item in order)
+        // Get items from database since blockchain returns bytes32 hashes for IDs
+        logger.info(`[BlockchainWorker] Processing ItemPaid events for order ${orderId}...`);
+
+        const dbItems = await prisma.itemBlockchain.findMany({
+          where: {
+            orders: {
+              some: { id: orderId }
+            }
+          },
+          select: { id: true, vcID: true }
+        });
+
+        for (const dbItem of dbItems) {
+          await this.processor.handleItemPaid({
+            id: dbItem.id,
+            vcID: dbItem.vcID, // Use database value (original string)
+            timestamp: timestamp,
+            blockNumber: receipt.blockNumber,
+            transactionHash: receipt.hash,
+          });
+        }
+
+        logger.success(`[BlockchainWorker] ✅ All events processed for COMPLETE_PAYMENT: ${paymentId}`);
+      }
 
       return {
         success: true,

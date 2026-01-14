@@ -5,7 +5,15 @@ import { CredentialService } from "../credential.service";
 /**
  * Payment Event Processor
  * Handles blockchain events from PaymentManager contract
+ *
  * Note: Event enrichment is done in paymentEventPublisher
+ *
+ * Bytes32 Contract Support:
+ * - This processor receives data from blockchainTransactionWorker
+ * - The worker ensures original string values are passed (not bytes32 hashes)
+ * - DIDs, vcIDs, and long strings are hashed to bytes32 in the optimized contract
+ * - Since hashes can't be reversed, we use original job data or database values
+ * - Short strings like currency, status, method are decoded from bytes32
  */
 class PaymentEventProcessor {
   private prisma: PrismaClient;
@@ -626,7 +634,7 @@ class PaymentEventProcessor {
         },
         data: {
           method: eventData.method,
-          paidAt: eventData.timestamp,
+          paidAt: BigInt(Math.floor(eventData.timestamp)),
           blockNumber: eventData.blockNumber,
           txHash: eventData.transactionHash,
           updatedAt: new Date(),

@@ -630,7 +630,31 @@ class CredentialService {
       const itemId = uuidv4();
 
       // Price > 0: Normal payment flow
-      // Queue blockchain transaction for async processing
+      // 1. IMMEDIATELY save to database (for fast response)
+      try {
+        await this.db.itemBlockchain.create({
+          data: {
+            id: itemId,
+            issuerDID: issuer_did,
+            holderDID: holder_did,
+            price: price,
+            vcID: vc_id,
+            vcHash: vc_hash,
+            itemType: "ISSUANCE",
+            isPaid: false,
+            blockNumber: 0,
+            txHash: "pending-blockchain",
+          },
+        });
+        logger.success(`Item saved to database: ${itemId} (isPaid=false)`);
+      } catch (dbError: any) {
+        logger.error(`Failed to save item to database: ${itemId}`, dbError);
+        throw new InternalServerError(
+          `Failed to save item to database: ${dbError.message}`
+        );
+      }
+
+      // 2. Queue blockchain transaction for async processing (parallel)
       let queueResult: any;
       try {
         queueResult = await blockchainTransactionQueueService.queueCreateItem({
@@ -647,9 +671,9 @@ class CredentialService {
         );
       } catch (queueError: any) {
         logger.error("Failed to queue payment item:", queueError);
-        throw new InternalServerError(
-          `Failed to queue payment item: ${queueError.message}`
-        );
+        // Don't throw - item already saved to database
+        // User can still proceed with payment
+        logger.warn("Item saved to database but blockchain transaction failed to queue. Will retry later.");
       }
 
       // --- Database Updates: Mark as APPROVED but not yet issued ---
@@ -1037,7 +1061,31 @@ class CredentialService {
       const price = await SchemaService.getPriceBasedOnSchemaId(schemaId, parseInt(version, 10));
       const itemId = uuidv4();
 
-      // Queue blockchain transaction for async processing
+      // 1. IMMEDIATELY save to database (for fast response)
+      try {
+        await this.db.itemBlockchain.create({
+          data: {
+            id: itemId,
+            issuerDID: issuer_did,
+            holderDID: holder_did,
+            price: price,
+            vcID: vc_id,
+            vcHash: data.hash,
+            itemType: "RENEWAL",
+            isPaid: false,
+            blockNumber: 0,
+            txHash: "pending-blockchain",
+          },
+        });
+        logger.success(`Item saved to database: ${itemId} (RENEWAL, isPaid=false)`);
+      } catch (dbError: any) {
+        logger.error(`Failed to save renewal item to database: ${itemId}`, dbError);
+        throw new InternalServerError(
+          `Failed to save renewal item to database: ${dbError.message}`
+        );
+      }
+
+      // 2. Queue blockchain transaction for async processing (parallel)
       let queueResult: any;
       try {
         queueResult = await blockchainTransactionQueueService.queueCreateItem({
@@ -1054,9 +1102,8 @@ class CredentialService {
         );
       } catch (queueError: any) {
         logger.error("Failed to queue payment item for renewal:", queueError);
-        throw new InternalServerError(
-          `Failed to queue payment item: ${queueError.message}`
-        );
+        // Don't throw - item already saved to database
+        logger.warn("Renewal item saved to database but blockchain transaction failed to queue. Will retry later.");
       }
 
 
@@ -1225,7 +1272,31 @@ class CredentialService {
       const price = await SchemaService.getPriceBasedOnSchemaId(schema_id, schema_version);
       const itemId = uuidv4();
 
-      // Queue blockchain transaction for async processing
+      // 1. IMMEDIATELY save to database (for fast response)
+      try {
+        await this.db.itemBlockchain.create({
+          data: {
+            id: itemId,
+            issuerDID: issuer_did,
+            holderDID: holder_did,
+            price: price,
+            vcID: new_vc_id, // Use new_vc_id for tracking
+            vcHash: new_vc_hash,
+            itemType: "UPDATE",
+            isPaid: false,
+            blockNumber: 0,
+            txHash: "pending-blockchain",
+          },
+        });
+        logger.success(`Item saved to database: ${itemId} (UPDATE, isPaid=false)`);
+      } catch (dbError: any) {
+        logger.error(`Failed to save update item to database: ${itemId}`, dbError);
+        throw new InternalServerError(
+          `Failed to save update item to database: ${dbError.message}`
+        );
+      }
+
+      // 2. Queue blockchain transaction for async processing (parallel)
       let queueResult: any;
       try {
         queueResult = await blockchainTransactionQueueService.queueCreateItem({
@@ -1242,9 +1313,8 @@ class CredentialService {
         );
       } catch (queueError: any) {
         logger.error("Failed to queue payment item for update:", queueError);
-        throw new InternalServerError(
-          `Failed to queue payment item: ${queueError.message}`
-        );
+        // Don't throw - item already saved to database
+        logger.warn("Update item saved to database but blockchain transaction failed to queue. Will retry later.");
       }
 
       // --- Database Updates: Mark as APPROVED but not yet updated ---

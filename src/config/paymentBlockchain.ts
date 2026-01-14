@@ -8,6 +8,7 @@ export const iface = new Interface(contractABI);
 
 /**
  * Payment Blockchain Configuration Singleton
+ * Uses optimized PaymentManager contract with bytes32
  */
 class PaymentBlockchainConfig {
   private static _provider: ethers.JsonRpcProvider;

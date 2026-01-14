@@ -60,29 +60,82 @@ class PaymentService {
                 holder_did: params.holder_did,
                 items: items.map(i => ({ id: i.id, vcID: i.vcID, price: i.price })),
             });
-            const result = await paymentBlockchainService.createOrder(
-                invoice_number,
-                params.holder_did,
-                totalAmount,
-                "IDR",
-                items.map(item => item.id),
-            );
 
-            if (!result) {
-                throw new InternalServerError("Failed to create order on blockchain");
+            // 1. IMMEDIATELY save OrderBlockchain to database (for fast response)
+            try {
+                await prisma.orderBlockchain.create({
+                    data: {
+                        id: invoice_number,
+                        holderDID: params.holder_did,
+                        status: "PENDING_PAYMENT",
+                        amount: totalAmount,
+                        currency: "IDR",
+                        blockNumber: 0,
+                        txHash: "pending-blockchain",
+                    },
+                });
+                logger.success(`Order saved to database: ${invoice_number} (status=PENDING_PAYMENT)`);
+            } catch (dbError: any) {
+                logger.error(`Failed to save order to database: ${invoice_number}`, dbError);
+                throw new InternalServerError(
+                    `Failed to save order to database: ${dbError.message}`
+                );
+            }
+
+            // 2. Queue CREATE_ORDER for blockchain (parallel)
+            try {
+                await blockchainTransactionQueueService.queueCreateOrder({
+                    orderId: invoice_number,
+                    holderDID: params.holder_did,
+                    amount: totalAmount,
+                    currency: "IDR",
+                    itemIds: items.map(item => item.id),
+                });
+                logger.info(`Order queued for blockchain: ${invoice_number}`);
+            } catch (queueError: any) {
+                logger.error("Failed to queue order for blockchain:", queueError);
+                // Don't throw - order already saved to database
+                logger.warn("Order saved to database but blockchain transaction failed to queue. Will retry later.");
             }
 
             const paymentRecordId = uuidv4();
 
-            // Queue blockchain transaction for async processing
-            await blockchainTransactionQueueService.queueCreatePayment({
-                paymentId: paymentRecordId,
-                orderID: invoice_number,
-                status: 'PENDING',
-                amount: totalAmount
-            });
+            // 3. IMMEDIATELY save PaymentBlockchain to database
+            try {
+                await prisma.paymentBlockchain.create({
+                    data: {
+                        id: paymentRecordId,
+                        orderID: invoice_number,
+                        method: "",
+                        status: "PENDING",
+                        amount: totalAmount,
+                        paidAt: null,
+                        blockNumber: 0,
+                        txHash: "pending-blockchain",
+                    },
+                });
+                logger.success(`Payment saved to database: ${paymentRecordId} (status=PENDING)`);
+            } catch (dbError: any) {
+                logger.error(`Failed to save payment to database: ${paymentRecordId}`, dbError);
+                throw new InternalServerError(
+                    `Failed to save payment to database: ${dbError.message}`
+                );
+            }
 
-            logger.info(`Payment queued for blockchain: ${paymentRecordId}`);
+            // 4. Queue CREATE_PAYMENT for blockchain (parallel)
+            try {
+                await blockchainTransactionQueueService.queueCreatePayment({
+                    paymentId: paymentRecordId,
+                    orderID: invoice_number,
+                    status: 'PENDING',
+                    amount: totalAmount
+                });
+                logger.info(`Payment queued for blockchain: ${paymentRecordId}`);
+            } catch (queueError: any) {
+                logger.error("Failed to queue payment for blockchain:", queueError);
+                // Don't throw - payment already saved to database
+                logger.warn("Payment saved to database but blockchain transaction failed to queue. Will retry later.");
+            }
             
             const payment_due_date = 3;
 
@@ -382,6 +435,54 @@ class PaymentService {
 
 
 
+
+    /**
+     * Get order from blockchain by ID
+     * @param id - Order ID (invoice number)
+     * @returns Order data from blockchain
+     */
+    async getOrderFromBlockchain(id: string) {
+        try {
+            logger.info(`Fetching order from blockchain: ${id}`);
+
+            const orderData = await paymentBlockchainService.getOrder(id);
+
+            if (!orderData) {
+                throw new NotFoundError(`Order with ID ${id} not found on blockchain`);
+            }
+
+            // Map status enum number to string
+            const statusMap: { [key: number]: string } = {
+                0: "NONE",
+                1: "PENDING_PAYMENT",
+                2: "SUCCESS",
+                3: "CANCELED",
+            };
+
+            const result = {
+                id: id,
+                holderDID: orderData.holderDID,
+                status: statusMap[Number(orderData.status)] || "UNKNOWN",
+                amount: orderData.amount.toString(),
+                currency: orderData.currency,
+                items: orderData.items, // Array of item IDs
+            };
+
+            logger.success(`Order fetched from blockchain: ${id}`);
+            return result;
+        } catch (error: any) {
+            logger.error(`Error fetching order from blockchain:`, {
+                id,
+                error: error.message,
+            });
+
+            if (error instanceof NotFoundError) {
+                throw error;
+            }
+
+            throw new InternalServerError(`Failed to fetch order from blockchain: ${error.message}`);
+        }
+    }
 
     /**
      * Get item from blockchain by ID
