@@ -84,6 +84,7 @@ export interface ProcessIssuanceVCResponseDTO {
   request_id: string;
   status: RequestStatus;
   stage?: "PAYMENT_PENDING" | "VC_ISSUED" | "REJECTED";
+  vc_response_id?: string; // ID of VCResponse record created during approval
   
   // Payment information (present when payment is required)
   payment_info?: {
@@ -144,6 +145,7 @@ export interface ProcessRenewalVCResponseDTO {
   request_id: string;
   status: RequestStatus;
   stage?: "PAYMENT_PENDING" | "VC_RENEWED" | "REJECTED";
+  vc_response_id?: string; // ID of VCResponse record created during approval
   
   // Payment information (present when payment is required)
   payment_info?: {
@@ -182,6 +184,7 @@ export interface ProcessUpdateVCResponseDTO {
   request_id: string; // ID of the VCUpdateRequest processed
   status: RequestStatus; // Final status of the VCUpdateRequest
   stage?: "PAYMENT_PENDING" | "VC_UPDATED" | "REJECTED";
+  vc_response_id?: string; // ID of VCResponse record created during approval
   
   // Payment information (present when payment is required)
   payment_info?: {

@@ -9,6 +9,9 @@ import {
   getFailedJobs,
   retryFailedJob,
   cleanFailedJobs,
+  detectCorruptedData,
+  repairItemsPaidStatus,
+  repairCorruptedData,
 } from "../controllers/blockchainTransaction.controller";
 import { adminAuthMiddleware } from "../middlewares/adminAuth.middleware";
 import { param } from "express-validator";
@@ -235,5 +238,53 @@ router.post(
  *         description: All failed transactions queued for retry
  */
 router.post("/retry-all", retryAllFailed);
+
+/**
+ * @swagger
+ * /blockchain-transactions/repair/detect:
+ *   get:
+ *     summary: Detect corrupted data
+ *     description: Detect bytes32 hash data in blockchain tables that should be readable strings
+ *     tags:
+ *       - Blockchain Transactions
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Corrupted data detection completed
+ */
+router.get("/repair/detect", detectCorruptedData);
+
+/**
+ * @swagger
+ * /blockchain-transactions/repair/items-paid:
+ *   post:
+ *     summary: Repair ItemBlockchain isPaid status
+ *     description: Sync isPaid status from blockchain to database for items where it's mismatched
+ *     tags:
+ *       - Blockchain Transactions
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Items isPaid status repaired
+ */
+router.post("/repair/items-paid", repairItemsPaidStatus);
+
+/**
+ * @swagger
+ * /blockchain-transactions/repair/corrupted:
+ *   post:
+ *     summary: Repair corrupted blockchain data
+ *     description: Repair corrupted data (bytes32 hashes) by using Order table as source of truth
+ *     tags:
+ *       - Blockchain Transactions
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Corrupted data repaired
+ */
+router.post("/repair/corrupted", repairCorruptedData);
 
 export default router;
