@@ -1,10 +1,22 @@
-import { Job } from 'bull';
-import { prisma } from '../config/database';
-import logger from '../config/logger';
-import blockchainTransactionQueueService from '../services/blockchain/blockchainTransactionQueue.service';
-import paymentBlockchainService from '../services/blockchain/paymentBlockchain.service';
-import PaymentEventProcessor from '../services/processors/paymentEventProcessor';
-import { uint248ToNumber } from '../utils/blockchain.helper';
+import { Job } from "bull";
+import { prisma } from "../config/database";
+import logger from "../config/logger";
+import blockchainTransactionQueueService from "../services/blockchain/blockchainTransactionQueue.service";
+import paymentBlockchainService from "../services/blockchain/paymentBlockchain.service";
+import PaymentEventProcessor from "../services/processors/paymentEventProcessor";
+import { invoiceToBytes32 } from "../utils/blockchain.helper";
+
+// Dependency wait configuration
+const DEPENDENCY_CHECK_INTERVAL = 2000; // 2 seconds
+const DEPENDENCY_MAX_WAIT_TIME = 300000; // 5 minutes
+const DEPENDENCY_MAX_RETRIES = 3;
+
+interface DependencyCheckResult {
+  ready: boolean;
+  status: string;
+  transactionId: string;
+  needsRetry: boolean;
+}
 
 /**
  * Blockchain Transaction Worker
@@ -21,54 +33,212 @@ class BlockchainTransactionWorker {
   }
 
   /**
+   * Get the actual transaction ID (handles retry with originalTransactionId)
+   */
+  private getTransactionId(job: Job, defaultId: string): string {
+    return job.data.originalTransactionId || defaultId;
+  }
+
+  // ==================== DEPENDENCY MANAGEMENT ====================
+
+  /**
+   * Check if a dependency transaction is ready (CONFIRMED)
+   */
+  private async checkDependency(transactionId: string): Promise<DependencyCheckResult> {
+    try {
+      const transaction = await prisma.blockchainTransaction.findUnique({
+        where: { id: transactionId },
+      });
+
+      if (!transaction) {
+        // Transaction not found - might not be created yet
+        return {
+          ready: false,
+          status: 'NOT_FOUND',
+          transactionId,
+          needsRetry: false,
+        };
+      }
+
+      return {
+        ready: transaction.status === 'CONFIRMED',
+        status: transaction.status,
+        transactionId,
+        needsRetry: transaction.status === 'FAILED',
+      };
+    } catch (error: any) {
+      logger.error(`[DependencyCheck] Error checking dependency ${transactionId}:`, error);
+      return {
+        ready: false,
+        status: 'ERROR',
+        transactionId,
+        needsRetry: false,
+      };
+    }
+  }
+
+  /**
+   * Check multiple dependencies at once
+   */
+  private async checkMultipleDependencies(transactionIds: string[]): Promise<{
+    allReady: boolean;
+    results: DependencyCheckResult[];
+  }> {
+    const results = await Promise.all(
+      transactionIds.map(id => this.checkDependency(id))
+    );
+
+    return {
+      allReady: results.every(r => r.ready),
+      results,
+    };
+  }
+
+  /**
+   * Wait for a single dependency to be CONFIRMED
+   * If FAILED, retry it and wait again
+   */
+  private async waitForDependency(
+    transactionId: string,
+    dependentType: string,
+    dependentId: string
+  ): Promise<void> {
+    const startTime = Date.now();
+    let retryCount = 0;
+
+    logger.info(`[DependencyWait] ${dependentType}:${dependentId} waiting for ${transactionId}`);
+
+    while (Date.now() - startTime < DEPENDENCY_MAX_WAIT_TIME) {
+      const result = await this.checkDependency(transactionId);
+
+      if (result.ready) {
+        logger.info(`[DependencyWait] ${transactionId} is CONFIRMED, proceeding with ${dependentType}:${dependentId}`);
+        return;
+      }
+
+      if (result.status === 'NOT_FOUND') {
+        // Dependency not created yet, wait and check again
+        logger.debug(`[DependencyWait] ${transactionId} not found yet, waiting...`);
+        await this.sleep(DEPENDENCY_CHECK_INTERVAL);
+        continue;
+      }
+
+      if (result.needsRetry && retryCount < DEPENDENCY_MAX_RETRIES) {
+        // Dependency failed, retry it
+        logger.warn(`[DependencyWait] ${transactionId} is FAILED, retrying (attempt ${retryCount + 1}/${DEPENDENCY_MAX_RETRIES})`);
+
+        const retryResult = await blockchainTransactionQueueService.retryTransaction(transactionId);
+
+        if (retryResult.success) {
+          retryCount++;
+          // Wait a bit longer after retry
+          await this.sleep(DEPENDENCY_CHECK_INTERVAL * 2);
+          continue;
+        } else {
+          logger.error(`[DependencyWait] Failed to retry ${transactionId}: ${retryResult.message}`);
+        }
+      }
+
+      if (result.needsRetry && retryCount >= DEPENDENCY_MAX_RETRIES) {
+        throw new Error(`Dependency ${transactionId} failed after ${DEPENDENCY_MAX_RETRIES} retry attempts`);
+      }
+
+      // PENDING or PROCESSING, wait and check again
+      await this.sleep(DEPENDENCY_CHECK_INTERVAL);
+    }
+
+    throw new Error(`Timeout waiting for dependency ${transactionId} (waited ${DEPENDENCY_MAX_WAIT_TIME}ms)`);
+  }
+
+  /**
+   * Wait for multiple dependencies to be CONFIRMED
+   */
+  private async waitForMultipleDependencies(
+    transactionIds: string[],
+    dependentType: string,
+    dependentId: string
+  ): Promise<void> {
+    if (transactionIds.length === 0) {
+      return;
+    }
+
+    logger.info(`[DependencyWait] ${dependentType}:${dependentId} waiting for ${transactionIds.length} dependencies`);
+
+    // First check if all are already confirmed
+    const initialCheck = await this.checkMultipleDependencies(transactionIds);
+    if (initialCheck.allReady) {
+      logger.info(`[DependencyWait] All ${transactionIds.length} dependencies already CONFIRMED`);
+      return;
+    }
+
+    // Wait for each dependency that's not ready
+    for (const result of initialCheck.results) {
+      if (!result.ready) {
+        await this.waitForDependency(result.transactionId, dependentType, dependentId);
+      }
+    }
+  }
+
+  /**
+   * Sleep helper
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // ==================== QUEUE PROCESSORS ====================
+
+  /**
    * Setup queue processors for different transaction types
    */
   private setupProcessors(): void {
     // Process CREATE_ITEM transactions
-    this.queue.process('createItem', async (job: Job) => {
+    this.queue.process("createItem", async (job: Job) => {
       return this.processCreateItem(job);
     });
 
     // Process CREATE_ORDER transactions
-    this.queue.process('createOrder', async (job: Job) => {
+    this.queue.process("createOrder", async (job: Job) => {
       return this.processCreateOrder(job);
     });
 
     // Process CREATE_PAYMENT transactions
-    this.queue.process('createPayment', async (job: Job) => {
+    this.queue.process("createPayment", async (job: Job) => {
       return this.processCreatePayment(job);
     });
 
     // Process COMPLETE_PAYMENT transactions
-    this.queue.process('completePayment', async (job: Job) => {
+    this.queue.process("completePayment", async (job: Job) => {
       return this.processCompletePayment(job);
     });
 
     // Process FAILED_PAYMENT transactions
-    this.queue.process('failedPayment', async (job: Job) => {
+    this.queue.process("failedPayment", async (job: Job) => {
       return this.processFailedPayment(job);
     });
 
     // Setup event listeners
     this.setupEventListeners();
 
-    logger.success('[BlockchainWorker] All processors initialized');
+    logger.success("[BlockchainWorker] All processors initialized");
   }
 
   /**
    * Process CREATE_ITEM transaction
    */
   private async processCreateItem(job: Job): Promise<any> {
-    const { itemId, price, vcID, issuerDID, holderDID, vcHash, itemType } = job.data;
+    const { itemId, price, vcID, issuerDID, holderDID, vcHash, itemType } =
+      job.data;
+    const transactionId = this.getTransactionId(job, itemId);
 
-    logger.info(`[BlockchainWorker] Processing CREATE_ITEM: ${itemId}`);
+    logger.info(`[BlockchainWorker] Processing CREATE_ITEM: ${itemId} (txId: ${transactionId})`);
 
     try {
       // Update status to PROCESSING
       await prisma.blockchainTransaction.update({
-        where: { id: itemId },
+        where: { id: transactionId },
         data: {
-          status: 'PROCESSING',
+          status: "PROCESSING",
           processedAt: new Date(),
           retryCount: job.attemptsMade,
         },
@@ -90,8 +260,10 @@ class BlockchainTransactionWorker {
         );
       } catch (error: any) {
         // Check if item already exists on blockchain
-        if (error.message && error.message.includes('Item already exist')) {
-          logger.warn(`[BlockchainWorker] ⚠️  Item already exists on blockchain: ${itemId}, syncing from blockchain...`);
+        if (error.message && error.message.includes("Item already exist")) {
+          logger.warn(
+            `[BlockchainWorker] ⚠️  Item already exists on blockchain: ${itemId}, syncing from blockchain...`
+          );
           isAlreadyExist = true;
 
           // Get existing item from blockchain (for status/isPaid info)
@@ -99,7 +271,7 @@ class BlockchainTransactionWorker {
 
           // Create a pseudo-receipt for existing item
           receipt = {
-            hash: 'already-exists',
+            hash: "already-exists",
             blockNumber: 0, // We don't know the original block number
           };
 
@@ -115,10 +287,12 @@ class BlockchainTransactionWorker {
             itemType: Number(existingItem.itemType),
             timestamp: Date.now() / 1000,
             blockNumber: 0,
-            transactionHash: 'already-exists',
+            transactionHash: "already-exists",
           });
 
-          logger.success(`[BlockchainWorker] ✅ Item synced from blockchain: ${itemId}`);
+          logger.success(
+            `[BlockchainWorker] ✅ Item synced from blockchain: ${itemId}`
+          );
         } else {
           // Other errors - rethrow
           throw error;
@@ -127,21 +301,27 @@ class BlockchainTransactionWorker {
 
       // Update status to CONFIRMED
       await prisma.blockchainTransaction.update({
-        where: { id: itemId },
+        where: { id: transactionId },
         data: {
-          status: 'CONFIRMED',
+          status: "CONFIRMED",
           txHash: receipt.hash,
           blockNumber: receipt.blockNumber,
           confirmedAt: new Date(),
-          error: isAlreadyExist ? 'Item already existed on blockchain, synced to database' : null,
+          error: isAlreadyExist
+            ? "Item already existed on blockchain, synced to database"
+            : null,
         },
       });
 
       if (!isAlreadyExist) {
-        logger.success(`[BlockchainWorker] ✅ CREATE_ITEM confirmed: ${itemId} (tx: ${receipt.hash})`);
+        logger.success(
+          `[BlockchainWorker] ✅ CREATE_ITEM confirmed: ${itemId} (tx: ${receipt.hash})`
+        );
 
         // Immediately process the event to update database
-        logger.info(`[BlockchainWorker] Processing ItemCreated event for ${itemId}...`);
+        logger.info(
+          `[BlockchainWorker] Processing ItemCreated event for ${itemId}...`
+        );
         await this.processor.handleItemCreated({
           id: itemId,
           vcID: vcID,
@@ -154,7 +334,9 @@ class BlockchainTransactionWorker {
           blockNumber: receipt.blockNumber,
           transactionHash: receipt.hash,
         });
-        logger.success(`[BlockchainWorker] ✅ ItemCreated event processed for ${itemId}`);
+        logger.success(
+          `[BlockchainWorker] ✅ ItemCreated event processed for ${itemId}`
+        );
       }
 
       return {
@@ -163,13 +345,16 @@ class BlockchainTransactionWorker {
         blockNumber: receipt.blockNumber,
       };
     } catch (error: any) {
-      logger.error(`[BlockchainWorker] ❌ CREATE_ITEM failed: ${itemId}`, error);
+      logger.error(
+        `[BlockchainWorker] ❌ CREATE_ITEM failed: ${itemId}`,
+        error
+      );
 
       // Update status to FAILED
       await prisma.blockchainTransaction.update({
-        where: { id: itemId },
+        where: { id: transactionId },
         data: {
-          status: 'FAILED',
+          status: "FAILED",
           error: error.message,
           failedAt: new Date(),
           retryCount: job.attemptsMade,
@@ -182,17 +367,24 @@ class BlockchainTransactionWorker {
 
   /**
    * Process CREATE_ORDER transaction
+   * Dependencies: All CREATE_ITEM transactions in itemIds must be CONFIRMED
    */
   private async processCreateOrder(job: Job): Promise<any> {
     const { orderId, holderDID, amount, currency, itemIds } = job.data;
+    const transactionId = this.getTransactionId(job, orderId);
 
-    logger.info(`[BlockchainWorker] Processing CREATE_ORDER: ${orderId}`);
+    logger.info(`[BlockchainWorker] Processing CREATE_ORDER: ${orderId} (txId: ${transactionId})`);
 
     try {
+      // Wait for all item dependencies to be confirmed
+      if (itemIds && itemIds.length > 0) {
+        await this.waitForMultipleDependencies(itemIds, 'CREATE_ORDER', orderId);
+      }
+
       await prisma.blockchainTransaction.update({
-        where: { id: orderId },
+        where: { id: transactionId },
         data: {
-          status: 'PROCESSING',
+          status: "PROCESSING",
           processedAt: new Date(),
           retryCount: job.attemptsMade,
         },
@@ -211,16 +403,20 @@ class BlockchainTransactionWorker {
         );
       } catch (error: any) {
         // Check if order already exists on blockchain
-        if (error.message && error.message.includes('Order already exist')) {
-          logger.warn(`[BlockchainWorker] ⚠️  Order already exists on blockchain: ${orderId}, syncing from blockchain...`);
+        if (error.message && error.message.includes("Order already exist")) {
+          logger.warn(
+            `[BlockchainWorker] ⚠️  Order already exists on blockchain: ${orderId}, syncing from blockchain...`
+          );
           isAlreadyExist = true;
 
           // Get existing order from blockchain (for status info)
-          const existingOrder = await paymentBlockchainService.getOrder(orderId);
+          const existingOrder = await paymentBlockchainService.getOrder(
+            orderId
+          );
 
           // Create a pseudo-receipt for existing order
           receipt = {
-            hash: 'already-exists',
+            hash: "already-exists",
             blockNumber: 0,
           };
 
@@ -234,31 +430,39 @@ class BlockchainTransactionWorker {
             currency: currency, // Use original from job.data
             timestamp: Date.now() / 1000,
             blockNumber: 0,
-            transactionHash: 'already-exists',
+            transactionHash: "already-exists",
           });
 
-          logger.success(`[BlockchainWorker] ✅ Order synced from blockchain: ${orderId}`);
+          logger.success(
+            `[BlockchainWorker] ✅ Order synced from blockchain: ${orderId}`
+          );
         } else {
           throw error;
         }
       }
 
       await prisma.blockchainTransaction.update({
-        where: { id: orderId },
+        where: { id: transactionId },
         data: {
-          status: 'CONFIRMED',
+          status: "CONFIRMED",
           txHash: receipt.hash,
           blockNumber: receipt.blockNumber,
           confirmedAt: new Date(),
-          error: isAlreadyExist ? 'Order already existed on blockchain, synced to database' : null,
+          error: isAlreadyExist
+            ? "Order already existed on blockchain, synced to database"
+            : null,
         },
       });
 
       if (!isAlreadyExist) {
-        logger.success(`[BlockchainWorker] ✅ CREATE_ORDER confirmed: ${orderId} (tx: ${receipt.hash})`);
+        logger.success(
+          `[BlockchainWorker] ✅ CREATE_ORDER confirmed: ${orderId} (tx: ${receipt.hash})`
+        );
 
         // Immediately process the event to update database
-        logger.info(`[BlockchainWorker] Processing OrderCreated event for ${orderId}...`);
+        logger.info(
+          `[BlockchainWorker] Processing OrderCreated event for ${orderId}...`
+        );
         await this.processor.handleOrderCreated({
           id: orderId,
           holderDID: holderDID,
@@ -269,7 +473,9 @@ class BlockchainTransactionWorker {
           blockNumber: receipt.blockNumber,
           transactionHash: receipt.hash,
         });
-        logger.success(`[BlockchainWorker] ✅ OrderCreated event processed for ${orderId}`);
+        logger.success(
+          `[BlockchainWorker] ✅ OrderCreated event processed for ${orderId}`
+        );
       }
 
       return {
@@ -278,12 +484,15 @@ class BlockchainTransactionWorker {
         blockNumber: receipt.blockNumber,
       };
     } catch (error: any) {
-      logger.error(`[BlockchainWorker] ❌ CREATE_ORDER failed: ${orderId}`, error);
+      logger.error(
+        `[BlockchainWorker] ❌ CREATE_ORDER failed: ${orderId}`,
+        error
+      );
 
       await prisma.blockchainTransaction.update({
-        where: { id: orderId },
+        where: { id: transactionId },
         data: {
-          status: 'FAILED',
+          status: "FAILED",
           error: error.message,
           failedAt: new Date(),
           retryCount: job.attemptsMade,
@@ -296,17 +505,24 @@ class BlockchainTransactionWorker {
 
   /**
    * Process CREATE_PAYMENT transaction
+   * Dependencies: CREATE_ORDER with orderID must be CONFIRMED
    */
   private async processCreatePayment(job: Job): Promise<any> {
     const { paymentId, orderID, status, amount } = job.data;
+    const transactionId = this.getTransactionId(job, paymentId);
 
-    logger.info(`[BlockchainWorker] Processing CREATE_PAYMENT: ${paymentId}`);
+    logger.info(`[BlockchainWorker] Processing CREATE_PAYMENT: ${paymentId} (txId: ${transactionId})`);
 
     try {
+      // Wait for order dependency to be confirmed
+      if (orderID) {
+        await this.waitForDependency(orderID, 'CREATE_PAYMENT', paymentId);
+      }
+
       await prisma.blockchainTransaction.update({
-        where: { id: paymentId },
+        where: { id: transactionId },
         data: {
-          status: 'PROCESSING',
+          status: "PROCESSING",
           processedAt: new Date(),
           retryCount: job.attemptsMade,
         },
@@ -324,16 +540,20 @@ class BlockchainTransactionWorker {
         );
       } catch (error: any) {
         // Check if payment already exists on blockchain
-        if (error.message && error.message.includes('Payment already exist')) {
-          logger.warn(`[BlockchainWorker] ⚠️  Payment already exists on blockchain: ${paymentId}, syncing from blockchain...`);
+        if (error.message && error.message.includes("Payment already exist")) {
+          logger.warn(
+            `[BlockchainWorker] ⚠️  Payment already exists on blockchain: ${paymentId}, syncing from blockchain...`
+          );
           isAlreadyExist = true;
 
           // Get existing payment from blockchain (for amount info)
-          const existingPayment = await paymentBlockchainService.getPayment(paymentId);
+          const existingPayment = await paymentBlockchainService.getPayment(
+            paymentId
+          );
 
           // Create a pseudo-receipt for existing payment
           receipt = {
-            hash: 'already-exists',
+            hash: "already-exists",
             blockNumber: 0,
           };
 
@@ -342,47 +562,57 @@ class BlockchainTransactionWorker {
           await this.processor.handlePaymentCreated({
             id: paymentId,
             orderID: orderID, // Use original from job.data
-            method: existingPayment.method || '', // May be decoded bytes32
+            method: existingPayment.method || "", // May be decoded bytes32
             status: status, // Use original from job.data
             amount: Number(existingPayment.amount),
             timestamp: Date.now() / 1000,
             blockNumber: 0,
-            transactionHash: 'already-exists',
+            transactionHash: "already-exists",
           });
 
-          logger.success(`[BlockchainWorker] ✅ Payment synced from blockchain: ${paymentId}`);
+          logger.success(
+            `[BlockchainWorker] ✅ Payment synced from blockchain: ${paymentId}`
+          );
         } else {
           throw error;
         }
       }
 
       await prisma.blockchainTransaction.update({
-        where: { id: paymentId },
+        where: { id: transactionId },
         data: {
-          status: 'CONFIRMED',
+          status: "CONFIRMED",
           txHash: receipt.hash,
           blockNumber: receipt.blockNumber,
           confirmedAt: new Date(),
-          error: isAlreadyExist ? 'Payment already existed on blockchain, synced to database' : null,
+          error: isAlreadyExist
+            ? "Payment already existed on blockchain, synced to database"
+            : null,
         },
       });
 
       if (!isAlreadyExist) {
-        logger.success(`[BlockchainWorker] ✅ CREATE_PAYMENT confirmed: ${paymentId} (tx: ${receipt.hash})`);
+        logger.success(
+          `[BlockchainWorker] ✅ CREATE_PAYMENT confirmed: ${paymentId} (tx: ${receipt.hash})`
+        );
 
         // Immediately process the event to update database
-        logger.info(`[BlockchainWorker] Processing PaymentCreated event for ${paymentId}...`);
+        logger.info(
+          `[BlockchainWorker] Processing PaymentCreated event for ${paymentId}...`
+        );
         await this.processor.handlePaymentCreated({
           id: paymentId,
           orderID: orderID,
-          method: '', // Empty string - method is set later in completePayment
+          method: "", // Empty string - method is set later in completePayment
           status: status,
           amount: amount,
           timestamp: Date.now() / 1000,
           blockNumber: receipt.blockNumber,
           transactionHash: receipt.hash,
         });
-        logger.success(`[BlockchainWorker] ✅ PaymentCreated event processed for ${paymentId}`);
+        logger.success(
+          `[BlockchainWorker] ✅ PaymentCreated event processed for ${paymentId}`
+        );
       }
 
       return {
@@ -391,12 +621,15 @@ class BlockchainTransactionWorker {
         blockNumber: receipt.blockNumber,
       };
     } catch (error: any) {
-      logger.error(`[BlockchainWorker] ❌ CREATE_PAYMENT failed: ${paymentId}`, error);
+      logger.error(
+        `[BlockchainWorker] ❌ CREATE_PAYMENT failed: ${paymentId}`,
+        error
+      );
 
       await prisma.blockchainTransaction.update({
-        where: { id: paymentId },
+        where: { id: transactionId },
         data: {
-          status: 'FAILED',
+          status: "FAILED",
           error: error.message,
           failedAt: new Date(),
           retryCount: job.attemptsMade,
@@ -409,18 +642,24 @@ class BlockchainTransactionWorker {
 
   /**
    * Process COMPLETE_PAYMENT transaction
+   * Dependencies: CREATE_PAYMENT with paymentId must be CONFIRMED
    */
   private async processCompletePayment(job: Job): Promise<any> {
     const { paymentId, orderId, method, successStatus } = job.data;
-    const transactionId = `complete-payment-${paymentId}`;
+    const transactionId = this.getTransactionId(job, `complete-payment-${paymentId}`);
 
-    logger.info(`[BlockchainWorker] Processing COMPLETE_PAYMENT: ${paymentId}`);
+    logger.info(`[BlockchainWorker] Processing COMPLETE_PAYMENT: ${paymentId} (txId: ${transactionId})`);
 
     try {
+      // Wait for payment dependency to be confirmed
+      if (paymentId) {
+        await this.waitForDependency(paymentId, 'COMPLETE_PAYMENT', paymentId);
+      }
+
       await prisma.blockchainTransaction.update({
         where: { id: transactionId },
         data: {
-          status: 'PROCESSING',
+          status: "PROCESSING",
           processedAt: new Date(),
           retryCount: job.attemptsMade,
         },
@@ -438,17 +677,26 @@ class BlockchainTransactionWorker {
         );
       } catch (error: any) {
         // Check if order is already completed
-        if (error.message && error.message.includes('Order is not pending payment')) {
-          logger.warn(`[BlockchainWorker] ⚠️  Order already completed on blockchain: ${orderId}, syncing from blockchain...`);
+        if (
+          error.message &&
+          error.message.includes("Order is not pending payment")
+        ) {
+          logger.warn(
+            `[BlockchainWorker] ⚠️  Order already completed on blockchain: ${orderId}, syncing from blockchain...`
+          );
           isAlreadyCompleted = true;
 
           // Get existing order and payment from blockchain (for status info)
-          const existingOrder = await paymentBlockchainService.getOrder(orderId);
-          const existingPayment = await paymentBlockchainService.getPayment(paymentId);
+          const existingOrder = await paymentBlockchainService.getOrder(
+            orderId
+          );
+          const existingPayment = await paymentBlockchainService.getPayment(
+            paymentId
+          );
 
           // Create a pseudo-receipt for existing payment
           receipt = {
-            hash: 'already-completed',
+            hash: "already-completed",
             blockNumber: 0,
           };
 
@@ -456,7 +704,9 @@ class BlockchainTransactionWorker {
           const timestamp = Date.now() / 1000;
 
           // 1. PaymentCompleted event
-          logger.info(`[BlockchainWorker] Syncing PaymentCompleted event for ${paymentId}...`);
+          logger.info(
+            `[BlockchainWorker] Syncing PaymentCompleted event for ${paymentId}...`
+          );
           await this.processor.handlePaymentCompleted({
             id: paymentId,
             orderID: orderId, // Use original from job.data
@@ -464,51 +714,64 @@ class BlockchainTransactionWorker {
             amount: Number(existingPayment.amount),
             timestamp: timestamp,
             blockNumber: 0,
-            transactionHash: 'already-completed',
+            transactionHash: "already-completed",
           });
 
           // 2. PaymentStatusChanged event
-          logger.info(`[BlockchainWorker] Syncing PaymentStatusChanged event for ${paymentId}...`);
+          logger.info(
+            `[BlockchainWorker] Syncing PaymentStatusChanged event for ${paymentId}...`
+          );
           await this.processor.handlePaymentStatusChanged({
             id: paymentId,
             orderID: orderId, // Use original from job.data
-            oldStatus: 'PENDING',
+            oldStatus: "PENDING",
             newStatus: successStatus, // Use original from job.data
             timestamp: timestamp,
             blockNumber: 0,
-            transactionHash: 'already-completed',
+            transactionHash: "already-completed",
           });
 
           // 3. OrderStatusChanged event
-          logger.info(`[BlockchainWorker] Syncing OrderStatusChanged event for ${orderId}...`);
+          logger.info(
+            `[BlockchainWorker] Syncing OrderStatusChanged event for ${orderId}...`
+          );
           await this.processor.handleOrderStatusChanged({
             id: orderId,
             oldStatus: 0, // PENDING
             newStatus: Number(existingOrder.status),
             timestamp: timestamp,
             blockNumber: 0,
-            transactionHash: 'already-completed',
+            transactionHash: "already-completed",
           });
 
           // 4. ItemPaid events (for each item in order)
-          // Get bytes32 item IDs from blockchain order, then match with database items
-          logger.info(`[BlockchainWorker] Syncing ItemPaid events for order ${orderId}...`);
+          logger.info(
+            `[BlockchainWorker] Syncing ItemPaid events for order ${orderId}...`
+          );
 
-          const itemBytes32Array = existingOrder.items as string[];
-
-          // Get all unpaid items from database and match by bytes32
-          const allUnpaidItems = await prisma.itemBlockchain.findMany({
-            where: { isPaid: false },
-            select: { id: true, vcID: true }
+          // FIX: Instead of querying non-existent relation, get items from Order table
+          const orderRecord = await prisma.order.findUnique({
+            where: { id: orderId },
+            select: { VCs_id: true },
           });
 
-          for (const dbItem of allUnpaidItems) {
-            const itemBytes32 = invoiceToBytes32(dbItem.id);
+          if (
+            orderRecord &&
+            orderRecord.VCs_id &&
+            orderRecord.VCs_id.length > 0
+          ) {
+            const dbItems = await prisma.itemBlockchain.findMany({
+              where: {
+                id: { in: orderRecord.VCs_id },
+              },
+              select: { id: true, vcID: true },
+            });
 
-            // Check if this item belongs to the order
-            if (itemBytes32Array.includes(itemBytes32)) {
+            for (const dbItem of dbItems) {
               // Check if item is paid on blockchain
-              const blockchainItem = await paymentBlockchainService.getItem(dbItem.id);
+              const blockchainItem = await paymentBlockchainService.getItem(
+                dbItem.id
+              );
 
               if (blockchainItem.isPaid) {
                 await this.processor.handleItemPaid({
@@ -516,13 +779,15 @@ class BlockchainTransactionWorker {
                   vcID: dbItem.vcID,
                   timestamp: timestamp,
                   blockNumber: 0,
-                  transactionHash: 'already-completed',
+                  transactionHash: "already-completed",
                 });
               }
             }
           }
 
-          logger.success(`[BlockchainWorker] ✅ Payment completion synced from blockchain: ${paymentId}`);
+          logger.success(
+            `[BlockchainWorker] ✅ Payment completion synced from blockchain: ${paymentId}`
+          );
         } else {
           throw error;
         }
@@ -531,23 +796,29 @@ class BlockchainTransactionWorker {
       await prisma.blockchainTransaction.update({
         where: { id: transactionId },
         data: {
-          status: 'CONFIRMED',
+          status: "CONFIRMED",
           txHash: receipt.hash,
           blockNumber: receipt.blockNumber,
           confirmedAt: new Date(),
-          error: isAlreadyCompleted ? 'Payment already completed on blockchain, synced to database' : null,
+          error: isAlreadyCompleted
+            ? "Payment already completed on blockchain, synced to database"
+            : null,
         },
       });
 
       if (!isAlreadyCompleted) {
-        logger.success(`[BlockchainWorker] ✅ COMPLETE_PAYMENT confirmed: ${paymentId} (tx: ${receipt.hash})`);
+        logger.success(
+          `[BlockchainWorker] ✅ COMPLETE_PAYMENT confirmed: ${paymentId} (tx: ${receipt.hash})`
+        );
 
         // Immediately process the events to update database
         // Note: completePayment emits multiple events
         const timestamp = Date.now() / 1000;
 
         // 1. PaymentCompleted event
-        logger.info(`[BlockchainWorker] Processing PaymentCompleted event for ${paymentId}...`);
+        logger.info(
+          `[BlockchainWorker] Processing PaymentCompleted event for ${paymentId}...`
+        );
         const payment = await paymentBlockchainService.getPayment(paymentId);
         await this.processor.handlePaymentCompleted({
           id: paymentId,
@@ -560,11 +831,13 @@ class BlockchainTransactionWorker {
         });
 
         // 2. PaymentStatusChanged event
-        logger.info(`[BlockchainWorker] Processing PaymentStatusChanged event for ${paymentId}...`);
+        logger.info(
+          `[BlockchainWorker] Processing PaymentStatusChanged event for ${paymentId}...`
+        );
         await this.processor.handlePaymentStatusChanged({
           id: paymentId,
           orderID: orderId,
-          oldStatus: 'PENDING',
+          oldStatus: "PENDING",
           newStatus: successStatus,
           timestamp: timestamp,
           blockNumber: receipt.blockNumber,
@@ -572,7 +845,9 @@ class BlockchainTransactionWorker {
         });
 
         // 3. OrderStatusChanged event
-        logger.info(`[BlockchainWorker] Processing OrderStatusChanged event for ${orderId}...`);
+        logger.info(
+          `[BlockchainWorker] Processing OrderStatusChanged event for ${orderId}...`
+        );
         await this.processor.handleOrderStatusChanged({
           id: orderId,
           oldStatus: 0, // PENDING
@@ -583,29 +858,38 @@ class BlockchainTransactionWorker {
         });
 
         // 4. ItemPaid events (for each item in order)
-        // Get items from database since blockchain returns bytes32 hashes for IDs
-        logger.info(`[BlockchainWorker] Processing ItemPaid events for order ${orderId}...`);
+        logger.info(
+          `[BlockchainWorker] Processing ItemPaid events for order ${orderId}...`
+        );
 
-        const dbItems = await prisma.itemBlockchain.findMany({
-          where: {
-            orders: {
-              some: { id: orderId }
-            }
-          },
-          select: { id: true, vcID: true }
+        // FIX: Use Order table to find related items instead of missing 'orders' relation
+        const orderRecord = await prisma.order.findUnique({
+          where: { id: orderId },
+          select: { VCs_id: true },
         });
 
-        for (const dbItem of dbItems) {
-          await this.processor.handleItemPaid({
-            id: dbItem.id,
-            vcID: dbItem.vcID, // Use database value (original string)
-            timestamp: timestamp,
-            blockNumber: receipt.blockNumber,
-            transactionHash: receipt.hash,
+        if (orderRecord && orderRecord.VCs_id) {
+          const dbItems = await prisma.itemBlockchain.findMany({
+            where: {
+              id: { in: orderRecord.VCs_id },
+            },
+            select: { id: true, vcID: true },
           });
+
+          for (const dbItem of dbItems) {
+            await this.processor.handleItemPaid({
+              id: dbItem.id,
+              vcID: dbItem.vcID, // Use database value (original string)
+              timestamp: timestamp,
+              blockNumber: receipt.blockNumber,
+              transactionHash: receipt.hash,
+            });
+          }
         }
 
-        logger.success(`[BlockchainWorker] ✅ All events processed for COMPLETE_PAYMENT: ${paymentId}`);
+        logger.success(
+          `[BlockchainWorker] ✅ All events processed for COMPLETE_PAYMENT: ${paymentId}`
+        );
       }
 
       return {
@@ -614,12 +898,15 @@ class BlockchainTransactionWorker {
         blockNumber: receipt.blockNumber,
       };
     } catch (error: any) {
-      logger.error(`[BlockchainWorker] ❌ COMPLETE_PAYMENT failed: ${paymentId}`, error);
+      logger.error(
+        `[BlockchainWorker] ❌ COMPLETE_PAYMENT failed: ${paymentId}`,
+        error
+      );
 
       await prisma.blockchainTransaction.update({
         where: { id: transactionId },
         data: {
-          status: 'FAILED',
+          status: "FAILED",
           error: error.message,
           failedAt: new Date(),
           retryCount: job.attemptsMade,
@@ -632,18 +919,24 @@ class BlockchainTransactionWorker {
 
   /**
    * Process FAILED_PAYMENT transaction
+   * Dependencies: CREATE_PAYMENT with paymentId must be CONFIRMED
    */
   private async processFailedPayment(job: Job): Promise<any> {
     const { paymentId, orderId, method, failedStatus } = job.data;
-    const transactionId = `failed-payment-${paymentId}`;
+    const transactionId = this.getTransactionId(job, `failed-payment-${paymentId}`);
 
-    logger.info(`[BlockchainWorker] Processing FAILED_PAYMENT: ${paymentId}`);
+    logger.info(`[BlockchainWorker] Processing FAILED_PAYMENT: ${paymentId} (txId: ${transactionId})`);
 
     try {
+      // Wait for payment dependency to be confirmed
+      if (paymentId) {
+        await this.waitForDependency(paymentId, 'FAILED_PAYMENT', paymentId);
+      }
+
       await prisma.blockchainTransaction.update({
         where: { id: transactionId },
         data: {
-          status: 'PROCESSING',
+          status: "PROCESSING",
           processedAt: new Date(),
           retryCount: job.attemptsMade,
         },
@@ -659,17 +952,21 @@ class BlockchainTransactionWorker {
       await prisma.blockchainTransaction.update({
         where: { id: transactionId },
         data: {
-          status: 'CONFIRMED',
+          status: "CONFIRMED",
           txHash: receipt.hash,
           blockNumber: receipt.blockNumber,
           confirmedAt: new Date(),
         },
       });
 
-      logger.success(`[BlockchainWorker] ✅ FAILED_PAYMENT confirmed: ${paymentId} (tx: ${receipt.hash})`);
+      logger.success(
+        `[BlockchainWorker] ✅ FAILED_PAYMENT confirmed: ${paymentId} (tx: ${receipt.hash})`
+      );
 
       // Immediately process the event to update database
-      logger.info(`[BlockchainWorker] Processing PaymentFailed event for ${paymentId}...`);
+      logger.info(
+        `[BlockchainWorker] Processing PaymentFailed event for ${paymentId}...`
+      );
       const payment = await paymentBlockchainService.getPayment(paymentId);
       await this.processor.handlePaymentFailed({
         id: paymentId,
@@ -680,7 +977,9 @@ class BlockchainTransactionWorker {
         blockNumber: receipt.blockNumber,
         transactionHash: receipt.hash,
       });
-      logger.success(`[BlockchainWorker] ✅ PaymentFailed event processed for ${paymentId}`);
+      logger.success(
+        `[BlockchainWorker] ✅ PaymentFailed event processed for ${paymentId}`
+      );
 
       return {
         success: true,
@@ -688,12 +987,15 @@ class BlockchainTransactionWorker {
         blockNumber: receipt.blockNumber,
       };
     } catch (error: any) {
-      logger.error(`[BlockchainWorker] ❌ FAILED_PAYMENT failed: ${paymentId}`, error);
+      logger.error(
+        `[BlockchainWorker] ❌ FAILED_PAYMENT failed: ${paymentId}`,
+        error
+      );
 
       await prisma.blockchainTransaction.update({
         where: { id: transactionId },
         data: {
-          status: 'FAILED',
+          status: "FAILED",
           error: error.message,
           failedAt: new Date(),
           retryCount: job.attemptsMade,
@@ -708,14 +1010,14 @@ class BlockchainTransactionWorker {
    * Setup event listeners for queue
    */
   private setupEventListeners(): void {
-    this.queue.on('completed', (job: Job, result: any) => {
+    this.queue.on("completed", (job: Job, result: any) => {
       logger.info(`[BlockchainWorker] Job ${job.id} completed`, {
         type: job.name,
         result,
       });
     });
 
-    this.queue.on('failed', (job: Job, err: Error) => {
+    this.queue.on("failed", (job: Job, err: Error) => {
       logger.error(`[BlockchainWorker] Job ${job.id} failed:`, {
         type: job.name,
         error: err.message,
@@ -723,13 +1025,13 @@ class BlockchainTransactionWorker {
       });
     });
 
-    this.queue.on('stalled', (job: Job) => {
+    this.queue.on("stalled", (job: Job) => {
       logger.warn(`[BlockchainWorker] Job ${job.id} stalled`, {
         type: job.name,
       });
     });
 
-    this.queue.on('error', (error: Error) => {
+    this.queue.on("error", (error: Error) => {
       logger.error(`[BlockchainWorker] Queue error:`, error);
     });
   }
@@ -738,7 +1040,7 @@ class BlockchainTransactionWorker {
    * Start the worker
    */
   async start(): Promise<void> {
-    logger.success('[BlockchainWorker] Worker started and listening for jobs');
+    logger.success("[BlockchainWorker] Worker started and listening for jobs");
   }
 
   /**
@@ -746,7 +1048,7 @@ class BlockchainTransactionWorker {
    */
   async stop(): Promise<void> {
     await this.queue.close();
-    logger.info('[BlockchainWorker] Worker stopped');
+    logger.info("[BlockchainWorker] Worker stopped");
   }
 }
 

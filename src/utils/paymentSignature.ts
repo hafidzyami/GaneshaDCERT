@@ -20,9 +20,10 @@ export class PaymentSignatureUtil {
     /**
      * Function for encoding (base64) value of hashed (SHA-256) JSON body
      * (NON SNAP)
+     * @param body - Raw body string or object (if object, will be JSON.stringify'd)
      */
-    async generateDigest(body: any): Promise<string> {
-        const bodyString = JSON.stringify(body);
+    async generateDigest(body: string | object): Promise<string> {
+        const bodyString = typeof body === 'string' ? body : JSON.stringify(body);
         const hash = crypto.createHash('sha256').update(bodyString).digest('base64');
         return hash;
     }
@@ -52,10 +53,15 @@ export class PaymentSignatureUtil {
      *
      * Signature component string format:
      * Client-Id:{clientId}\nRequest-Id:{requestId}\nRequest-Timestamp:{timestamp}\nRequest-Target:{target}\nDigest:{digest}
+     *
+     * @param headers - DOKU webhook headers
+     * @param rawBody - Raw body string (must be the original body, not parsed then stringified)
+     * @param requestTarget - Request path (e.g., /api/v1/payment/transfer-va/notification)
+     * @param secretKey - DOKU secret key
      */
     async verifyWebhookSignature(
         headers: DokuWebhookHeaders,
-        body: any,
+        rawBody: string,
         requestTarget: string,
         secretKey: string
     ): Promise<SignatureVerificationResult> {
@@ -86,8 +92,8 @@ export class PaymentSignatureUtil {
                 };
             }
 
-            // 4. Generate digest from body
-            const digest = await this.generateDigest(body);
+            // 4. Generate digest from raw body (exactly as received)
+            const digest = await this.generateDigest(rawBody);
 
             // 5. Build component string (same format as DOKU)
             const componentString = `Client-Id:${headers.clientId}\nRequest-Id:${headers.requestId}\nRequest-Timestamp:${headers.requestTimestamp}\nRequest-Target:${requestTarget}\nDigest:${digest}`;
@@ -104,11 +110,21 @@ export class PaymentSignatureUtil {
             const isValid = this.secureCompare(expectedSignature, receivedSignature);
 
             if (!isValid) {
+                // Include debug info in non-production environments
+                const debugInfo = process.env.NODE_ENV !== 'production' ? {
+                    componentString: componentString,
+                    digest: digest,
+                    requestTarget: requestTarget,
+                    rawBodyLength: rawBody.length,
+                    rawBodyPreview: rawBody.substring(0, 100) + '...'
+                } : undefined;
+
                 return {
                     isValid: false,
                     message: 'Signature verification failed',
                     expectedSignature: expectedSignature,
-                    receivedSignature: receivedSignature
+                    receivedSignature: receivedSignature,
+                    ...debugInfo && { debug: debugInfo }
                 };
             }
 

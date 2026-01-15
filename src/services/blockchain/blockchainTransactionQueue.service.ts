@@ -326,6 +326,183 @@ class BlockchainTransactionQueueService {
   getQueue(): Queue {
     return this.queue;
   }
+
+  /**
+   * Get failed transactions from database
+   */
+  async getFailedTransactions(limit: number = 50): Promise<any[]> {
+    try {
+      const transactions = await prisma.blockchainTransaction.findMany({
+        where: {
+          status: 'FAILED',
+        },
+        orderBy: {
+          failedAt: 'desc',
+        },
+        take: limit,
+      });
+
+      return transactions.map(tx => ({
+        transaction_id: tx.id,
+        type: tx.type,
+        status: tx.status,
+        error: tx.error,
+        retry_count: tx.retryCount,
+        created_at: tx.createdAt,
+        failed_at: tx.failedAt,
+      }));
+    } catch (error: any) {
+      logger.error(`[BlockchainQueue] Error getting failed transactions:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Retry a single failed transaction by ID
+   */
+  async retryTransaction(transactionId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // Get transaction from database
+      const transaction = await prisma.blockchainTransaction.findUnique({
+        where: { id: transactionId },
+      });
+
+      if (!transaction) {
+        return { success: false, message: `Transaction ${transactionId} not found` };
+      }
+
+      if (transaction.status !== 'FAILED') {
+        return { success: false, message: `Transaction ${transactionId} is not in FAILED status (current: ${transaction.status})` };
+      }
+
+      // Parse payload
+      const payload = JSON.parse(transaction.payload as string);
+
+      // Determine job name based on transaction type
+      let jobName: string;
+      switch (transaction.type) {
+        case 'CREATE_ITEM':
+          jobName = 'createItem';
+          break;
+        case 'CREATE_ORDER':
+          jobName = 'createOrder';
+          break;
+        case 'CREATE_PAYMENT':
+          jobName = 'createPayment';
+          break;
+        case 'COMPLETE_PAYMENT':
+          jobName = 'completePayment';
+          break;
+        case 'FAILED_PAYMENT':
+          jobName = 'failedPayment';
+          break;
+        default:
+          return { success: false, message: `Unknown transaction type: ${transaction.type}` };
+      }
+
+      // Update status to PENDING
+      await prisma.blockchainTransaction.update({
+        where: { id: transactionId },
+        data: {
+          status: 'PENDING',
+          error: null,
+          failedAt: null,
+        },
+      });
+
+      // Add back to queue with new job ID to avoid conflicts
+      const newJobId = `${transactionId}-retry-${Date.now()}`;
+      await this.queue.add(jobName, { ...payload, originalTransactionId: transactionId }, {
+        jobId: newJobId,
+      });
+
+      logger.info(`[BlockchainQueue] Retrying transaction: ${transactionId} (new job: ${newJobId})`);
+
+      return { success: true, message: `Transaction ${transactionId} queued for retry` };
+    } catch (error: any) {
+      logger.error(`[BlockchainQueue] Error retrying transaction:`, error);
+      return { success: false, message: `Failed to retry: ${error.message}` };
+    }
+  }
+
+  /**
+   * Retry all failed transactions
+   */
+  async retryAllFailed(): Promise<{ success: number; failed: number; errors: string[] }> {
+    try {
+      const failedTransactions = await prisma.blockchainTransaction.findMany({
+        where: { status: 'FAILED' },
+      });
+
+      let success = 0;
+      let failed = 0;
+      const errors: string[] = [];
+
+      for (const tx of failedTransactions) {
+        const result = await this.retryTransaction(tx.id);
+        if (result.success) {
+          success++;
+        } else {
+          failed++;
+          errors.push(`${tx.id}: ${result.message}`);
+        }
+      }
+
+      logger.info(`[BlockchainQueue] Retry all failed: ${success} success, ${failed} failed`);
+
+      return { success, failed, errors };
+    } catch (error: any) {
+      logger.error(`[BlockchainQueue] Error retrying all failed:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get failed jobs from Bull queue
+   */
+  async getFailedJobs(limit: number = 50): Promise<Job[]> {
+    return this.queue.getFailed(0, limit - 1);
+  }
+
+  /**
+   * Retry failed job from Bull queue by job ID
+   */
+  async retryFailedJob(jobId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const job = await this.queue.getJob(jobId);
+
+      if (!job) {
+        return { success: false, message: `Job ${jobId} not found in queue` };
+      }
+
+      const state = await job.getState();
+      if (state !== 'failed') {
+        return { success: false, message: `Job ${jobId} is not failed (current state: ${state})` };
+      }
+
+      await job.retry();
+      logger.info(`[BlockchainQueue] Retried failed job: ${jobId}`);
+
+      return { success: true, message: `Job ${jobId} retried successfully` };
+    } catch (error: any) {
+      logger.error(`[BlockchainQueue] Error retrying job:`, error);
+      return { success: false, message: `Failed to retry job: ${error.message}` };
+    }
+  }
+
+  /**
+   * Clean failed jobs from queue
+   */
+  async cleanFailedJobs(olderThanMs: number = 24 * 60 * 60 * 1000): Promise<number> {
+    try {
+      const cleaned = await this.queue.clean(olderThanMs, 'failed');
+      logger.info(`[BlockchainQueue] Cleaned ${cleaned.length} failed jobs older than ${olderThanMs}ms`);
+      return cleaned.length;
+    } catch (error: any) {
+      logger.error(`[BlockchainQueue] Error cleaning failed jobs:`, error);
+      throw error;
+    }
+  }
 }
 
 // Export singleton instance

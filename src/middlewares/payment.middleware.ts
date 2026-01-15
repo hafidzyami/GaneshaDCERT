@@ -14,6 +14,7 @@ export interface RequestWithPayment extends Request {
 export interface RequestWithDokuWebhook extends Request {
   dokuVerified?: boolean;
   dokuHeaders?: DokuWebhookHeaders;
+  rawBody?: string;
 }
 
 /**
@@ -237,13 +238,25 @@ export const verifyDokuWebhookSignature = async (
       signature,
     };
 
-    // 6. Get request target (path)
-    const requestTarget = req.originalUrl || req.url;
+    // 6. Get request target (path only, without query string)
+    const requestTarget = (req.originalUrl || req.url).split('?')[0];
 
-    // 7. Verify signature
+    // 7. Verify signature using raw body (not parsed JSON)
+    // Raw body is preserved exactly as DOKU sent it
+    const rawBody = (req as any).rawBody;
+
+    if (!rawBody) {
+      logger.error("[DOKU Webhook] Raw body not available for signature verification");
+      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+        responseCode: "5002500",
+        responseMessage: "Server configuration error",
+      });
+      return;
+    }
+
     const verificationResult = await paymentSignatureUtilInstance.verifyWebhookSignature(
       headers,
-      req.body,
+      rawBody,
       requestTarget,
       secretKey
     );
@@ -261,6 +274,7 @@ export const verifyDokuWebhookSignature = async (
         logger.debug("[DOKU Webhook] Signature mismatch details:", {
           expected: verificationResult.expectedSignature,
           received: verificationResult.receivedSignature,
+          debug: (verificationResult as any).debug,
         });
       }
 

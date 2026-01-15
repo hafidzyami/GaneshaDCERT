@@ -31,6 +31,7 @@ import {
   institutionRoutes,
   paymentRoutes,
   performanceRoutes,
+  blockchainTransactionRoutes,
 } from "./routes";
 
 // Schedulers
@@ -51,8 +52,13 @@ const prisma = new PrismaClient();
 const app: Application = express();
 const PORT: number = env.PORT;
 
-// Middleware untuk parsing JSON
-app.use(express.json());
+// Middleware untuk parsing JSON dengan raw body untuk signature verification
+app.use(express.json({
+  verify: (req: any, res, buf) => {
+    // Store raw body for DOKU signature verification
+    req.rawBody = buf.toString('utf-8');
+  }
+}));
 
 // // CORS Configuration
 // const corsOptions = {
@@ -441,6 +447,7 @@ app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/institutions", institutionRoutes);
 app.use("/api/v1/payment", paymentRoutes);
 app.use("/api/v1/performance", performanceRoutes);
+app.use("/api/v1/blockchain-transactions", blockchainTransactionRoutes);
 
 // 404 Handler - must be after all routes
 app.use(notFoundHandler);
