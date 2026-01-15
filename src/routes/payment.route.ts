@@ -17,6 +17,7 @@ import {
   getUnpaidItemsValidator,
   getItemFromBlockchainValidator,
   getOrderFromBlockchainValidator,
+  getPaymentFromBlockchainValidator,
 } from "../validators/payment.validator";
 
 const router: Router = express.Router();
@@ -721,6 +722,125 @@ router.get(
   "/blockchain/item/:id",
   getItemFromBlockchainValidator,
   paymentController.getItemFromBlockchain
+);
+
+/**
+ * @swagger
+ * /payment/blockchain/payment/{id}:
+ *   get:
+ *     summary: Get payment from blockchain by ID
+ *     description: |
+ *       Retrieve payment details directly from the PaymentManager smart contract on blockchain.
+ *
+ *       **Returns:**
+ *       - Payment ID
+ *       - Order ID (associated order)
+ *       - Method (payment method used)
+ *       - Status (payment status)
+ *       - Amount (payment amount)
+ *       - Paid At (timestamp when payment was completed)
+ *
+ *       **Note:**
+ *       - This fetches real-time data from blockchain
+ *       - Data may differ from database if sync is delayed
+ *       - Returns null for paidAt if payment is not yet completed
+ *     tags:
+ *       - Payment
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Payment ID (UUID format)
+ *         example: "550e8400-e29b-41d4-a716-446655440000"
+ *     responses:
+ *       200:
+ *         description: Payment retrieved successfully from blockchain
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Payment retrieved from blockchain successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       description: Payment ID
+ *                       example: "550e8400-e29b-41d4-a716-446655440000"
+ *                     orderID:
+ *                       type: string
+ *                       description: Associated Order ID (Invoice Number)
+ *                       example: "INV-550e8400-1234567890"
+ *                     method:
+ *                       type: string
+ *                       description: Payment method used
+ *                       example: "VIRTUAL_ACCOUNT_BCA"
+ *                     status:
+ *                       type: string
+ *                       description: Payment status
+ *                       example: "SUCCESS"
+ *                     amount:
+ *                       type: string
+ *                       description: Payment amount (as string to preserve precision)
+ *                       example: "150000"
+ *                     paidAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                       description: Timestamp when payment was completed (null if not yet paid)
+ *                       example: "2024-01-15T10:30:45.000Z"
+ *       400:
+ *         description: Validation error - Invalid payment ID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Validation error"
+ *                 errors:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       field:
+ *                         type: string
+ *                         example: "id"
+ *                       message:
+ *                         type: string
+ *                         example: "Payment ID is required"
+ *       404:
+ *         description: Payment not found on blockchain
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Payment with ID 550e8400-e29b-41d4-a716-446655440000 not found on blockchain"
+ *       500:
+ *         description: Internal server error or blockchain connection issue
+ */
+router.get(
+  "/blockchain/payment/:id",
+  getPaymentFromBlockchainValidator,
+  paymentController.getPaymentFromBlockchain
 );
 
 export default router;

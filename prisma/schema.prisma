@@ -352,8 +352,6 @@ model OrderBlockchain {
 
 model ItemBlockchain {
   id          String   @id
-  issuerDID   String   @default("")
-  holderDID   String   @default("")
   price       BigInt
   vcID        String
   vcHash      String
@@ -363,6 +361,8 @@ model ItemBlockchain {
   txHash      String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  holderDID   String   @default("")
+  issuerDID   String   @default("")
 
   @@index([vcID])
   @@index([issuerDID])
@@ -386,6 +386,27 @@ model PaymentBlockchain {
   @@index([orderID])
   @@index([status])
   @@index([txHash])
+}
+
+model BlockchainTransaction {
+  id          String                      @id @default(uuid())
+  type        BlockchainTransactionType
+  status      BlockchainTransactionStatus @default(PENDING)
+  payload     String
+  txHash      String?
+  blockNumber BigInt?
+  error       String?
+  retryCount  Int                         @default(0)
+  maxRetries  Int                         @default(3)
+  createdAt   DateTime                    @default(now())
+  processedAt DateTime?
+  confirmedAt DateTime?
+  failedAt    DateTime?
+  updatedAt   DateTime                    @updatedAt
+
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
 }
 
 enum RequestStatus {
@@ -462,25 +483,4 @@ enum BlockchainTransactionType {
   UPDATE_ORDER_STATUS
   UPDATE_PAYMENT_STATUS
   MARK_ITEM_AS_PAID
-}
-
-model BlockchainTransaction {
-  id            String                       @id @default(uuid())
-  type          BlockchainTransactionType
-  status        BlockchainTransactionStatus  @default(PENDING)
-  payload       String                        // JSON payload
-  txHash        String?                       // Transaction hash setelah confirmed
-  blockNumber   BigInt?
-  error         String?                       // Error message jika failed
-  retryCount    Int                           @default(0)
-  maxRetries    Int                           @default(3)
-  createdAt     DateTime                      @default(now())
-  processedAt   DateTime?
-  confirmedAt   DateTime?
-  failedAt      DateTime?
-  updatedAt     DateTime                      @updatedAt
-
-  @@index([status])
-  @@index([type])
-  @@index([createdAt])
 }

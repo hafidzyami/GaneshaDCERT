@@ -532,6 +532,52 @@ class PaymentService {
             throw new InternalServerError(`Failed to fetch item from blockchain: ${error.message}`);
         }
     }
+
+    /**
+     * Get payment from blockchain by ID
+     * @param id - Payment ID
+     * @returns Payment data from blockchain
+     */
+    async getPaymentFromBlockchain(id: string) {
+        try {
+            logger.info(`Fetching payment from blockchain: ${id}`);
+
+            // First check if payment exists
+            const paymentExists = await paymentBlockchainService.paymentExists(id);
+            if (!paymentExists) {
+                throw new NotFoundError(`Payment with ID ${id} not found on blockchain`);
+            }
+
+            const paymentData = await paymentBlockchainService.getPayment(id);
+
+            if (!paymentData) {
+                throw new NotFoundError(`Payment with ID ${id} not found on blockchain`);
+            }
+
+            const result = {
+                id: id,
+                orderID: paymentData.orderID,
+                method: paymentData.method,
+                status: paymentData.status,
+                amount: paymentData.amount.toString(),
+                paidAt: paymentData.paidAt > 0 ? new Date(paymentData.paidAt * 1000).toISOString() : null,
+            };
+
+            logger.success(`Payment fetched from blockchain: ${id}`);
+            return result;
+        } catch (error: any) {
+            logger.error(`Error fetching payment from blockchain:`, {
+                id,
+                error: error.message,
+            });
+
+            if (error instanceof NotFoundError) {
+                throw error;
+            }
+
+            throw new InternalServerError(`Failed to fetch payment from blockchain: ${error.message}`);
+        }
+    }
 }
 
 const paymentServiceInstance = new PaymentService();

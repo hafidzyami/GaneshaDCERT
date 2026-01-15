@@ -665,6 +665,44 @@ class BlockchainTransactionWorker {
         },
       });
 
+      // Pre-check: Verify payment exists on blockchain before attempting to complete
+      const paymentExistsPreCheck = await paymentBlockchainService.paymentExists(paymentId);
+      if (!paymentExistsPreCheck) {
+        logger.error(
+          `[BlockchainWorker] ❌ Payment ${paymentId} does not exist on blockchain. Cannot complete payment.`
+        );
+
+        // Check CREATE_PAYMENT transaction status
+        const createPaymentTx = await prisma.blockchainTransaction.findUnique({
+          where: { id: paymentId },
+        });
+
+        if (!createPaymentTx) {
+          throw new Error(`Payment ${paymentId} was never created. CREATE_PAYMENT transaction not found.`);
+        }
+
+        if (createPaymentTx.status === 'PENDING' || createPaymentTx.status === 'PROCESSING') {
+          // CREATE_PAYMENT is still processing, delay this job
+          logger.warn(
+            `[BlockchainWorker] CREATE_PAYMENT ${paymentId} is still ${createPaymentTx.status}. Delaying COMPLETE_PAYMENT.`
+          );
+          throw new Error(`CREATE_PAYMENT ${paymentId} is still ${createPaymentTx.status}. Will retry later.`);
+        }
+
+        if (createPaymentTx.status === 'FAILED') {
+          throw new Error(`Payment ${paymentId} creation failed. Cannot complete payment. Please retry CREATE_PAYMENT first.`);
+        }
+
+        // CREATE_PAYMENT is CONFIRMED but payment doesn't exist - data integrity issue
+        throw new Error(`Payment ${paymentId} is marked CONFIRMED but does not exist on blockchain. Data integrity issue.`);
+      }
+
+      // Pre-check: Verify order exists and is pending
+      const orderExistsPreCheck = await paymentBlockchainService.orderExists(orderId);
+      if (!orderExistsPreCheck) {
+        throw new Error(`Order ${orderId} does not exist on blockchain. Cannot complete payment.`);
+      }
+
       let receipt;
       let isAlreadyCompleted = false;
 
@@ -676,6 +714,30 @@ class BlockchainTransactionWorker {
           successStatus
         );
       } catch (error: any) {
+        // Check if payment doesn't exist on blockchain
+        if (
+          error.message &&
+          (error.message.includes("PaymentNotFound") || error.message.includes("Payment not found"))
+        ) {
+          logger.error(
+            `[BlockchainWorker] ❌ Payment ${paymentId} does not exist on blockchain. CREATE_PAYMENT may have failed.`
+          );
+
+          // Check if we should retry CREATE_PAYMENT
+          const createPaymentTxExists = await prisma.blockchainTransaction.findUnique({
+            where: { id: paymentId },
+          });
+
+          if (createPaymentTxExists && createPaymentTxExists.status === 'CONFIRMED') {
+            logger.warn(
+              `[BlockchainWorker] CREATE_PAYMENT ${paymentId} is marked CONFIRMED but payment doesn't exist on blockchain. Data integrity issue.`
+            );
+          }
+
+          // Re-throw to mark job as failed - manual intervention needed
+          throw new Error(`Payment ${paymentId} does not exist on blockchain. Please ensure CREATE_PAYMENT was successful.`);
+        }
+
         // Check if order is already completed
         if (
           error.message &&
@@ -686,13 +748,29 @@ class BlockchainTransactionWorker {
           );
           isAlreadyCompleted = true;
 
-          // Get existing order and payment from blockchain (for status info)
-          const existingOrder = await paymentBlockchainService.getOrder(
-            orderId
-          );
-          const existingPayment = await paymentBlockchainService.getPayment(
-            paymentId
-          );
+          // Check if order exists on blockchain before trying to get it
+          const orderExistsOnChain = await paymentBlockchainService.orderExists(orderId);
+          let existingOrder: any = null;
+
+          if (orderExistsOnChain) {
+            existingOrder = await paymentBlockchainService.getOrder(orderId);
+          } else {
+            logger.warn(
+              `[BlockchainWorker] Order ${orderId} does not exist on blockchain, using default values for sync`
+            );
+          }
+
+          // Check if payment exists on blockchain before trying to get it
+          const paymentExistsOnChain = await paymentBlockchainService.paymentExists(paymentId);
+          let existingPayment: any = null;
+
+          if (paymentExistsOnChain) {
+            existingPayment = await paymentBlockchainService.getPayment(paymentId);
+          } else {
+            logger.warn(
+              `[BlockchainWorker] Payment ${paymentId} does not exist on blockchain, using job data for sync`
+            );
+          }
 
           // Create a pseudo-receipt for existing payment
           receipt = {
@@ -703,7 +781,7 @@ class BlockchainTransactionWorker {
           // Sync all events to database using ORIGINAL job data for strings
           const timestamp = Date.now() / 1000;
 
-          // 1. PaymentCompleted event
+          // 1. PaymentCompleted event - use existingPayment.amount if available, otherwise skip or use 0
           logger.info(
             `[BlockchainWorker] Syncing PaymentCompleted event for ${paymentId}...`
           );
@@ -711,7 +789,7 @@ class BlockchainTransactionWorker {
             id: paymentId,
             orderID: orderId, // Use original from job.data
             method: method, // Use original from job.data
-            amount: Number(existingPayment.amount),
+            amount: existingPayment ? Number(existingPayment.amount) : 0,
             timestamp: timestamp,
             blockNumber: 0,
             transactionHash: "already-completed",
@@ -738,7 +816,7 @@ class BlockchainTransactionWorker {
           await this.processor.handleOrderStatusChanged({
             id: orderId,
             oldStatus: 0, // PENDING
-            newStatus: Number(existingOrder.status),
+            newStatus: existingOrder ? Number(existingOrder.status) : 2, // Default to SUCCESS (2) if order not found
             timestamp: timestamp,
             blockNumber: 0,
             transactionHash: "already-completed",
@@ -941,6 +1019,42 @@ class BlockchainTransactionWorker {
           retryCount: job.attemptsMade,
         },
       });
+
+      // Pre-check: Verify payment exists on blockchain before attempting to mark as failed
+      const paymentExistsPreCheck = await paymentBlockchainService.paymentExists(paymentId);
+      if (!paymentExistsPreCheck) {
+        logger.error(
+          `[BlockchainWorker] ❌ Payment ${paymentId} does not exist on blockchain. Cannot mark as failed.`
+        );
+
+        // Check CREATE_PAYMENT transaction status
+        const createPaymentTx = await prisma.blockchainTransaction.findUnique({
+          where: { id: paymentId },
+        });
+
+        if (!createPaymentTx) {
+          throw new Error(`Payment ${paymentId} was never created. CREATE_PAYMENT transaction not found.`);
+        }
+
+        if (createPaymentTx.status === 'PENDING' || createPaymentTx.status === 'PROCESSING') {
+          logger.warn(
+            `[BlockchainWorker] CREATE_PAYMENT ${paymentId} is still ${createPaymentTx.status}. Delaying FAILED_PAYMENT.`
+          );
+          throw new Error(`CREATE_PAYMENT ${paymentId} is still ${createPaymentTx.status}. Will retry later.`);
+        }
+
+        if (createPaymentTx.status === 'FAILED') {
+          throw new Error(`Payment ${paymentId} creation failed. Cannot mark as failed.`);
+        }
+
+        throw new Error(`Payment ${paymentId} is marked CONFIRMED but does not exist on blockchain. Data integrity issue.`);
+      }
+
+      // Pre-check: Verify order exists
+      const orderExistsPreCheck = await paymentBlockchainService.orderExists(orderId);
+      if (!orderExistsPreCheck) {
+        throw new Error(`Order ${orderId} does not exist on blockchain. Cannot mark payment as failed.`);
+      }
 
       const receipt = await paymentBlockchainService.failedPayment(
         paymentId,

@@ -115,3 +115,25 @@ export const getItemFromBlockchain = asyncHandler(
     );
   }
 );
+
+/**
+ * Get payment from blockchain by ID
+ */
+export const getPaymentFromBlockchain = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { id } = req.params;
+
+    const result = await PaymentService.getPaymentFromBlockchain(id);
+
+    return ResponseHelper.success(
+      res,
+      result,
+      'Payment retrieved from blockchain successfully'
+    );
+  }
+);
