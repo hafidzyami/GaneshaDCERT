@@ -53,12 +53,14 @@ const app: Application = express();
 const PORT: number = env.PORT;
 
 // Middleware untuk parsing JSON dengan raw body untuk signature verification
-app.use(express.json({
-  verify: (req: any, res, buf) => {
-    // Store raw body for DOKU signature verification
-    req.rawBody = buf.toString('utf-8');
-  }
-}));
+app.use(
+  express.json({
+    verify: (req: any, res, buf) => {
+      // Store raw body for DOKU signature verification
+      req.rawBody = buf.toString("utf-8");
+    },
+  })
+);
 
 // // CORS Configuration
 // const corsOptions = {
@@ -565,8 +567,11 @@ const startServer = async () => {
         name: error?.name,
         error: error,
       });
-      logger.warn("   Server will continue without blockchain transaction worker");
+      logger.warn(
+        "   Server will continue without blockchain transaction worker"
+      );
     }
+    // logger.warn("🔨 Blockchain transaction worker is DISABLED");
 
     // Start Express Server
     logger.info("🎯 Starting HTTP server...");

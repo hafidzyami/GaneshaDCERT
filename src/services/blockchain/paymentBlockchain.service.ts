@@ -356,6 +356,14 @@ class PaymentBlockchainService {
       logger.info("[Payment] Getting order", { id });
 
       const idBytes32 = invoiceToBytes32(id);
+
+      // First check if order exists to provide better error message
+      const exists = await this.contract.orderExists(idBytes32);
+      if (!exists) {
+        logger.warn(`[Payment] Order not found on blockchain: ${id}`);
+        throw new Error(`Order with ID ${id} not found on blockchain. It may not have been created yet or the blockchain was reset.`);
+      }
+
       const order = await this.contract.getOrder(idBytes32);
 
       return {
@@ -382,6 +390,14 @@ class PaymentBlockchainService {
       logger.info("[Payment] Getting item", { id });
 
       const idBytes32 = invoiceToBytes32(id);
+
+      // First check if item exists to provide better error message
+      const exists = await this.contract.itemExists(idBytes32);
+      if (!exists) {
+        logger.warn(`[Payment] Item not found on blockchain: ${id}`);
+        throw new Error(`Item with ID ${id} not found on blockchain. It may not have been created yet or the blockchain was reset.`);
+      }
+
       const item = await this.contract.getItem(idBytes32);
 
       return {
@@ -411,6 +427,14 @@ class PaymentBlockchainService {
       logger.info("[Payment] Getting payment", { id });
 
       const idBytes32 = invoiceToBytes32(id);
+
+      // First check if payment exists to provide better error message
+      const exists = await this.contract.paymentExists(idBytes32);
+      if (!exists) {
+        logger.warn(`[Payment] Payment not found on blockchain: ${id}`);
+        throw new Error(`Payment with ID ${id} not found on blockchain. It may not have been created yet or the blockchain was reset.`);
+      }
+
       const payment = await this.contract.getPayment(idBytes32);
 
       return {

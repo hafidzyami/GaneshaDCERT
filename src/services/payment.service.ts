@@ -445,6 +445,25 @@ class PaymentService {
         try {
             logger.info(`Fetching order from blockchain: ${id}`);
 
+            // First check blockchain transaction status to provide better context
+            const blockchainTx = await prisma.blockchainTransaction.findUnique({
+                where: { id: id },
+                select: { status: true, error: true, type: true },
+            });
+
+            if (blockchainTx) {
+                if (blockchainTx.status === 'PENDING' || blockchainTx.status === 'PROCESSING') {
+                    throw new BadRequestError(
+                        `Order ${id} is still being processed on blockchain (status: ${blockchainTx.status}). Please wait and try again.`
+                    );
+                }
+                if (blockchainTx.status === 'FAILED') {
+                    throw new BadRequestError(
+                        `Order ${id} failed to be created on blockchain. Error: ${blockchainTx.error || 'Unknown error'}. Please retry the transaction.`
+                    );
+                }
+            }
+
             const orderData = await paymentBlockchainService.getOrder(id);
 
             if (!orderData) {
@@ -476,8 +495,13 @@ class PaymentService {
                 error: error.message,
             });
 
-            if (error instanceof NotFoundError) {
+            if (error instanceof NotFoundError || error instanceof BadRequestError) {
                 throw error;
+            }
+
+            // Check if it's a "not found" error from the service
+            if (error.message && error.message.includes('not found on blockchain')) {
+                throw new NotFoundError(error.message);
             }
 
             throw new InternalServerError(`Failed to fetch order from blockchain: ${error.message}`);
@@ -492,6 +516,25 @@ class PaymentService {
     async getItemFromBlockchain(id: string) {
         try {
             logger.info(`Fetching item from blockchain: ${id}`);
+
+            // First check blockchain transaction status to provide better context
+            const blockchainTx = await prisma.blockchainTransaction.findUnique({
+                where: { id: id },
+                select: { status: true, error: true, type: true },
+            });
+
+            if (blockchainTx) {
+                if (blockchainTx.status === 'PENDING' || blockchainTx.status === 'PROCESSING') {
+                    throw new BadRequestError(
+                        `Item ${id} is still being processed on blockchain (status: ${blockchainTx.status}). Please wait and try again.`
+                    );
+                }
+                if (blockchainTx.status === 'FAILED') {
+                    throw new BadRequestError(
+                        `Item ${id} failed to be created on blockchain. Error: ${blockchainTx.error || 'Unknown error'}. Please retry the transaction.`
+                    );
+                }
+            }
 
             const itemData = await paymentBlockchainService.getItem(id);
 
@@ -525,8 +568,13 @@ class PaymentService {
                 error: error.message,
             });
 
-            if (error instanceof NotFoundError) {
+            if (error instanceof NotFoundError || error instanceof BadRequestError) {
                 throw error;
+            }
+
+            // Check if it's a "not found" error from the service
+            if (error.message && error.message.includes('not found on blockchain')) {
+                throw new NotFoundError(error.message);
             }
 
             throw new InternalServerError(`Failed to fetch item from blockchain: ${error.message}`);
@@ -542,10 +590,23 @@ class PaymentService {
         try {
             logger.info(`Fetching payment from blockchain: ${id}`);
 
-            // First check if payment exists
-            const paymentExists = await paymentBlockchainService.paymentExists(id);
-            if (!paymentExists) {
-                throw new NotFoundError(`Payment with ID ${id} not found on blockchain`);
+            // First check blockchain transaction status to provide better context
+            const blockchainTx = await prisma.blockchainTransaction.findUnique({
+                where: { id: id },
+                select: { status: true, error: true, type: true },
+            });
+
+            if (blockchainTx) {
+                if (blockchainTx.status === 'PENDING' || blockchainTx.status === 'PROCESSING') {
+                    throw new BadRequestError(
+                        `Payment ${id} is still being processed on blockchain (status: ${blockchainTx.status}). Please wait and try again.`
+                    );
+                }
+                if (blockchainTx.status === 'FAILED') {
+                    throw new BadRequestError(
+                        `Payment ${id} failed to be created on blockchain. Error: ${blockchainTx.error || 'Unknown error'}. Please retry the transaction.`
+                    );
+                }
             }
 
             const paymentData = await paymentBlockchainService.getPayment(id);
@@ -571,8 +632,13 @@ class PaymentService {
                 error: error.message,
             });
 
-            if (error instanceof NotFoundError) {
+            if (error instanceof NotFoundError || error instanceof BadRequestError) {
                 throw error;
+            }
+
+            // Check if it's a "not found" error from the service
+            if (error.message && error.message.includes('not found on blockchain')) {
+                throw new NotFoundError(error.message);
             }
 
             throw new InternalServerError(`Failed to fetch payment from blockchain: ${error.message}`);
