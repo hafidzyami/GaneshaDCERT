@@ -15,11 +15,12 @@ export const createPaymentTransaction = asyncHandler(
       throw new ValidationError("Validation error", errors.array());
     }
 
-    const { holder_did, item_ids } = req.body;
+    const { holder_did, item_ids, currency } = req.body;
 
     const config = {
       holder_did,
-      item_ids
+      item_ids,
+      currency: currency || 'IDR' // Default to IDR if not provided
     };
 
     const result = await PaymentService.createTransaction(config);
