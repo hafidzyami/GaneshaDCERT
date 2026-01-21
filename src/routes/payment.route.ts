@@ -70,7 +70,12 @@ const router: Router = express.Router();
  *               currency:
  *                 type: string
  *                 example: "IDR"
- *                 description: Payment currency (3-letter code, e.g., IDR, USD). Default is IDR if not provided.
+ *                 description: |
+ *                   Payment currency (3-letter code, e.g., IDR, USD). Default is IDR if not provided.
+ *
+ *                   **Note:** Platform is auto-detected from holder_did format:
+ *                   - did:dcert:i... = web (callback URLs will be included)
+ *                   - did:dcert:u... = mobile (no callback URLs)
  *     responses:
  *       200:
  *         description: Payment transaction created successfully
@@ -280,7 +285,12 @@ router.post(
  *               currency:
  *                 type: string
  *                 example: "IDR"
- *                 description: Payment currency (3-letter code, e.g., IDR, USD). Default is IDR if not provided.
+ *                 description: |
+ *                   Payment currency (3-letter code, e.g., IDR, USD). Default is IDR if not provided.
+ *
+ *                   **Note:** Platform is auto-detected from holder_did format:
+ *                   - did:dcert:i... = web (callback URLs will be included)
+ *                   - did:dcert:u... = mobile (no callback URLs)
  *     responses:
  *       200:
  *         description: Payment transaction created successfully

@@ -26,6 +26,22 @@ class PaymentService {
         try {
             const currency = params.currency || 'IDR'; // Default to IDR if not provided
 
+            // Auto-detect platform from holder_did format
+            // did:dcert:i... = web (issuer)
+            // did:dcert:u... = mobile (user/holder)
+            let platform: 'web' | 'mobile' = 'mobile'; // default
+            const didParts = params.holder_did.split(':');
+            if (didParts.length >= 3 && didParts[0] === 'did' && didParts[1] === 'dcert') {
+                const didIdentifier = didParts[2];
+                if (didIdentifier && didIdentifier.startsWith('i')) {
+                    platform = 'web';
+                } else if (didIdentifier && didIdentifier.startsWith('u')) {
+                    platform = 'mobile';
+                }
+            }
+
+            logger.info(`Platform auto-detected from DID: ${platform} (holder_did: ${params.holder_did})`);
+
             let totalAmount = 0;
             const items: Array<{ id: string; vcID: string; price: number }> = [];
             const invoice_number = `INV-${uuidv4()}-${Date.now()}`;
@@ -141,17 +157,42 @@ class PaymentService {
             
             const payment_due_date = 3;
 
+            // Build order object with optional callback URLs
+            const orderObject: any = {
+                amount: totalAmount,
+                invoice_number,
+                currency: currency
+            };
+
+            // Add callback URLs only for web platform
+            if (platform === 'web') {
+                // Get callback URLs from environment variables
+                const callbackUrl = process.env.DOKU_CALLBACK_URL;
+                const callbackUrlCancel = process.env.DOKU_CALLBACK_URL_CANCEL;
+                const callbackUrlResult = process.env.DOKU_CALLBACK_URL_RESULT;
+
+                if (callbackUrl) {
+                    orderObject.callback_url = callbackUrl;
+                }
+                if (callbackUrlCancel) {
+                    orderObject.callback_url_cancel = callbackUrlCancel;
+                }
+                if (callbackUrlResult) {
+                    orderObject.callback_url_result = callbackUrlResult;
+                }
+
+                logger.info(`Web platform detected - callback URLs added to DOKU request`);
+            } else {
+                logger.info(`Mobile platform detected - callback URLs skipped`);
+            }
+
             const config = {
                 url: process.env.DOKU_API_URL || '',
                 clientId: process.env.DOKU_CLIENT_ID || '',
                 secretKey: process.env.DOKU_SECRET_KEY || '',
                 requestTarget: '/checkout/v1/payment',
                 body: {
-                    order: {
-                        amount: totalAmount,
-                        invoice_number,
-                        currency: currency
-                    },
+                    order: orderObject,
                     payment: {
                         payment_due_date
                     }
