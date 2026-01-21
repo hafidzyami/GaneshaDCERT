@@ -21,8 +21,10 @@ class PaymentService {
     async createTransaction(params: {
         holder_did: string;
         item_ids: string[];
+        currency?: string;
     }) {
         try {
+            const currency = params.currency || 'IDR'; // Default to IDR if not provided
 
             let totalAmount = 0;
             const items: Array<{ id: string; vcID: string; price: number }> = [];
@@ -69,12 +71,12 @@ class PaymentService {
                         holderDID: params.holder_did,
                         status: "PENDING_PAYMENT",
                         amount: totalAmount,
-                        currency: "IDR",
+                        currency: currency,
                         blockNumber: 0,
                         txHash: "pending-blockchain",
                     },
                 });
-                logger.success(`Order saved to database: ${invoice_number} (status=PENDING_PAYMENT)`);
+                logger.success(`Order saved to database: ${invoice_number} (status=PENDING_PAYMENT, currency=${currency})`);
             } catch (dbError: any) {
                 logger.error(`Failed to save order to database: ${invoice_number}`, dbError);
                 throw new InternalServerError(
@@ -88,10 +90,10 @@ class PaymentService {
                     orderId: invoice_number,
                     holderDID: params.holder_did,
                     amount: totalAmount,
-                    currency: "IDR",
+                    currency: currency,
                     itemIds: items.map(item => item.id),
                 });
-                logger.info(`Order queued for blockchain: ${invoice_number}`);
+                logger.info(`Order queued for blockchain: ${invoice_number} (currency=${currency})`);
             } catch (queueError: any) {
                 logger.error("Failed to queue order for blockchain:", queueError);
                 // Don't throw - order already saved to database
@@ -147,7 +149,8 @@ class PaymentService {
                 body: {
                     order: {
                         amount: totalAmount,
-                        invoice_number
+                        invoice_number,
+                        currency: currency
                     },
                     payment: {
                         payment_due_date

@@ -18,6 +18,13 @@ export const paymentValidators: ValidationChain[] = [
         .withMessage("Item IDs are required")
         .isArray({ min: 1 })
         .withMessage("Item IDs must be a non-empty array"),
+    body("currency")
+        .optional()
+        .isString()
+        .withMessage("Currency must be a string")
+        .isLength({ min: 3, max: 3 })
+        .withMessage("Currency must be a 3-letter code (e.g., IDR, USD)")
+        .toUpperCase(),
 ];
 
 export const getUnpaidItemsValidator: ValidationChain[] = [

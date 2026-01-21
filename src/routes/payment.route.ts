@@ -67,6 +67,10 @@ const router: Router = express.Router();
  *                   format: uuid
  *                 example: ["550e8400-e29b-41d4-a716-446655440000", "660e8400-e29b-41d4-a716-446655440001"]
  *                 description: Array of unpaid item IDs to pay
+ *               currency:
+ *                 type: string
+ *                 example: "IDR"
+ *                 description: Payment currency (3-letter code, e.g., IDR, USD). Default is IDR if not provided.
  *     responses:
  *       200:
  *         description: Payment transaction created successfully
@@ -273,6 +277,10 @@ router.post(
  *                   format: uuid
  *                 example: ["550e8400-e29b-41d4-a716-446655440000"]
  *                 description: Array of unpaid item IDs
+ *               currency:
+ *                 type: string
+ *                 example: "IDR"
+ *                 description: Payment currency (3-letter code, e.g., IDR, USD). Default is IDR if not provided.
  *     responses:
  *       200:
  *         description: Payment transaction created successfully
