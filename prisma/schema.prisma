@@ -98,6 +98,10 @@ model VCResponse {
   updatedAt      DateTime         @default(now()) @updatedAt
   processing_at  DateTime?
   vc_hash        String?
+  claimable      Boolean          @default(false)
+
+  @@index([order_id])
+  @@index([claimable])
 }
 
 model Order {
@@ -254,8 +258,12 @@ model VCinitiatedByIssuer {
   updatedAt      DateTime         @updatedAt
   deletedAt      DateTime?
   vc_id          String?
+  order_id       String?
+  claimable      Boolean          @default(false)
 
   @@index([vc_id])
+  @@index([order_id])
+  @@index([claimable])
 }
 
 model IssuerVCData {

@@ -3,10 +3,14 @@ import PaymentBlockchainConfig from "../config/paymentBlockchain";
 import { prisma } from "../config/database";
 import logger from "../config/logger";
 import PaymentEventProcessor from "./processors/paymentEventProcessor";
+import { invoiceToBytes32, bytes32ToString } from "../utils/blockchain.helper";
 
 /**
  * Payment Blockchain Event Publisher
  * Listens to events from PaymentManager contract and syncs to database
+ *
+ * NOTE: This version is updated for the bytes32 PaymentManager contract.
+ * All IDs and string parameters are stored as bytes32 in the contract.
  */
 class PaymentEventPublisher {
   private contract: ethers.Contract;
@@ -34,8 +38,8 @@ class PaymentEventPublisher {
   }
 
   /**
-   * Enrich event data by decoding transaction input
-   * This is needed for indexed string parameters which are hashed in events
+   * Enrich event data by looking up original IDs from database
+   * For bytes32 contract, we need to find original string IDs that were hashed
    */
   private async enrichEventDataFromTransaction(
     eventType: string,
@@ -43,289 +47,108 @@ class PaymentEventPublisher {
     eventData: any
   ): Promise<any> {
     try {
-      // Get transaction details
-      const tx = await PaymentBlockchainConfig.provider.getTransaction(
-        eventLog.transactionHash
-      );
-      if (!tx) {
-        logger.warn(
-          `[Payment] Transaction not found: ${eventLog.transactionHash}`
-        );
-        return eventData;
-      }
+      logger.debug(`[Payment] Enriching ${eventType} event data...`);
 
-      // Decode transaction input data
-      const decodedData = this.contract.interface.parseTransaction({
-        data: tx.data,
-        value: tx.value,
-      });
-
-      if (!decodedData) {
-        logger.warn(
-          `[Payment] Could not decode transaction data for ${eventLog.transactionHash}`
-        );
-        return eventData;
-      }
-
-      logger.info(
-        `[Payment] Decoded transaction function: ${decodedData.name}`
-      );
-
-      // Extract actual values from function arguments
+      // For bytes32 contract, we look up original IDs from database
+      // The worker stores original string IDs, so we search by matching bytes32 hash
       switch (eventType) {
-        case "OrderCreated":
-          // event OrderCreated(string indexed id, string indexed holderDID, uint8 status, uint256 amount, string currency, uint256 timestamp)
-          // createOrder(string _id, string _holderDID, uint256 _amount, string _currency, string[] _items)
-          if (decodedData.name === "createOrder") {
-            return {
-              id: String(decodedData.args[0]),          // _id
-              holderDID: String(decodedData.args[1]),   // _holderDID
-              amount: Number(decodedData.args[2]),      // _amount (args[2], not args[3]!)
-              currency: String(decodedData.args[3]),    // _currency (args[3], not args[2]!)
-              status: eventData.status,                 // from event (uint8)
-              timestamp: eventData.timestamp,           // from event (uint256)
-              blockNumber: eventData.blockNumber,
-              transactionHash: eventData.transactionHash,
-            };
+        case "OrderCreated": {
+          const id = await this.lookupOriginalId(eventData.idBytes32, 'order');
+          return {
+            ...eventData,
+            id: id || eventData.idBytes32,
+            holderDID: eventData.holderDIDBytes32, // DIDs are always hashed, keep as bytes32
+          };
+        }
+
+        case "OrderStatusChanged": {
+          const id = await this.lookupOriginalId(eventData.idBytes32, 'order');
+          return {
+            ...eventData,
+            id: id || eventData.idBytes32,
+          };
+        }
+
+        case "ItemCreated": {
+          const id = await this.lookupOriginalId(eventData.idBytes32, 'item');
+          return {
+            ...eventData,
+            id: id || eventData.idBytes32,
+            vcID: eventData.vcIDBytes32, // VC IDs are usually hashed
+            issuerDID: eventData.issuerDIDBytes32,
+            holderDID: eventData.holderDIDBytes32,
+            vcHash: eventData.vcHashBytes32,
+          };
+        }
+
+        case "ItemPaid": {
+          const id = await this.lookupOriginalId(eventData.idBytes32, 'item');
+          // Try to get vcID from database
+          let vcID = eventData.vcIDBytes32;
+          if (id) {
+            const item = await prisma.itemBlockchain.findUnique({
+              where: { id },
+              select: { vcID: true },
+            });
+            if (item) vcID = item.vcID;
           }
-          break;
+          return {
+            ...eventData,
+            id: id || eventData.idBytes32,
+            vcID,
+          };
+        }
 
-        case "OrderStatusChanged":
-          // event OrderStatusChanged(string indexed id, uint8 oldStatus, uint8 newStatus, uint256 timestamp)
-          // Can be called from:
-          // 1. updateOrderStatus(string _orderId, uint _newStatus)
-          // 2. completePayment(string _paymentId, string _orderId, string _method, string _successStatus)
-          if (decodedData.name === "updateOrderStatus") {
-            return {
-              id: String(decodedData.args[0]),          // _orderId
-              newStatus: Number(decodedData.args[1]),   // _newStatus
-              oldStatus: eventData.oldStatus,           // from event
-              timestamp: eventData.timestamp,           // from event
-              blockNumber: eventData.blockNumber,
-              transactionHash: eventData.transactionHash,
-            };
-          } else if (decodedData.name === "completePayment") {
-            // OrderStatusChanged is also emitted by completePayment
-            return {
-              id: String(decodedData.args[1]),          // _orderId (args[1], not args[0]!)
-              newStatus: eventData.newStatus,           // from event (SUCCESS = 2)
-              oldStatus: eventData.oldStatus,           // from event
-              timestamp: eventData.timestamp,           // from event
-              blockNumber: eventData.blockNumber,
-              transactionHash: eventData.transactionHash,
-            };
-          }
-          break;
+        case "PaymentCreated": {
+          const id = await this.lookupOriginalId(eventData.idBytes32, 'payment');
+          const orderID = await this.lookupOriginalId(eventData.orderIDBytes32, 'order');
+          return {
+            ...eventData,
+            id: id || eventData.idBytes32,
+            orderID: orderID || eventData.orderIDBytes32,
+          };
+        }
 
-        case "ItemCreated":
-          // event ItemCreated(string indexed id, string indexed vcID, string issuerDID, string holderDID, string vcHash, uint256 price, uint8 itemType, uint256 timestamp)
-          // createItem(string _id, uint256 _price, string _vcID, string _issuerDID, string _holderDID, string _vcHash, uint8 _itemType)
-          if (decodedData.name === "createItem") {
-            return {
-              id: String(decodedData.args[0]),          // _id
-              vcID: String(decodedData.args[2]),        // _vcID
-              issuerDID: String(decodedData.args[3]),   // _issuerDID (from tx, not event!)
-              holderDID: String(decodedData.args[4]),   // _holderDID (from tx, not event!)
-              vcHash: String(decodedData.args[5]),      // _vcHash (from tx, not event!)
-              price: Number(decodedData.args[1]),       // _price (from tx, not event!)
-              itemType: Number(decodedData.args[6]),    // _itemType (from tx, not event!)
-              timestamp: eventData.timestamp,           // from event (not in function params)
-              blockNumber: eventData.blockNumber,
-              transactionHash: eventData.transactionHash,
-            };
-          }
-          break;
+        case "PaymentStatusChanged": {
+          const id = await this.lookupOriginalId(eventData.idBytes32, 'payment');
+          const orderID = await this.lookupOriginalId(eventData.orderIDBytes32, 'order');
+          return {
+            ...eventData,
+            id: id || eventData.idBytes32,
+            orderID: orderID || eventData.orderIDBytes32,
+          };
+        }
 
-        case "ItemPaid":
-          // event ItemPaid(string indexed id, string indexed vcID, uint256 timestamp)
-          // Can be called from:
-          // 1. markItemAsPaid(string _itemId) - only has itemId parameter
-          // 2. completePayment(string _paymentId, string _orderId, string _method, string _successStatus)
-          if (decodedData.name === "markItemAsPaid") {
-            const itemId = String(decodedData.args[0]);
+        case "PaymentFailed": {
+          const id = await this.lookupOriginalId(eventData.idBytes32, 'payment');
+          const orderID = await this.lookupOriginalId(eventData.orderIDBytes32, 'order');
+          return {
+            ...eventData,
+            id: id || eventData.idBytes32,
+            orderID: orderID || eventData.orderIDBytes32,
+          };
+        }
 
-            // vcID is indexed but not in function params, need to query blockchain
-            let vcID = eventData.vcID;
-            try {
-              const itemData = await this.contract.getItem(itemId);
-              vcID = String(itemData.vcID);
-              logger.debug(
-                `[Payment] Fetched vcID from blockchain for item ${itemId}: ${vcID}`
-              );
-            } catch (error) {
-              logger.warn(
-                `[Payment] Could not fetch item data for ${itemId}, using event vcID:`,
-                error
-              );
-            }
+        case "PaymentCompleted": {
+          const id = await this.lookupOriginalId(eventData.idBytes32, 'payment');
+          const orderID = await this.lookupOriginalId(eventData.orderIDBytes32, 'order');
+          return {
+            ...eventData,
+            id: id || eventData.idBytes32,
+            orderID: orderID || eventData.orderIDBytes32,
+          };
+        }
 
-            return {
-              id: itemId, // indexed - from tx
-              vcID: vcID, // indexed - from blockchain query
-              timestamp: eventData.timestamp, // NOT indexed - from event
-              blockNumber: eventData.blockNumber,
-              transactionHash: eventData.transactionHash,
-            };
-          } else if (decodedData.name === "completePayment") {
-            // ItemPaid is emitted by completePayment (in a loop for each item in order)
-            // We need to find which item ID matches the hash in the event
-            const orderId = String(decodedData.args[1]); // _orderId from tx
-            const itemIdHash = this.extractIndexedString(eventData.id); // hash from event
-
-            try {
-              // Query order to get item IDs
-              const orderData = await this.contract.getOrder(orderId);
-              const itemIds = orderData.items; // array of item ID strings
-
-              // Find which item ID hashes to the event hash
-              let matchedItemId = null;
-              for (const itemId of itemIds) {
-                const computedHash = ethers.id(String(itemId)); // keccak256 hash
-                if (computedHash === itemIdHash) {
-                  matchedItemId = String(itemId);
-                  break;
-                }
-              }
-
-              if (matchedItemId) {
-                // Query item to get vcID
-                const itemData = await this.contract.getItem(matchedItemId);
-                return {
-                  id: matchedItemId,
-                  vcID: String(itemData.vcID),
-                  timestamp: eventData.timestamp,
-                  blockNumber: eventData.blockNumber,
-                  transactionHash: eventData.transactionHash,
-                };
-              } else {
-                logger.warn(
-                  `[Payment] Could not find item ID matching hash ${itemIdHash} in order ${orderId}`
-                );
-                // Fallback: return hash as-is
-                return eventData;
-              }
-            } catch (error) {
-              logger.warn(
-                `[Payment] Error enriching ItemPaid from completePayment:`,
-                error
-              );
-              // Fallback: return hash as-is
-              return eventData;
-            }
-          }
-          break;
-
-        case "PaymentCreated":
-          // event PaymentCreated(string indexed id, string indexed orderID, string method, string status, uint256 amount, uint256 timestamp)
-          // createPayment(string _id, string _orderID, string _status, uint256 _amount) - method removed from function
-          if (decodedData.name === "createPayment") {
-            return {
-              id: String(decodedData.args[0]),        // _id
-              orderID: String(decodedData.args[1]),   // _orderID
-              method: eventData.method,               // from event (empty string - will be set in completePayment)
-              status: String(decodedData.args[2]),    // _status (from tx, was args[3])
-              amount: Number(decodedData.args[3]),    // _amount (from tx, was args[4])
-              timestamp: eventData.timestamp,         // from event (not in function params)
-              blockNumber: eventData.blockNumber,
-              transactionHash: eventData.transactionHash,
-            };
-          }
-          break;
-
-        case "PaymentStatusChanged":
-          // event PaymentStatusChanged(string indexed id, string indexed orderID, string oldStatus, string newStatus, uint256 timestamp)
-          // Can be called from:
-          // 1. updatePaymentStatus(string _paymentId, string _newStatus)
-          // 2. completePayment(string _paymentId, string _orderId, string _method, string _successStatus)
-          if (decodedData.name === "updatePaymentStatus") {
-            const paymentId = String(decodedData.args[0]);
-
-            // orderID is indexed but not in function params, need to query blockchain
-            let orderID = eventData.orderID;
-            try {
-              const paymentData = await this.contract.getPayment(paymentId);
-              orderID = String(paymentData.orderID);
-              logger.debug(
-                `[Payment] Fetched orderID from blockchain for payment ${paymentId}: ${orderID}`
-              );
-            } catch (error) {
-              logger.warn(
-                `[Payment] Could not fetch payment data for ${paymentId}, using event orderID:`,
-                error
-              );
-            }
-
-            return {
-              id: paymentId, // indexed - from tx
-              orderID: orderID, // indexed - from blockchain query
-              oldStatus: eventData.oldStatus, // NOT indexed - from event
-              newStatus: eventData.newStatus, // NOT indexed - from event
-              timestamp: eventData.timestamp, // NOT indexed - from event
-              blockNumber: eventData.blockNumber,
-              transactionHash: eventData.transactionHash,
-            };
-          } else if (decodedData.name === "completePayment") {
-            // PaymentStatusChanged is also emitted by completePayment
-            return {
-              id: String(decodedData.args[0]),        // _paymentId
-              orderID: String(decodedData.args[1]),   // _orderId
-              oldStatus: eventData.oldStatus,         // from event
-              newStatus: eventData.newStatus,         // from event
-              timestamp: eventData.timestamp,         // from event
-              blockNumber: eventData.blockNumber,
-              transactionHash: eventData.transactionHash,
-            };
-          }
-          break;
-
-        case "PaymentFailed":
-          // event PaymentFailed(string indexed id, string indexed orderID, string method, uint256 amount, uint256 timestamp)
-          // failedPayment(string _paymentId, string _orderId, string _method, string _failedStatus)
-          if (decodedData.name === "failedPayment") {
-            return {
-              id: String(decodedData.args[0]),        // _paymentId
-              orderID: String(decodedData.args[1]),   // _orderId
-              method: String(decodedData.args[2]),    // _method (from tx)
-              amount: eventData.amount,               // from event (not in function params)
-              timestamp: eventData.timestamp,         // from event (not in function params)
-              blockNumber: eventData.blockNumber,
-              transactionHash: eventData.transactionHash,
-            };
-          }
-          break;
-
-        case "PaymentCompleted":
-          // event PaymentCompleted(string indexed id, string indexed orderID, string method, uint256 amount, uint256 timestamp)
-          // completePayment(string _paymentId, string _orderId, string _method, string _successStatus)
-          if (decodedData.name === "completePayment") {
-            return {
-              id: String(decodedData.args[0]),        // _paymentId
-              orderID: String(decodedData.args[1]),   // _orderId
-              method: String(decodedData.args[2]),    // _method (NEW - from tx)
-              amount: eventData.amount,               // from event (not in function params)
-              timestamp: eventData.timestamp,         // from event (not in function params)
-              blockNumber: eventData.blockNumber,
-              transactionHash: eventData.transactionHash,
-            };
-          }
-          break;
+        default:
+          return eventData;
       }
-
-      // If no match, return original eventData
-      logger.warn(
-        `[Payment] No enrichment pattern for ${eventType} with function ${decodedData.name}`
-      );
-      return eventData;
     } catch (error: any) {
       logger.error(
-        `[Payment] Error enriching event data from transaction:`,
+        `[Payment] Error enriching event data:`,
         {
           message: error?.message,
-          stack: error?.stack,
-          name: error?.name,
           eventType: eventType,
           transactionHash: eventLog.transactionHash,
-          error: error,
         }
       );
       return eventData; // Return original data on error
@@ -565,22 +388,25 @@ class PaymentEventPublisher {
 
   /**
    * Listen to real-time events
+   * NOTE: Updated for bytes32 contract - all indexed parameters are bytes32
    */
   private listenToRealtimeEvents(): void {
-    logger.info("[Payment] Starting real-time event listeners...");
+    logger.info("[Payment] Starting real-time event listeners (bytes32 version)...");
 
+    // OrderCreated(bytes32 indexed id, bytes32 indexed holderDID, uint8 status, uint256 amount, bytes32 currency, uint256 timestamp)
     this.contract.on(
       "OrderCreated",
       async (id, holderDID, status, amount, currency, timestamp, event) => {
         try {
           const eventLog = event.log as ethers.EventLog;
           const eventData = {
-            id: this.extractIndexedString(id),                // indexed string
-            holderDID: this.extractIndexedString(holderDID),  // indexed string
-            status: Number(status),       // not indexed uint - safe to convert
-            amount: Number(amount),       // not indexed uint - safe to convert
-            currency: String(currency),   // not indexed - safe to convert
-            timestamp: Number(timestamp), // not indexed uint - safe to convert
+            idBytes32: String(id),                    // indexed bytes32
+            holderDIDBytes32: String(holderDID),      // indexed bytes32
+            status: Number(status),                   // uint8
+            amount: Number(amount),                   // uint256
+            currencyBytes32: String(currency),        // bytes32
+            currency: this.tryDecodeBytes32(currency), // Try decode short strings
+            timestamp: Number(timestamp),             // uint256
             blockNumber: Number(eventLog.blockNumber),
             transactionHash: eventLog.transactionHash,
           };
@@ -591,16 +417,17 @@ class PaymentEventPublisher {
       }
     );
 
+    // OrderStatusChanged(bytes32 indexed id, uint8 oldStatus, uint8 newStatus, uint256 timestamp)
     this.contract.on(
       "OrderStatusChanged",
       async (id, oldStatus, newStatus, timestamp, event) => {
         try {
           const eventLog = event.log as ethers.EventLog;
           const eventData = {
-            id: this.extractIndexedString(id),                // indexed string
-            oldStatus: Number(oldStatus), // not indexed uint - safe to convert
-            newStatus: Number(newStatus), // not indexed uint - safe to convert
-            timestamp: Number(timestamp), // not indexed uint - safe to convert
+            idBytes32: String(id),                    // indexed bytes32
+            oldStatus: Number(oldStatus),             // uint8
+            newStatus: Number(newStatus),             // uint8
+            timestamp: Number(timestamp),             // uint256
             blockNumber: Number(eventLog.blockNumber),
             transactionHash: eventLog.transactionHash,
           };
@@ -611,18 +438,21 @@ class PaymentEventPublisher {
       }
     );
 
+    // ItemCreated(bytes32 indexed id, bytes32 indexed vcID, bytes32 issuerDID, bytes32 holderDID, bytes32 vcHash, uint256 price, uint8 itemType, uint256 timestamp)
     this.contract.on(
       "ItemCreated",
-      async (id, vcID, vcHash, price, itemType, timestamp, event) => {
+      async (id, vcID, issuerDID, holderDID, vcHash, price, itemType, timestamp, event) => {
         try {
           const eventLog = event.log as ethers.EventLog;
           const eventData = {
-            id: this.extractIndexedString(id),                // indexed string
-            vcID: this.extractIndexedString(vcID),            // indexed string
-            vcHash: String(vcHash),       // not indexed - safe to convert
-            price: Number(price),         // not indexed uint - safe to convert
-            itemType: Number(itemType),   // not indexed uint - safe to convert
-            timestamp: Number(timestamp), // not indexed uint - safe to convert
+            idBytes32: String(id),                    // indexed bytes32
+            vcIDBytes32: String(vcID),                // indexed bytes32
+            issuerDIDBytes32: String(issuerDID),      // bytes32
+            holderDIDBytes32: String(holderDID),      // bytes32
+            vcHashBytes32: String(vcHash),            // bytes32
+            price: Number(price),                     // uint256
+            itemType: Number(itemType),               // uint8
+            timestamp: Number(timestamp),             // uint256
             blockNumber: Number(eventLog.blockNumber),
             transactionHash: eventLog.transactionHash,
           };
@@ -633,13 +463,14 @@ class PaymentEventPublisher {
       }
     );
 
+    // ItemPaid(bytes32 indexed id, bytes32 indexed vcID, uint256 timestamp)
     this.contract.on("ItemPaid", async (id, vcID, timestamp, event) => {
       try {
         const eventLog = event.log as ethers.EventLog;
         const eventData = {
-          id: this.extractIndexedString(id),                // indexed string
-          vcID: this.extractIndexedString(vcID),            // indexed string
-          timestamp: Number(timestamp), // not indexed uint - safe to convert
+          idBytes32: String(id),                      // indexed bytes32
+          vcIDBytes32: String(vcID),                  // indexed bytes32
+          timestamp: Number(timestamp),               // uint256
           blockNumber: Number(eventLog.blockNumber),
           transactionHash: eventLog.transactionHash,
         };
@@ -649,18 +480,21 @@ class PaymentEventPublisher {
       }
     });
 
+    // PaymentCreated(bytes32 indexed id, bytes32 indexed orderID, bytes32 method, bytes32 status, uint256 amount, uint256 timestamp)
     this.contract.on(
       "PaymentCreated",
       async (id, orderID, method, status, amount, timestamp, event) => {
         try {
           const eventLog = event.log as ethers.EventLog;
           const eventData = {
-            id: this.extractIndexedString(id),                // indexed string
-            orderID: this.extractIndexedString(orderID),      // indexed string
-            method: String(method),       // not indexed - safe to convert
-            status: String(status),       // not indexed - safe to convert
-            amount: Number(amount),       // not indexed uint - safe to convert
-            timestamp: Number(timestamp), // not indexed uint - safe to convert
+            idBytes32: String(id),                    // indexed bytes32
+            orderIDBytes32: String(orderID),          // indexed bytes32
+            methodBytes32: String(method),            // bytes32
+            method: this.tryDecodeBytes32(method),    // Try decode short strings
+            statusBytes32: String(status),            // bytes32
+            status: this.tryDecodeBytes32(status),    // Try decode short strings
+            amount: Number(amount),                   // uint256
+            timestamp: Number(timestamp),             // uint256
             blockNumber: Number(eventLog.blockNumber),
             transactionHash: eventLog.transactionHash,
           };
@@ -671,17 +505,20 @@ class PaymentEventPublisher {
       }
     );
 
+    // PaymentStatusChanged(bytes32 indexed id, bytes32 indexed orderID, bytes32 oldStatus, bytes32 newStatus, uint256 timestamp)
     this.contract.on(
       "PaymentStatusChanged",
       async (id, orderID, oldStatus, newStatus, timestamp, event) => {
         try {
           const eventLog = event.log as ethers.EventLog;
           const eventData = {
-            id: this.extractIndexedString(id),                // indexed string
-            orderID: this.extractIndexedString(orderID),      // indexed string
-            oldStatus: String(oldStatus), // not indexed - safe to convert
-            newStatus: String(newStatus), // not indexed - safe to convert
-            timestamp: Number(timestamp), // not indexed uint - safe to convert
+            idBytes32: String(id),                    // indexed bytes32
+            orderIDBytes32: String(orderID),          // indexed bytes32
+            oldStatusBytes32: String(oldStatus),      // bytes32
+            oldStatus: this.tryDecodeBytes32(oldStatus),
+            newStatusBytes32: String(newStatus),      // bytes32
+            newStatus: this.tryDecodeBytes32(newStatus),
+            timestamp: Number(timestamp),             // uint256
             blockNumber: Number(eventLog.blockNumber),
             transactionHash: eventLog.transactionHash,
           };
@@ -695,17 +532,19 @@ class PaymentEventPublisher {
       }
     );
 
+    // PaymentFailed(bytes32 indexed id, bytes32 indexed orderID, bytes32 method, uint256 amount, uint256 timestamp)
     this.contract.on(
       "PaymentFailed",
       async (id, orderID, method, amount, timestamp, event) => {
         try {
           const eventLog = event.log as ethers.EventLog;
           const eventData = {
-            id: this.extractIndexedString(id),                // indexed string
-            orderID: this.extractIndexedString(orderID),      // indexed string
-            method: String(method),       // not indexed - safe to convert
-            amount: Number(amount),       // not indexed uint - safe to convert
-            timestamp: Number(timestamp), // not indexed uint - safe to convert
+            idBytes32: String(id),                    // indexed bytes32
+            orderIDBytes32: String(orderID),          // indexed bytes32
+            methodBytes32: String(method),            // bytes32
+            method: this.tryDecodeBytes32(method),
+            amount: Number(amount),                   // uint256
+            timestamp: Number(timestamp),             // uint256
             blockNumber: Number(eventLog.blockNumber),
             transactionHash: eventLog.transactionHash,
           };
@@ -716,17 +555,19 @@ class PaymentEventPublisher {
       }
     );
 
+    // PaymentCompleted(bytes32 indexed id, bytes32 indexed orderID, bytes32 method, uint256 amount, uint256 timestamp)
     this.contract.on(
       "PaymentCompleted",
       async (id, orderID, method, amount, timestamp, event) => {
         try {
           const eventLog = event.log as ethers.EventLog;
           const eventData = {
-            id: this.extractIndexedString(id),                // indexed string
-            orderID: this.extractIndexedString(orderID),      // indexed string
-            method: String(method),       // not indexed - safe to convert
-            amount: Number(amount),       // not indexed uint - safe to convert
-            timestamp: Number(timestamp), // not indexed uint - safe to convert
+            idBytes32: String(id),                    // indexed bytes32
+            orderIDBytes32: String(orderID),          // indexed bytes32
+            methodBytes32: String(method),            // bytes32
+            method: this.tryDecodeBytes32(method),
+            amount: Number(amount),                   // uint256
+            timestamp: Number(timestamp),             // uint256
             blockNumber: Number(eventLog.blockNumber),
             transactionHash: eventLog.transactionHash,
           };
@@ -737,7 +578,82 @@ class PaymentEventPublisher {
       }
     );
 
-    logger.success("[Payment] Real-time event listeners started");
+    logger.success("[Payment] Real-time event listeners started (bytes32 version)");
+  }
+
+  /**
+   * Try to decode bytes32 to string
+   * Works for short strings (≤31 bytes) that were padded
+   * Returns original bytes32 if decode fails (was hashed)
+   */
+  private tryDecodeBytes32(bytes32Value: any): string {
+    try {
+      const hex = String(bytes32Value);
+      // Check if it's all zeros (empty)
+      if (hex === '0x0000000000000000000000000000000000000000000000000000000000000000') {
+        return '';
+      }
+      return bytes32ToString(hex);
+    } catch {
+      // If decode fails, return the hex string
+      return String(bytes32Value);
+    }
+  }
+
+  /**
+   * Lookup original string ID from database using bytes32 hash
+   * Used for IDs that were hashed (>31 bytes)
+   */
+  private async lookupOriginalId(
+    bytes32Hash: string,
+    entityType: 'item' | 'order' | 'payment'
+  ): Promise<string | null> {
+    try {
+      // Query database to find record with matching bytes32 hash
+      // The worker stores original IDs, so we search by computing hash
+      switch (entityType) {
+        case 'item': {
+          const items = await prisma.itemBlockchain.findMany({
+            select: { id: true },
+            take: 100,
+          });
+          for (const item of items) {
+            if (invoiceToBytes32(item.id) === bytes32Hash) {
+              return item.id;
+            }
+          }
+          break;
+        }
+        case 'order': {
+          const orders = await prisma.orderBlockchain.findMany({
+            select: { id: true },
+            take: 100,
+          });
+          for (const order of orders) {
+            if (invoiceToBytes32(order.id) === bytes32Hash) {
+              return order.id;
+            }
+          }
+          break;
+        }
+        case 'payment': {
+          const payments = await prisma.paymentBlockchain.findMany({
+            select: { id: true },
+            take: 100,
+          });
+          for (const payment of payments) {
+            if (invoiceToBytes32(payment.id) === bytes32Hash) {
+              return payment.id;
+            }
+          }
+          break;
+        }
+      }
+      return null;
+    } catch (error) {
+      logger.warn(`[Payment] Failed to lookup original ID for ${bytes32Hash}:`, error);
+      return null;
+    }
   }
 
   /**
@@ -807,114 +723,114 @@ class PaymentEventPublisher {
   }
 
   /**
-   * Helper function to extract string value from indexed event parameter
-   * Indexed strings come as { hash: "0x...", _isIndexed: true } objects
-   */
-  private extractIndexedString(arg: any): string {
-    if (arg && typeof arg === 'object' && arg.hash && arg._isIndexed) {
-      return String(arg.hash);
-    }
-    return String(arg);
-  }
-
-  /**
    * Extract event data based on event type
-   * Note: Indexed strings will be hashed - enrichment happens later via enrichEventDataFromTransaction
+   * NOTE: Updated for bytes32 contract - all parameters are bytes32
    */
   private extractEventData(eventType: string, event: ethers.EventLog): any {
     const args = event.args;
 
     switch (eventType) {
       case "OrderCreated":
+        // OrderCreated(bytes32 indexed id, bytes32 indexed holderDID, uint8 status, uint256 amount, bytes32 currency, uint256 timestamp)
         return {
-          id: this.extractIndexedString(args[0]),          // indexed string
-          holderDID: this.extractIndexedString(args[1]),   // indexed string
-          status: Number(args[2]),
-          amount: Number(args[3]),
-          currency: String(args[4]),
-          timestamp: Number(args[5]),
+          idBytes32: String(args[0]),                      // indexed bytes32
+          holderDIDBytes32: String(args[1]),               // indexed bytes32
+          status: Number(args[2]),                         // uint8
+          amount: Number(args[3]),                         // uint256
+          currencyBytes32: String(args[4]),                // bytes32
+          currency: this.tryDecodeBytes32(args[4]),
+          timestamp: Number(args[5]),                      // uint256
           blockNumber: Number(event.blockNumber),
           transactionHash: event.transactionHash,
         };
 
       case "OrderStatusChanged":
+        // OrderStatusChanged(bytes32 indexed id, uint8 oldStatus, uint8 newStatus, uint256 timestamp)
         return {
-          id: this.extractIndexedString(args[0]),          // indexed string
-          oldStatus: Number(args[1]),
-          newStatus: Number(args[2]),
-          timestamp: Number(args[3]),
+          idBytes32: String(args[0]),                      // indexed bytes32
+          oldStatus: Number(args[1]),                      // uint8
+          newStatus: Number(args[2]),                      // uint8
+          timestamp: Number(args[3]),                      // uint256
           blockNumber: Number(event.blockNumber),
           transactionHash: event.transactionHash,
         };
 
       case "ItemCreated":
+        // ItemCreated(bytes32 indexed id, bytes32 indexed vcID, bytes32 issuerDID, bytes32 holderDID, bytes32 vcHash, uint256 price, uint8 itemType, uint256 timestamp)
         return {
-          id: this.extractIndexedString(args[0]),          // indexed string
-          vcID: this.extractIndexedString(args[1]),        // indexed string
-          issuerDID: String(args[2]),
-          holderDID: String(args[3]),
-          vcHash: String(args[4]),
-          price: Number(args[5]),
-          itemType: Number(args[6]),
-          timestamp: Number(args[7]),
+          idBytes32: String(args[0]),                      // indexed bytes32
+          vcIDBytes32: String(args[1]),                    // indexed bytes32
+          issuerDIDBytes32: String(args[2]),               // bytes32
+          holderDIDBytes32: String(args[3]),               // bytes32
+          vcHashBytes32: String(args[4]),                  // bytes32
+          price: Number(args[5]),                          // uint256
+          itemType: Number(args[6]),                       // uint8
+          timestamp: Number(args[7]),                      // uint256
           blockNumber: Number(event.blockNumber),
           transactionHash: event.transactionHash,
         };
 
       case "ItemPaid":
+        // ItemPaid(bytes32 indexed id, bytes32 indexed vcID, uint256 timestamp)
         return {
-          id: this.extractIndexedString(args[0]),          // indexed string
-          vcID: this.extractIndexedString(args[1]),        // indexed string
-          timestamp: Number(args[2]),
+          idBytes32: String(args[0]),                      // indexed bytes32
+          vcIDBytes32: String(args[1]),                    // indexed bytes32
+          timestamp: Number(args[2]),                      // uint256
           blockNumber: Number(event.blockNumber),
           transactionHash: event.transactionHash,
         };
 
       case "PaymentCreated":
-        // event PaymentCreated(string indexed id, string indexed orderID, string method, string status, uint256 amount, uint256 timestamp)
-        // Note: method will be empty string "" when created, will be set later in completePayment
+        // PaymentCreated(bytes32 indexed id, bytes32 indexed orderID, bytes32 method, bytes32 status, uint256 amount, uint256 timestamp)
         return {
-          id: this.extractIndexedString(args[0]),          // indexed string
-          orderID: this.extractIndexedString(args[1]),     // indexed string
-          method: String(args[2]),          // empty string "" from event
-          status: String(args[3]),
-          amount: Number(args[4]),
-          timestamp: Number(args[5]),
+          idBytes32: String(args[0]),                      // indexed bytes32
+          orderIDBytes32: String(args[1]),                 // indexed bytes32
+          methodBytes32: String(args[2]),                  // bytes32
+          method: this.tryDecodeBytes32(args[2]),
+          statusBytes32: String(args[3]),                  // bytes32
+          status: this.tryDecodeBytes32(args[3]),
+          amount: Number(args[4]),                         // uint256
+          timestamp: Number(args[5]),                      // uint256
           blockNumber: Number(event.blockNumber),
           transactionHash: event.transactionHash,
         };
 
       case "PaymentStatusChanged":
+        // PaymentStatusChanged(bytes32 indexed id, bytes32 indexed orderID, bytes32 oldStatus, bytes32 newStatus, uint256 timestamp)
         return {
-          id: this.extractIndexedString(args[0]),          // indexed string
-          orderID: this.extractIndexedString(args[1]),     // indexed string
-          oldStatus: String(args[2]),
-          newStatus: String(args[3]),
-          timestamp: Number(args[4]),
+          idBytes32: String(args[0]),                      // indexed bytes32
+          orderIDBytes32: String(args[1]),                 // indexed bytes32
+          oldStatusBytes32: String(args[2]),               // bytes32
+          oldStatus: this.tryDecodeBytes32(args[2]),
+          newStatusBytes32: String(args[3]),               // bytes32
+          newStatus: this.tryDecodeBytes32(args[3]),
+          timestamp: Number(args[4]),                      // uint256
           blockNumber: Number(event.blockNumber),
           transactionHash: event.transactionHash,
         };
 
       case "PaymentFailed":
-        // event PaymentFailed(string indexed id, string indexed orderID, string method, uint256 amount, uint256 timestamp)
+        // PaymentFailed(bytes32 indexed id, bytes32 indexed orderID, bytes32 method, uint256 amount, uint256 timestamp)
         return {
-          id: this.extractIndexedString(args[0]),          // indexed string
-          orderID: this.extractIndexedString(args[1]),     // indexed string
-          method: String(args[2]),          // method from event (set in failedPayment)
-          amount: Number(args[3]),
-          timestamp: Number(args[4]),
+          idBytes32: String(args[0]),                      // indexed bytes32
+          orderIDBytes32: String(args[1]),                 // indexed bytes32
+          methodBytes32: String(args[2]),                  // bytes32
+          method: this.tryDecodeBytes32(args[2]),
+          amount: Number(args[3]),                         // uint256
+          timestamp: Number(args[4]),                      // uint256
           blockNumber: Number(event.blockNumber),
           transactionHash: event.transactionHash,
         };
 
       case "PaymentCompleted":
-        // event PaymentCompleted(string indexed id, string indexed orderID, string method, uint256 amount, uint256 timestamp)
+        // PaymentCompleted(bytes32 indexed id, bytes32 indexed orderID, bytes32 method, uint256 amount, uint256 timestamp)
         return {
-          id: this.extractIndexedString(args[0]),          // indexed string
-          orderID: this.extractIndexedString(args[1]),     // indexed string
-          method: String(args[2]),          // method from event (set in completePayment)
-          amount: Number(args[3]),
-          timestamp: Number(args[4]),
+          idBytes32: String(args[0]),                      // indexed bytes32
+          orderIDBytes32: String(args[1]),                 // indexed bytes32
+          methodBytes32: String(args[2]),                  // bytes32
+          method: this.tryDecodeBytes32(args[2]),
+          amount: Number(args[3]),                         // uint256
+          timestamp: Number(args[4]),                      // uint256
           blockNumber: Number(event.blockNumber),
           transactionHash: event.transactionHash,
         };

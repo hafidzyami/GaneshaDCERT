@@ -7,6 +7,37 @@ import SchemaEventProcessor from "./processors/schemaEventProcessor";
 const prisma = new PrismaClient();
 
 /**
+ * Helper function to extract string value from indexed event parameter
+ * Indexed strings in Solidity events are hashed and returned as { hash: "0x...", _isIndexed: true }
+ * This function extracts the hash or returns the original value if not indexed
+ */
+function extractIndexedString(arg: any): string {
+  if (arg && typeof arg === 'object') {
+    // Check if it's an indexed string (ethers.js Indexed object)
+    if (arg.hash && arg._isIndexed) {
+      return String(arg.hash);
+    }
+    // Check for toHexString method (some ethers objects)
+    if (typeof arg.toHexString === 'function') {
+      return arg.toHexString();
+    }
+    // Fallback: try to stringify
+    return String(arg);
+  }
+  return String(arg);
+}
+
+/**
+ * Check if a string is a keccak256 hash (0x + 64 hex characters)
+ * Indexed strings in Solidity are hashed with keccak256
+ */
+function isKeccak256Hash(value: string): boolean {
+  if (!value || typeof value !== 'string') return false;
+  // keccak256 hash format: 0x + 64 hex characters = 66 total length
+  return /^0x[a-fA-F0-9]{64}$/.test(value);
+}
+
+/**
  * BlockchainEventPublisher
  * Listens to blockchain events and processes them with checkpoint mechanism
  */
@@ -154,18 +185,19 @@ class BlockchainEventPublisher {
    */
   private async startRealtimeListeners(): Promise<void> {
     // Schema events
+    // Note: Indexed string parameters come as { hash: "0x...", _isIndexed: true } from ethers.js
+    // We extract the hash here, then enrich with real values from transaction data
     this.contract.on(
       "SchemaCreated",
       async (id, name, schema, issuerDID, imageLink, version, timestamp, event) => {
-        // Don't convert indexed strings here - they're hashes and will be enriched later
         await this.handleEvent("SchemaCreated", event, {
-          id: id,                    // indexed - will be hash, enriched from tx
-          name: String(name),        // not indexed - safe to convert
-          schema: String(schema),    // not indexed - safe to convert
-          issuerDID: issuerDID,      // indexed - will be hash, enriched from tx
-          imageLink: String(imageLink), // not indexed - safe to convert
-          version: Number(version),     // not indexed uint - safe to convert
-          timestamp: Number(timestamp), // not indexed uint - safe to convert
+          id: extractIndexedString(id),              // indexed string - extract hash
+          name: String(name),                        // not indexed - safe to convert
+          schema: String(schema),                    // not indexed - safe to convert
+          issuerDID: extractIndexedString(issuerDID), // indexed string - extract hash
+          imageLink: String(imageLink),              // not indexed - safe to convert
+          version: Number(version),                  // not indexed uint - safe to convert
+          timestamp: Number(timestamp),              // not indexed uint - safe to convert
         });
       }
     );
@@ -173,15 +205,14 @@ class BlockchainEventPublisher {
     this.contract.on(
       "SchemaUpdated",
       async (id, schema, issuerDID, imageLink, oldVersion, newVersion, timestamp, event) => {
-        // Don't convert indexed strings here - they're hashes and will be enriched later
         await this.handleEvent("SchemaUpdated", event, {
-          id: id,                          // indexed - will be hash, enriched from tx
-          schema: String(schema),          // not indexed - safe to convert
-          issuerDID: issuerDID,            // indexed - will be hash, enriched from tx
-          imageLink: String(imageLink),    // not indexed - safe to convert
-          oldVersion: Number(oldVersion),  // not indexed uint - safe to convert
-          newVersion: Number(newVersion),  // not indexed uint - safe to convert
-          timestamp: Number(timestamp),    // not indexed uint - safe to convert
+          id: extractIndexedString(id),              // indexed string - extract hash
+          schema: String(schema),                    // not indexed - safe to convert
+          issuerDID: extractIndexedString(issuerDID), // indexed string - extract hash
+          imageLink: String(imageLink),              // not indexed - safe to convert
+          oldVersion: Number(oldVersion),            // not indexed uint - safe to convert
+          newVersion: Number(newVersion),            // not indexed uint - safe to convert
+          timestamp: Number(timestamp),              // not indexed uint - safe to convert
         });
       }
     );
@@ -189,12 +220,11 @@ class BlockchainEventPublisher {
     this.contract.on(
       "SchemaDeactivated",
       async (id, version, issuerDID, timestamp, event) => {
-        // Don't convert indexed strings here - they're hashes and will be enriched later
         await this.handleEvent("SchemaDeactivated", event, {
-          id: id,                       // indexed - will be hash, enriched from tx
-          version: Number(version),     // indexed uint - safe to convert (uint indexed can be read)
-          issuerDID: String(issuerDID), // not indexed - safe to convert
-          timestamp: Number(timestamp), // not indexed uint - safe to convert
+          id: extractIndexedString(id),              // indexed string - extract hash
+          version: Number(version),                  // indexed uint - safe to convert
+          issuerDID: String(issuerDID),              // not indexed - safe to convert
+          timestamp: Number(timestamp),              // not indexed uint - safe to convert
         });
       }
     );
@@ -202,12 +232,11 @@ class BlockchainEventPublisher {
     this.contract.on(
       "SchemaReactivated",
       async (id, version, issuerDID, timestamp, event) => {
-        // Don't convert indexed strings here - they're hashes and will be enriched later
         await this.handleEvent("SchemaReactivated", event, {
-          id: id,                       // indexed - will be hash, enriched from tx
-          version: Number(version),     // indexed uint - safe to convert (uint indexed can be read)
-          issuerDID: String(issuerDID), // not indexed - safe to convert
-          timestamp: Number(timestamp), // not indexed uint - safe to convert
+          id: extractIndexedString(id),              // indexed string - extract hash
+          version: Number(version),                  // indexed uint - safe to convert
+          issuerDID: String(issuerDID),              // not indexed - safe to convert
+          timestamp: Number(timestamp),              // not indexed uint - safe to convert
         });
       }
     );
@@ -358,40 +387,44 @@ class BlockchainEventPublisher {
 
   /**
    * Extract event data from EventLog
+   * Note: Indexed string parameters come as { hash, _isIndexed } - use extractIndexedString
    */
   private extractEventData(eventType: string, event: ethers.EventLog): any {
     const args = event.args;
 
     switch (eventType) {
       case "SchemaCreated":
+        // event SchemaCreated(string indexed id, string name, string schema, string indexed issuerDID, string imageLink, uint version, uint256 timestamp)
         return {
-          id: String(args[0]),
-          name: String(args[1]),
-          schema: String(args[2]),
-          issuerDID: String(args[3]),
-          imageLink: String(args[4]),
-          version: Number(args[5]),
-          timestamp: Number(args[6]),
+          id: extractIndexedString(args[0]),        // indexed string
+          name: String(args[1]),                    // not indexed
+          schema: String(args[2]),                  // not indexed
+          issuerDID: extractIndexedString(args[3]), // indexed string
+          imageLink: String(args[4]),               // not indexed
+          version: Number(args[5]),                 // not indexed
+          timestamp: Number(args[6]),               // not indexed
         };
 
       case "SchemaUpdated":
+        // event SchemaUpdated(string indexed id, string schema, string indexed issuerDID, string imageLink, uint oldVersion, uint newVersion, uint256 timestamp)
         return {
-          id: String(args[0]),
-          schema: String(args[1]),
-          issuerDID: String(args[2]),
-          imageLink: String(args[3]),
-          oldVersion: Number(args[4]),
-          newVersion: Number(args[5]),
-          timestamp: Number(args[6]),
+          id: extractIndexedString(args[0]),        // indexed string
+          schema: String(args[1]),                  // not indexed
+          issuerDID: extractIndexedString(args[2]), // indexed string
+          imageLink: String(args[3]),               // not indexed
+          oldVersion: Number(args[4]),              // not indexed
+          newVersion: Number(args[5]),              // not indexed
+          timestamp: Number(args[6]),               // not indexed
         };
 
       case "SchemaDeactivated":
       case "SchemaReactivated":
+        // event SchemaDeactivated/Reactivated(string indexed id, uint indexed version, string issuerDID, uint256 timestamp)
         return {
-          id: String(args[0]),
-          version: Number(args[1]),
-          issuerDID: String(args[2]),
-          timestamp: Number(args[3]),
+          id: extractIndexedString(args[0]),        // indexed string
+          version: Number(args[1]),                 // indexed uint (can be read directly)
+          issuerDID: String(args[2]),               // not indexed
+          timestamp: Number(args[3]),               // not indexed
         };
 
       default:
@@ -408,12 +441,15 @@ class BlockchainEventPublisher {
     eventLog: ethers.EventLog,
     eventData: any
   ): Promise<any> {
+    let enrichedData = { ...eventData };
+
     try {
       // Get transaction details
       const tx = await this.provider.getTransaction(eventLog.transactionHash);
       if (!tx) {
         logger.warn(`Transaction not found: ${eventLog.transactionHash}`);
-        return eventData;
+        // Try blockchain fallback
+        return await this.enrichFromBlockchainFallback(eventType, eventData);
       }
 
       // Decode transaction input data
@@ -424,7 +460,8 @@ class BlockchainEventPublisher {
 
       if (!decodedData) {
         logger.warn(`Could not decode transaction data for ${eventLog.transactionHash}`);
-        return eventData;
+        // Try blockchain fallback
+        return await this.enrichFromBlockchainFallback(eventType, eventData);
       }
 
       logger.info(`Decoded transaction function: ${decodedData.name}`, {
@@ -434,7 +471,7 @@ class BlockchainEventPublisher {
       // Extract actual values from function arguments
       if (eventType === "SchemaCreated" && decodedData.name === "createVCSchema") {
         // createVCSchema(string _id, string _name, string _schema, string _issuerDID, string _imageLink)
-        return {
+        enrichedData = {
           id: String(decodedData.args[0]),          // _id
           name: String(decodedData.args[1]),        // _name
           schema: String(decodedData.args[2]),      // _schema
@@ -447,34 +484,54 @@ class BlockchainEventPublisher {
 
       else if (eventType === "SchemaUpdated" && decodedData.name === "updateVCSchema") {
         // updateVCSchema(string _id, string _newSchema, string _newImageLink)
+        // Note: issuerDID is NOT in the function params, need to get from database or blockchain
         const schemaId = String(decodedData.args[0]);
 
-        // Get issuerDID from the new version on blockchain (after update)
+        // Get issuerDID - priority: 1. Database (old version), 2. Blockchain
         let issuerDID = "";
+        let schemaName = "";
+
+        // 1. First try to get from database (old version should exist from SchemaCreated)
         try {
-          const newVersion = eventData.newVersion;
-          const schemaData = await this.contract.getVCSchemaByVersion(schemaId, newVersion);
-          issuerDID = String(schemaData.issuerDID);
-          logger.info(`Fetched issuerDID from blockchain for schema ${schemaId} v${newVersion}: ${issuerDID}`);
-        } catch (error) {
-          logger.error(`Error fetching schema from blockchain:`, error);
-          // Fallback: try to get from old version
+          const existingSchema = await prisma.vCSchema.findFirst({
+            where: { id: schemaId },
+            orderBy: { version: 'desc' },
+          });
+
+          if (existingSchema && existingSchema.issuer_did && !isKeccak256Hash(existingSchema.issuer_did)) {
+            issuerDID = existingSchema.issuer_did;
+            schemaName = existingSchema.name;
+            logger.info(`Fetched issuerDID from database for schema ${schemaId}: ${issuerDID}`);
+          }
+        } catch (dbError: any) {
+          logger.warn(`Database lookup failed for schema ${schemaId}:`, dbError.message || dbError);
+        }
+
+        // 2. If database lookup failed, try blockchain
+        if (!issuerDID || isKeccak256Hash(issuerDID)) {
           try {
             const oldVersion = eventData.oldVersion;
             const oldSchemaData = await this.contract.getVCSchemaByVersion(schemaId, oldVersion);
             issuerDID = String(oldSchemaData.issuerDID);
-            logger.info(`Fetched issuerDID from old version ${oldVersion}: ${issuerDID}`);
-          } catch (fallbackError) {
-            logger.error(`Fallback fetch also failed:`, fallbackError);
-            issuerDID = String(eventData.issuerDID); // Last resort: hashed value
+            schemaName = String(oldSchemaData.name);
+            logger.info(`Fetched issuerDID from blockchain (old version ${oldVersion}): ${issuerDID}`);
+          } catch (blockchainError: any) {
+            logger.error(`Blockchain fetch failed for schema ${schemaId}:`, blockchainError.message || blockchainError);
           }
         }
 
-        return {
+        // 3. Last resort: use hashed value (will be caught by validation)
+        if (!issuerDID) {
+          issuerDID = String(eventData.issuerDID);
+          logger.warn(`Using hashed issuerDID as last resort: ${issuerDID}`);
+        }
+
+        enrichedData = {
           id: schemaId,                             // _id
+          name: schemaName,                         // from database/blockchain
           schema: String(decodedData.args[1]),      // _newSchema
           imageLink: String(decodedData.args[2]),   // _newImageLink
-          issuerDID: issuerDID,                     // from blockchain query
+          issuerDID: issuerDID,                     // from database/blockchain
           oldVersion: eventData.oldVersion,         // from event
           newVersion: eventData.newVersion,         // from event
           timestamp: eventData.timestamp,           // from event
@@ -483,7 +540,7 @@ class BlockchainEventPublisher {
 
       else if (eventType === "SchemaDeactivated" && decodedData.name === "deactivateVCSchema") {
         // deactivateVCSchema(string _id, uint _version)
-        return {
+        enrichedData = {
           id: String(decodedData.args[0]),          // _id
           version: Number(decodedData.args[1]),     // _version
           issuerDID: eventData.issuerDID,           // from event (non-indexed)
@@ -493,19 +550,150 @@ class BlockchainEventPublisher {
 
       else if (eventType === "SchemaReactivated" && decodedData.name === "reactivateVCSchema") {
         // reactivateVCSchema(string _id, uint _version)
-        return {
+        enrichedData = {
           id: String(decodedData.args[0]),          // _id
           version: Number(decodedData.args[1]),     // _version
           issuerDID: eventData.issuerDID,           // from event (non-indexed)
           timestamp: eventData.timestamp,           // from event
         };
       }
-
-      return eventData;
     } catch (error) {
       logger.error(`Error enriching event data from transaction:`, error);
-      return eventData;
+      // Try blockchain fallback
+      return await this.enrichFromBlockchainFallback(eventType, eventData);
     }
+
+    // Validate enriched data - ensure no keccak256 hashes for critical fields
+    enrichedData = await this.validateAndFixEnrichedData(eventType, enrichedData);
+
+    return enrichedData;
+  }
+
+  /**
+   * Fallback: Try to enrich data directly from blockchain contract
+   * Used when transaction data cannot be decoded
+   */
+  private async enrichFromBlockchainFallback(
+    eventType: string,
+    eventData: any
+  ): Promise<any> {
+    logger.info(`Attempting blockchain fallback enrichment for ${eventType}`);
+
+    try {
+      if (eventType === "SchemaCreated" || eventType === "SchemaUpdated") {
+        // If id is a hash, we cannot query blockchain (need actual id)
+        if (isKeccak256Hash(eventData.id)) {
+          logger.warn(`Cannot enrich from blockchain: id is still a hash: ${eventData.id}`);
+          return eventData;
+        }
+
+        // Try to get schema from blockchain
+        const version = eventData.version || eventData.newVersion || 1;
+        try {
+          const schemaData = await this.contract.getVCSchemaByVersion(eventData.id, version);
+
+          logger.info(`Fetched schema from blockchain:`, {
+            id: eventData.id,
+            version: version,
+            issuerDID: String(schemaData.issuerDID),
+            name: String(schemaData.name)
+          });
+
+          return {
+            ...eventData,
+            id: eventData.id,
+            name: String(schemaData.name),
+            schema: String(schemaData.schema),
+            issuerDID: String(schemaData.issuerDID),
+            imageLink: String(schemaData.imageLink),
+          };
+        } catch (blockchainError) {
+          logger.error(`Failed to fetch schema from blockchain:`, blockchainError);
+        }
+      }
+    } catch (error) {
+      logger.error(`Blockchain fallback enrichment failed:`, error);
+    }
+
+    return eventData;
+  }
+
+  /**
+   * Validate enriched data and fix any remaining hash values
+   * Critical fields like id and issuerDID should not be keccak256 hashes
+   */
+  private async validateAndFixEnrichedData(
+    eventType: string,
+    eventData: any
+  ): Promise<any> {
+    const fixedData = { ...eventData };
+    let needsFix = false;
+
+    // Check if id is still a hash
+    if (isKeccak256Hash(fixedData.id)) {
+      logger.warn(`WARNING: id is still a keccak256 hash after enrichment: ${fixedData.id}`);
+      needsFix = true;
+    }
+
+    // Check if issuerDID is still a hash
+    if (isKeccak256Hash(fixedData.issuerDID)) {
+      logger.warn(`WARNING: issuerDID is still a keccak256 hash after enrichment: ${fixedData.issuerDID}`);
+      needsFix = true;
+
+      // Try to fix issuerDID - priority: 1. Database, 2. Blockchain
+      if (!isKeccak256Hash(fixedData.id)) {
+        // 1. First try database lookup
+        try {
+          const existingSchema = await prisma.vCSchema.findFirst({
+            where: { id: fixedData.id },
+            orderBy: { version: 'desc' },
+          });
+
+          if (existingSchema && existingSchema.issuer_did && !isKeccak256Hash(existingSchema.issuer_did)) {
+            logger.info(`Fixed issuerDID from database: ${existingSchema.issuer_did}`);
+            fixedData.issuerDID = existingSchema.issuer_did;
+            if (!fixedData.name && existingSchema.name) {
+              fixedData.name = existingSchema.name;
+            }
+            needsFix = false; // Fixed!
+          }
+        } catch (dbError: any) {
+          logger.warn(`Database lookup failed:`, dbError.message || dbError);
+        }
+
+        // 2. If still a hash, try blockchain
+        if (isKeccak256Hash(fixedData.issuerDID)) {
+          try {
+            const version = fixedData.version || fixedData.oldVersion || 1;
+            const schemaData = await this.contract.getVCSchemaByVersion(fixedData.id, version);
+            const realIssuerDID = String(schemaData.issuerDID);
+
+            if (!isKeccak256Hash(realIssuerDID)) {
+              logger.info(`Fixed issuerDID from blockchain: ${realIssuerDID}`);
+              fixedData.issuerDID = realIssuerDID;
+              if (!fixedData.name) {
+                fixedData.name = String(schemaData.name);
+              }
+              needsFix = false; // Fixed!
+            }
+          } catch (blockchainError: any) {
+            logger.error(`Failed to fix issuerDID from blockchain:`, blockchainError.message || blockchainError);
+          }
+        }
+      }
+    }
+
+    if (needsFix && isKeccak256Hash(fixedData.issuerDID)) {
+      logger.warn(`Event data validation found hash values that could not be resolved:`, {
+        eventType,
+        id: fixedData.id,
+        issuerDID: fixedData.issuerDID,
+        idIsHash: isKeccak256Hash(fixedData.id),
+        issuerDIDIsHash: isKeccak256Hash(fixedData.issuerDID)
+      });
+    }
+
+    return fixedData;
   }
 
   /**

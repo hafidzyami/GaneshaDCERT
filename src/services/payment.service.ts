@@ -287,6 +287,10 @@ class PaymentService {
     /**
      * Handle DOKU payment notification for all payment types
      * Supports: Virtual Account, Credit Card, Convenience Store, E-wallet, Debit, Paylater, QRIS
+     *
+     * FLOW: Update DATABASE FIRST, then queue blockchain update async
+     * This ensures fast response to webhook and immediate data availability
+     *
      * @param notificationData Payment notification data from DOKU
      * @returns Response to send back to DOKU
      */
@@ -366,15 +370,7 @@ class PaymentService {
                     logger.warn('Unknown payment service type:', serviceId);
             }
 
-            // TODO: In production, implement these based on payment type:
-            // 1. Verify signature from DOKU headers
-            // 2. Save payment data to database with proper payment type
-            // 3. Update order/transaction status
-            // 4. Send notification to user (email/push)
-            // 5. Trigger post-payment processes (issue VC, etc)
-
-            logger.success('Payment notification processed successfully');
-
+            // Find payment record
             const paymentRecord = await prisma.paymentBlockchain.findFirst({
                 where: {
                     orderID: invoiceNumber,
@@ -383,7 +379,8 @@ class PaymentService {
                     }
                 },
                 select: {
-                    id: true
+                    id: true,
+                    amount: true,
                 },
                 orderBy: {
                     createdAt: 'desc'
@@ -396,26 +393,159 @@ class PaymentService {
 
             const paymentRecordId = paymentRecord.id;
 
-            // Handle payment based on status (queue for async processing)
+            // Handle payment based on status
             if (transactionStatus === 'SUCCESS') {
-                await blockchainTransactionQueueService.queueCompletePayment({
-                    paymentId: paymentRecordId,
-                    orderId: invoiceNumber,
-                    method: serviceId,
-                    successStatus: transactionStatus
+                // ==========================================
+                // STEP 1: UPDATE DATABASE FIRST (IMMEDIATE)
+                // ==========================================
+                logger.info(`[DB-FIRST] Updating database for successful payment: ${invoiceNumber}`);
+
+                // Get order to find related items
+                const order = await prisma.orderBlockchain.findUnique({
+                    where: { id: invoiceNumber },
                 });
-                logger.success(`Payment completion queued for invoice ${invoiceNumber}`);
+
+                if (!order) {
+                    throw new NotFoundError(`Order not found: ${invoiceNumber}`);
+                }
+
+                // Use transaction to ensure all updates succeed together
+                await prisma.$transaction(async (tx) => {
+                    // 1. Update PaymentBlockchain - mark as SUCCESS
+                    await tx.paymentBlockchain.update({
+                        where: { id: paymentRecordId },
+                        data: {
+                            status: 'SUCCESS',
+                            method: serviceId,
+                            paidAt: BigInt(Math.floor(Date.now() / 1000)), // Unix timestamp
+                        },
+                    });
+                    logger.success(`[DB-FIRST] PaymentBlockchain updated: ${paymentRecordId} => SUCCESS`);
+
+                    // 2. Update OrderBlockchain - mark as SUCCESS
+                    await tx.orderBlockchain.update({
+                        where: { id: invoiceNumber },
+                        data: {
+                            status: 'SUCCESS',
+                        },
+                    });
+                    logger.success(`[DB-FIRST] OrderBlockchain updated: ${invoiceNumber} => SUCCESS`);
+
+                    // 3. Update Order table - mark as PAID
+                    await tx.order.updateMany({
+                        where: { id: invoiceNumber },
+                        data: {
+                            payment_status: 'PAID',
+                        },
+                    });
+                    logger.success(`[DB-FIRST] Order payment_status updated: ${invoiceNumber} => PAID`);
+
+                    // 4. Update ItemBlockchain - mark all items as isPaid = true
+                    // Find items from Order.VCs_id
+                    const orderRecord = await tx.order.findUnique({
+                        where: { id: invoiceNumber },
+                        select: { VCs_id: true },
+                    });
+
+                    if (orderRecord && orderRecord.VCs_id && orderRecord.VCs_id.length > 0) {
+                        await tx.itemBlockchain.updateMany({
+                            where: {
+                                id: { in: orderRecord.VCs_id },
+                            },
+                            data: {
+                                isPaid: true,
+                            },
+                        });
+                        logger.success(`[DB-FIRST] ${orderRecord.VCs_id.length} items marked as isPaid=true`);
+                    }
+
+                    // 5. Update VCResponse - set claimable = true for all VCs in this order
+                    const vcResponseUpdated = await tx.vCResponse.updateMany({
+                        where: { order_id: invoiceNumber },
+                        data: {
+                            claimable: true,
+                        },
+                    });
+                    if (vcResponseUpdated.count > 0) {
+                        logger.success(`[DB-FIRST] ${vcResponseUpdated.count} VCResponse(s) set claimable=true for order ${invoiceNumber}`);
+                    }
+
+                    // 6. Update VCinitiatedByIssuer - set claimable = true for all VCs in this order
+                    const vcInitiatedUpdated = await tx.vCinitiatedByIssuer.updateMany({
+                        where: { order_id: invoiceNumber },
+                        data: {
+                            claimable: true,
+                        },
+                    });
+                    if (vcInitiatedUpdated.count > 0) {
+                        logger.success(`[DB-FIRST] ${vcInitiatedUpdated.count} VCinitiatedByIssuer(s) set claimable=true for order ${invoiceNumber}`);
+                    }
+                });
+
+                logger.success(`[DB-FIRST] Database updated successfully for payment: ${invoiceNumber}`);
+
+                // ==========================================
+                // STEP 2: QUEUE BLOCKCHAIN UPDATE (ASYNC)
+                // ==========================================
+                try {
+                    await blockchainTransactionQueueService.queueCompletePayment({
+                        paymentId: paymentRecordId,
+                        orderId: invoiceNumber,
+                        method: serviceId,
+                        successStatus: transactionStatus
+                    });
+                    logger.success(`[BLOCKCHAIN-ASYNC] Payment completion queued for invoice ${invoiceNumber}`);
+                } catch (queueError: any) {
+                    // Don't fail if queue fails - database is already updated
+                    logger.error(`[BLOCKCHAIN-ASYNC] Failed to queue blockchain update, but DB is updated:`, queueError);
+                }
+
             } else if (transactionStatus === 'FAILED' || transactionStatus === 'EXPIRED' || transactionStatus === 'CANCELED') {
-                await blockchainTransactionQueueService.queueFailedPayment({
-                    paymentId: paymentRecordId,
-                    orderId: invoiceNumber,
-                    method: serviceId,
-                    failedStatus: transactionStatus
+                // ==========================================
+                // STEP 1: UPDATE DATABASE FIRST (IMMEDIATE)
+                // ==========================================
+                logger.info(`[DB-FIRST] Updating database for failed payment: ${invoiceNumber}`);
+
+                await prisma.$transaction(async (tx) => {
+                    // 1. Update PaymentBlockchain - mark as FAILED
+                    await tx.paymentBlockchain.update({
+                        where: { id: paymentRecordId },
+                        data: {
+                            status: transactionStatus,
+                            method: serviceId,
+                        },
+                    });
+                    logger.success(`[DB-FIRST] PaymentBlockchain updated: ${paymentRecordId} => ${transactionStatus}`);
+
+                    // 2. Update OrderBlockchain - mark as CANCELED
+                    await tx.orderBlockchain.update({
+                        where: { id: invoiceNumber },
+                        data: {
+                            status: 'CANCELED',
+                        },
+                    });
+                    logger.success(`[DB-FIRST] OrderBlockchain updated: ${invoiceNumber} => CANCELED`);
                 });
-                logger.warn(`Payment failure queued for invoice ${invoiceNumber} with status: ${transactionStatus}`);
+
+                // ==========================================
+                // STEP 2: QUEUE BLOCKCHAIN UPDATE (ASYNC)
+                // ==========================================
+                try {
+                    await blockchainTransactionQueueService.queueFailedPayment({
+                        paymentId: paymentRecordId,
+                        orderId: invoiceNumber,
+                        method: serviceId,
+                        failedStatus: transactionStatus
+                    });
+                    logger.warn(`[BLOCKCHAIN-ASYNC] Payment failure queued for invoice ${invoiceNumber} with status: ${transactionStatus}`);
+                } catch (queueError: any) {
+                    logger.error(`[BLOCKCHAIN-ASYNC] Failed to queue blockchain update, but DB is updated:`, queueError);
+                }
             } else {
                 logger.info(`Payment status ${transactionStatus} for invoice ${invoiceNumber} - no action taken`);
             }
+
+            logger.success('Payment notification processed successfully');
 
             // Return standard success response
             return {

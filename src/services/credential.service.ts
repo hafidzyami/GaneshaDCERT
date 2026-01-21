@@ -1480,7 +1480,10 @@ class CredentialService {
 
     // Use Prisma's raw query for atomic UPDATE...RETURNING
     // This ensures only one VC is claimed at a time and prevents race conditions
-    // NEW: Added join with ItemBlockchain to check isPaid = true
+    // Checks:
+    // 1. claimable = true (set by payment notification after successful payment)
+    // 2. ItemBlockchain.isPaid = true (legacy check, kept for backward compatibility)
+    // Note: Using subqueries instead of LEFT JOIN to avoid FOR UPDATE limitation
     const result = await this.db.$queryRaw<any[]>`
       UPDATE "VCResponse"
       SET status = 'PROCESSING'::"VCResponseStatus",
@@ -1489,16 +1492,21 @@ class CredentialService {
       WHERE id = (
         SELECT vc.id
         FROM "VCResponse" vc
-        LEFT JOIN "ItemBlockchain" ib ON vc.order_id = ib.id
         WHERE vc.holder_did = ${holderDid}
           AND vc.status = 'PENDING'::"VCResponseStatus"
           AND vc."deletedAt" IS NULL
           AND (
-            -- Allow claim if:
-            -- 1. No ItemBlockchain link (legacy data or free credentials)
-            ib.id IS NULL
-            -- 2. Or ItemBlockchain exists and is paid
-            OR ib."isPaid" = true
+            -- Primary check - claimable flag must be true
+            vc.claimable = true
+            -- OR legacy check for backward compatibility:
+            OR (
+              -- 1. No order_id link (legacy data or free credentials)
+              vc.order_id IS NULL
+              -- 2. Or no ItemBlockchain record exists for this order_id
+              OR NOT EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id)
+              -- 3. Or ItemBlockchain exists and is paid
+              OR EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id AND ib."isPaid" = true)
+            )
           )
         ORDER BY vc."createdAt" ASC
         LIMIT 1
@@ -1563,8 +1571,9 @@ class CredentialService {
    * Idempotent re-claim: Also allows claiming VCs stuck in PROCESSING
    * for more than 5 minutes to handle network failures/crashes
    *
-   * NEW: Only claims VCs where payment is confirmed (ItemBlockchain.isPaid = true)
-   * VCResponse.order_id links to ItemBlockchain.id for payment tracking
+   * Checks:
+   * 1. claimable = true (set by payment notification after successful payment)
+   * 2. ItemBlockchain.isPaid = true (legacy check, kept for backward compatibility)
    */
   async claimVCsBatch(holderDid: string, limit: number = 10) {
     logger.info(
@@ -1576,7 +1585,8 @@ class CredentialService {
 
     // Use Prisma's raw query for atomic batch UPDATE...RETURNING
     // Includes PENDING VCs AND stuck PROCESSING VCs (>5 min timeout)
-    // NEW: Added join with ItemBlockchain to check isPaid = true
+    // Checks claimable flag AND ItemBlockchain.isPaid for payment verification
+    // Note: Using subqueries instead of LEFT JOIN to avoid FOR UPDATE limitation
     const result = await this.db.$queryRaw<any[]>`
       UPDATE "VCResponse"
       SET status = 'PROCESSING'::"VCResponseStatus",
@@ -1585,7 +1595,6 @@ class CredentialService {
       WHERE id IN (
         SELECT vc.id
         FROM "VCResponse" vc
-        LEFT JOIN "ItemBlockchain" ib ON vc.order_id = ib.id
         WHERE vc.holder_did = ${holderDid}
           AND vc."deletedAt" IS NULL
           AND (
@@ -1596,11 +1605,17 @@ class CredentialService {
             )
           )
           AND (
-            -- Allow claim if:
-            -- 1. No ItemBlockchain link (legacy data or free credentials)
-            ib.id IS NULL
-            -- 2. Or ItemBlockchain exists and is paid
-            OR ib."isPaid" = true
+            -- Primary check - claimable flag must be true
+            vc.claimable = true
+            -- OR legacy check for backward compatibility:
+            OR (
+              -- 1. No order_id link (legacy data or free credentials)
+              vc.order_id IS NULL
+              -- 2. Or no ItemBlockchain record exists for this order_id
+              OR NOT EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id)
+              -- 3. Or ItemBlockchain exists and is paid
+              OR EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id AND ib."isPaid" = true)
+            )
           )
         ORDER BY vc."createdAt" ASC
         LIMIT ${safeLimit}
@@ -2552,25 +2567,40 @@ class CredentialService {
     // Gunakan batas aman yang sama
     const safeLimit = Math.min(Math.max(limit, 1), 100);
 
-    // Gunakan kueri raw, GANTI "VCResponse" menjadi "VCinitiatedByIssuer"
+    // Gunakan kueri raw untuk VCinitiatedByIssuer
+    // Checks claimable flag for payment verification
+    // Note: Using subqueries instead of LEFT JOIN to avoid FOR UPDATE limitation
     const result = await this.db.$queryRaw<any[]>`
       UPDATE "VCinitiatedByIssuer"
       SET status = 'PROCESSING'::"VCResponseStatus",
           processing_at = NOW(),
           "updatedAt" = NOW()
       WHERE id IN (
-        SELECT id
-        FROM "VCinitiatedByIssuer"
-        WHERE holder_did = ${holderDid}
-          AND "deletedAt" IS NULL
+        SELECT vc.id
+        FROM "VCinitiatedByIssuer" vc
+        WHERE vc.holder_did = ${holderDid}
+          AND vc."deletedAt" IS NULL
           AND (
-            status = 'PENDING'::"VCResponseStatus"
+            vc.status = 'PENDING'::"VCResponseStatus"
             OR (
-              status = 'PROCESSING'::"VCResponseStatus"
-              AND processing_at < NOW() - INTERVAL '5 minutes'
+              vc.status = 'PROCESSING'::"VCResponseStatus"
+              AND vc.processing_at < NOW() - INTERVAL '5 minutes'
             )
           )
-        ORDER BY "createdAt" ASC
+          AND (
+            -- Primary check - claimable flag must be true
+            vc.claimable = true
+            -- OR legacy check for backward compatibility:
+            OR (
+              -- 1. No order_id link (legacy data or free credentials)
+              vc.order_id IS NULL
+              -- 2. Or no ItemBlockchain record exists for this order_id
+              OR NOT EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id)
+              -- 3. Or ItemBlockchain exists and is paid
+              OR EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id AND ib."isPaid" = true)
+            )
+          )
+        ORDER BY vc."createdAt" ASC
         LIMIT ${safeLimit}
         FOR UPDATE SKIP LOCKED
       )
@@ -2814,24 +2844,39 @@ class CredentialService {
     const combinedClaims: CombinedClaimVCDTO[] = [];
 
     // 1. Try claiming from VCResponse (holder-initiated) first
+    // Checks claimable flag for payment verification
+    // Note: Using subqueries instead of LEFT JOIN to avoid FOR UPDATE limitation
     const holderRequestVCs = await this.db.$queryRaw<any[]>`
       UPDATE "VCResponse"
       SET status = 'PROCESSING'::"VCResponseStatus",
           processing_at = NOW(),
           "updatedAt" = NOW()
       WHERE id IN (
-        SELECT id
-        FROM "VCResponse"
-        WHERE holder_did = ${holderDid}
-          AND "deletedAt" IS NULL
+        SELECT vc.id
+        FROM "VCResponse" vc
+        WHERE vc.holder_did = ${holderDid}
+          AND vc."deletedAt" IS NULL
           AND (
-            status = 'PENDING'::"VCResponseStatus"
+            vc.status = 'PENDING'::"VCResponseStatus"
             OR (
-              status = 'PROCESSING'::"VCResponseStatus"
-              AND processing_at < NOW() - INTERVAL '5 minutes'
+              vc.status = 'PROCESSING'::"VCResponseStatus"
+              AND vc.processing_at < NOW() - INTERVAL '5 minutes'
             )
           )
-        ORDER BY "createdAt" ASC
+          AND (
+            -- Primary check - claimable flag must be true
+            vc.claimable = true
+            -- OR legacy check for backward compatibility:
+            OR (
+              -- 1. No order_id link (legacy data or free credentials)
+              vc.order_id IS NULL
+              -- 2. Or no ItemBlockchain record exists for this order_id
+              OR NOT EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id)
+              -- 3. Or ItemBlockchain exists and is paid
+              OR EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id AND ib."isPaid" = true)
+            )
+          )
+        ORDER BY vc."createdAt" ASC
         LIMIT ${safeLimit}
         FOR UPDATE SKIP LOCKED
       )
@@ -2934,6 +2979,8 @@ class CredentialService {
     );
 
     // 2. Try claiming from VCinitiatedByIssuer (issuer-initiated) if limit not reached
+    // Checks claimable flag for payment verification
+    // Note: Using subqueries instead of LEFT JOIN to avoid FOR UPDATE limitation
     const remainingLimit = safeLimit - combinedClaims.length;
     if (remainingLimit > 0) {
       const issuerInitiatedVCs = await this.db.$queryRaw<any[]>`
@@ -2942,18 +2989,31 @@ class CredentialService {
             processing_at = NOW(),
             "updatedAt" = NOW()
         WHERE id IN (
-          SELECT id
-          FROM "VCinitiatedByIssuer"
-          WHERE holder_did = ${holderDid}
-            AND "deletedAt" IS NULL
+          SELECT vc.id
+          FROM "VCinitiatedByIssuer" vc
+          WHERE vc.holder_did = ${holderDid}
+            AND vc."deletedAt" IS NULL
             AND (
-              status = 'PENDING'::"VCResponseStatus"
+              vc.status = 'PENDING'::"VCResponseStatus"
               OR (
-                status = 'PROCESSING'::"VCResponseStatus"
-                AND processing_at < NOW() - INTERVAL '5 minutes'
+                vc.status = 'PROCESSING'::"VCResponseStatus"
+                AND vc.processing_at < NOW() - INTERVAL '5 minutes'
               )
             )
-          ORDER BY "createdAt" ASC
+            AND (
+              -- Primary check - claimable flag must be true
+              vc.claimable = true
+              -- OR legacy check for backward compatibility:
+              OR (
+                -- 1. No order_id link (legacy data or free credentials)
+                vc.order_id IS NULL
+                -- 2. Or no ItemBlockchain record exists for this order_id
+                OR NOT EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id)
+                -- 3. Or ItemBlockchain exists and is paid
+                OR EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id AND ib."isPaid" = true)
+              )
+            )
+          ORDER BY vc."createdAt" ASC
           LIMIT ${remainingLimit}
           FOR UPDATE SKIP LOCKED
         )

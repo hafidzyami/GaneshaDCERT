@@ -2,6 +2,16 @@ import { PrismaClient } from "@prisma/client";
 import logger from "../../config/logger";
 
 /**
+ * Check if a string is a keccak256 hash (0x + 64 hex characters)
+ * Indexed strings in Solidity are hashed with keccak256
+ */
+function isKeccak256Hash(value: string): boolean {
+  if (!value || typeof value !== 'string') return false;
+  // keccak256 hash format: 0x + 64 hex characters = 66 total length
+  return /^0x[a-fA-F0-9]{64}$/.test(value);
+}
+
+/**
  * Credential History Event Processor
  * Handles blockchain events from CredentialsHistoryManager contract
  * Note: Event enrichment is done in credentialsHistoryEventPublisher
@@ -36,6 +46,25 @@ class CredentialHistoryEventProcessor {
       vcID: eventData.vcID,
       newVCID: eventData.newVCID,
     });
+
+    // Validate that critical fields are not keccak256 hashes
+    if (isKeccak256Hash(eventData.id)) {
+      const errorMsg = `CRITICAL: Cannot save credential history - id is still a keccak256 hash: ${eventData.id}. Enrichment failed.`;
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    if (isKeccak256Hash(eventData.issuerDID)) {
+      const errorMsg = `CRITICAL: Cannot save credential history - issuerDID is still a keccak256 hash: ${eventData.issuerDID}. Enrichment failed.`;
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    if (isKeccak256Hash(eventData.holderDID)) {
+      const errorMsg = `CRITICAL: Cannot save credential history - holderDID is still a keccak256 hash: ${eventData.holderDID}. Enrichment failed.`;
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
 
     try {
       // Map status number to enum
@@ -109,6 +138,13 @@ class CredentialHistoryEventProcessor {
       newStatus: eventData.newStatus,
     });
 
+    // Validate that id is not a keccak256 hash
+    if (isKeccak256Hash(eventData.id)) {
+      const errorMsg = `CRITICAL: Cannot update credential history status - id is still a keccak256 hash: ${eventData.id}. Enrichment failed.`;
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+
     try {
       // Map status number to enum
       const statusMap: {
@@ -165,6 +201,13 @@ class CredentialHistoryEventProcessor {
       holderDID: eventData.holderDID,
     });
 
+    // Validate that id is not a keccak256 hash
+    if (isKeccak256Hash(eventData.id)) {
+      const errorMsg = `CRITICAL: Cannot approve credential history - id is still a keccak256 hash: ${eventData.id}. Enrichment failed.`;
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+
     try {
       // Update status to APPROVED
       const result = await this.prisma.credentialHistoryBlockchain.update({
@@ -205,6 +248,13 @@ class CredentialHistoryEventProcessor {
       issuerDID: eventData.issuerDID,
       holderDID: eventData.holderDID,
     });
+
+    // Validate that id is not a keccak256 hash
+    if (isKeccak256Hash(eventData.id)) {
+      const errorMsg = `CRITICAL: Cannot reject credential history - id is still a keccak256 hash: ${eventData.id}. Enrichment failed.`;
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
 
     try {
       // Update status to REJECTED

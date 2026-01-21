@@ -5,6 +5,37 @@ import logger from "../config/logger";
 import CredentialHistoryEventProcessor from "./processors/credentialHistoryEventProcessor";
 
 /**
+ * Helper function to extract string value from indexed event parameter
+ * Indexed strings in Solidity events are hashed and returned as { hash: "0x...", _isIndexed: true }
+ * This function extracts the hash or returns the original value if not indexed
+ */
+function extractIndexedString(arg: any): string {
+  if (arg && typeof arg === 'object') {
+    // Check if it's an indexed string (ethers.js Indexed object)
+    if (arg.hash && arg._isIndexed) {
+      return String(arg.hash);
+    }
+    // Check for toHexString method (some ethers objects)
+    if (typeof arg.toHexString === 'function') {
+      return arg.toHexString();
+    }
+    // Fallback: try to stringify
+    return String(arg);
+  }
+  return String(arg);
+}
+
+/**
+ * Check if a string is a keccak256 hash (0x + 64 hex characters)
+ * Indexed strings in Solidity are hashed with keccak256
+ */
+function isKeccak256Hash(value: string): boolean {
+  if (!value || typeof value !== 'string') return false;
+  // keccak256 hash format: 0x + 64 hex characters = 66 total length
+  return /^0x[a-fA-F0-9]{64}$/.test(value);
+}
+
+/**
  * CredentialsHistory Blockchain Event Publisher
  * Listens to events from CredentialsHistoryManager contract and syncs to database
  */
@@ -180,14 +211,89 @@ class CredentialsHistoryEventPublisher {
       logger.warn(
         `[CredentialsHistory] No enrichment pattern for ${eventType} with function ${decodedData.name}`
       );
-      return eventData;
+      return await this.validateAndFixEnrichedData(eventType, eventData);
     } catch (error) {
       logger.error(
         `[CredentialsHistory] Error enriching event data from transaction:`,
         error
       );
-      return eventData; // Return original data on error
+      // Try to validate and fix as fallback
+      return await this.validateAndFixEnrichedData(eventType, eventData);
     }
+  }
+
+  /**
+   * Validate enriched data and fix any remaining hash values
+   * Critical fields like id, issuerDID, holderDID should not be keccak256 hashes
+   */
+  private async validateAndFixEnrichedData(
+    eventType: string,
+    eventData: any
+  ): Promise<any> {
+    const fixedData = { ...eventData };
+    let needsFix = false;
+
+    // Check if id is still a hash
+    if (isKeccak256Hash(fixedData.id)) {
+      logger.warn(`[CredentialsHistory] WARNING: id is still a keccak256 hash after enrichment: ${fixedData.id}`);
+      needsFix = true;
+    }
+
+    // Check if issuerDID is still a hash
+    if (fixedData.issuerDID && isKeccak256Hash(fixedData.issuerDID)) {
+      logger.warn(`[CredentialsHistory] WARNING: issuerDID is still a keccak256 hash after enrichment: ${fixedData.issuerDID}`);
+      needsFix = true;
+
+      // Try to fix issuerDID by querying blockchain if we have a valid id
+      if (!isKeccak256Hash(fixedData.id)) {
+        try {
+          const historyData = await this.contract.getCredentialHistory(fixedData.id);
+          const realIssuerDID = String(historyData.issuerDID);
+
+          if (!isKeccak256Hash(realIssuerDID)) {
+            logger.info(`[CredentialsHistory] Fixed issuerDID from blockchain: ${realIssuerDID}`);
+            fixedData.issuerDID = realIssuerDID;
+          }
+        } catch (error) {
+          logger.error(`[CredentialsHistory] Failed to fix issuerDID from blockchain:`, error);
+        }
+      }
+    }
+
+    // Check if holderDID is still a hash
+    if (fixedData.holderDID && isKeccak256Hash(fixedData.holderDID)) {
+      logger.warn(`[CredentialsHistory] WARNING: holderDID is still a keccak256 hash after enrichment: ${fixedData.holderDID}`);
+      needsFix = true;
+
+      // Try to fix holderDID by querying blockchain if we have a valid id
+      if (!isKeccak256Hash(fixedData.id)) {
+        try {
+          const historyData = await this.contract.getCredentialHistory(fixedData.id);
+          const realHolderDID = String(historyData.holderDID);
+
+          if (!isKeccak256Hash(realHolderDID)) {
+            logger.info(`[CredentialsHistory] Fixed holderDID from blockchain: ${realHolderDID}`);
+            fixedData.holderDID = realHolderDID;
+          }
+        } catch (error) {
+          logger.error(`[CredentialsHistory] Failed to fix holderDID from blockchain:`, error);
+        }
+      }
+    }
+
+    if (needsFix) {
+      logger.warn(`[CredentialsHistory] Event data validation found hash values that could not be resolved:`, {
+        eventType,
+        id: fixedData.id,
+        issuerDID: fixedData.issuerDID,
+        holderDID: fixedData.holderDID,
+        idIsHash: isKeccak256Hash(fixedData.id),
+        issuerDIDIsHash: fixedData.issuerDID ? isKeccak256Hash(fixedData.issuerDID) : false,
+        holderDIDIsHash: fixedData.holderDID ? isKeccak256Hash(fixedData.holderDID) : false
+      });
+    }
+
+    return fixedData;
   }
 
   /**
@@ -423,6 +529,8 @@ class CredentialsHistoryEventPublisher {
 
   /**
    * Listen to real-time events
+   * Note: Indexed string parameters come as { hash: "0x...", _isIndexed: true } from ethers.js
+   * We extract the hash here, then enrich with real values from transaction data
    */
   private listenToRealtimeEvents(): void {
     logger.info("[CredentialsHistory] Starting real-time event listeners...");
@@ -431,13 +539,13 @@ class CredentialsHistoryEventPublisher {
       try {
         const eventLog = event.log as ethers.EventLog;
         const eventData = {
-          id: id,                    // indexed - will be hash, enriched from tx
-          issuerDID: issuerDID,      // indexed - will be hash, enriched from tx
-          holderDID: holderDID,      // indexed - will be hash, enriched from tx
-          historyType: String(historyType),
-          status: Number(status),
-          vcID: String(vcID),
-          newVCID: String(newVCID),
+          id: extractIndexedString(id),              // indexed string - extract hash
+          issuerDID: extractIndexedString(issuerDID), // indexed string - extract hash
+          holderDID: extractIndexedString(holderDID), // indexed string - extract hash
+          historyType: String(historyType),          // not indexed
+          status: Number(status),                    // not indexed
+          vcID: String(vcID),                        // not indexed
+          newVCID: String(newVCID),                  // not indexed
           blockNumber: Number(eventLog.blockNumber),
           transactionHash: eventLog.transactionHash,
         };
@@ -451,9 +559,9 @@ class CredentialsHistoryEventPublisher {
       try {
         const eventLog = event.log as ethers.EventLog;
         const eventData = {
-          id: id,                    // indexed - will be hash, enriched from tx
-          oldStatus: Number(oldStatus),
-          newStatus: Number(newStatus),
+          id: extractIndexedString(id),              // indexed string - extract hash
+          oldStatus: Number(oldStatus),              // not indexed
+          newStatus: Number(newStatus),              // not indexed
           blockNumber: Number(eventLog.blockNumber),
           transactionHash: eventLog.transactionHash,
         };
@@ -467,9 +575,9 @@ class CredentialsHistoryEventPublisher {
       try {
         const eventLog = event.log as ethers.EventLog;
         const eventData = {
-          id: id,                    // indexed - will be hash, enriched from tx
-          issuerDID: issuerDID,      // indexed - will be hash, enriched from tx
-          holderDID: holderDID,      // indexed - will be hash, enriched from tx
+          id: extractIndexedString(id),              // indexed string - extract hash
+          issuerDID: extractIndexedString(issuerDID), // indexed string - extract hash
+          holderDID: extractIndexedString(holderDID), // indexed string - extract hash
           blockNumber: Number(eventLog.blockNumber),
           transactionHash: eventLog.transactionHash,
         };
@@ -483,9 +591,9 @@ class CredentialsHistoryEventPublisher {
       try {
         const eventLog = event.log as ethers.EventLog;
         const eventData = {
-          id: id,                    // indexed - will be hash, enriched from tx
-          issuerDID: issuerDID,      // indexed - will be hash, enriched from tx
-          holderDID: holderDID,      // indexed - will be hash, enriched from tx
+          id: extractIndexedString(id),              // indexed string - extract hash
+          issuerDID: extractIndexedString(issuerDID), // indexed string - extract hash
+          holderDID: extractIndexedString(holderDID), // indexed string - extract hash
           blockNumber: Number(eventLog.blockNumber),
           transactionHash: eventLog.transactionHash,
         };
@@ -560,7 +668,8 @@ class CredentialsHistoryEventPublisher {
 
   /**
    * Extract event data based on event type
-   * Note: Indexed strings will be hashed - enrichment happens later via enrichEventDataFromTransaction
+   * Note: Indexed string parameters come as { hash, _isIndexed } - use extractIndexedString
+   * Enrichment happens later via enrichEventDataFromTransaction
    */
   private extractEventData(eventType: string, event: ethers.EventLog): any {
     const baseData = {
@@ -570,38 +679,42 @@ class CredentialsHistoryEventPublisher {
 
     switch (eventType) {
       case "CredentialHistoryCreated":
+        // event CredentialHistoryCreated(string indexed id, string indexed issuerDID, string indexed holderDID, string historyType, uint8 status, string vcID, string newVCID)
         return {
-          id: String(event.args[0]),          // indexed
-          issuerDID: String(event.args[1]),   // indexed
-          holderDID: String(event.args[2]),   // indexed
-          historyType: String(event.args[3]),
-          status: Number(event.args[4]),
-          vcID: String(event.args[5]),
-          newVCID: String(event.args[6]),
+          id: extractIndexedString(event.args[0]),        // indexed string
+          issuerDID: extractIndexedString(event.args[1]), // indexed string
+          holderDID: extractIndexedString(event.args[2]), // indexed string
+          historyType: String(event.args[3]),             // not indexed
+          status: Number(event.args[4]),                  // not indexed
+          vcID: String(event.args[5]),                    // not indexed
+          newVCID: String(event.args[6]),                 // not indexed
           ...baseData,
         };
 
       case "CredentialHistoryStatusChanged":
+        // event CredentialHistoryStatusChanged(string indexed id, uint8 oldStatus, uint8 newStatus)
         return {
-          id: String(event.args[0]),          // indexed
-          oldStatus: Number(event.args[1]),
-          newStatus: Number(event.args[2]),
+          id: extractIndexedString(event.args[0]),        // indexed string
+          oldStatus: Number(event.args[1]),               // not indexed
+          newStatus: Number(event.args[2]),               // not indexed
           ...baseData,
         };
 
       case "CredentialHistoryApproved":
+        // event CredentialHistoryApproved(string indexed id, string indexed issuerDID, string indexed holderDID)
         return {
-          id: String(event.args[0]),          // indexed
-          issuerDID: String(event.args[1]),   // indexed
-          holderDID: String(event.args[2]),   // indexed
+          id: extractIndexedString(event.args[0]),        // indexed string
+          issuerDID: extractIndexedString(event.args[1]), // indexed string
+          holderDID: extractIndexedString(event.args[2]), // indexed string
           ...baseData,
         };
 
       case "CredentialHistoryRejected":
+        // event CredentialHistoryRejected(string indexed id, string indexed issuerDID, string indexed holderDID)
         return {
-          id: String(event.args[0]),          // indexed
-          issuerDID: String(event.args[1]),   // indexed
-          holderDID: String(event.args[2]),   // indexed
+          id: extractIndexedString(event.args[0]),        // indexed string
+          issuerDID: extractIndexedString(event.args[1]), // indexed string
+          holderDID: extractIndexedString(event.args[2]), // indexed string
           ...baseData,
         };
 

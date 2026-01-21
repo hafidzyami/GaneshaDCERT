@@ -3,6 +3,16 @@ import logger from "../../config/logger";
 import DIDBlockchainService from "../blockchain/didBlockchain.service";
 
 /**
+ * Check if a string is a keccak256 hash (0x + 64 hex characters)
+ * Indexed strings in Solidity are hashed with keccak256
+ */
+function isKeccak256Hash(value: string): boolean {
+  if (!value || typeof value !== 'string') return false;
+  // keccak256 hash format: 0x + 64 hex characters = 66 total length
+  return /^0x[a-fA-F0-9]{64}$/.test(value);
+}
+
+/**
  * Schema Event Processor
  * Handles blockchain events related to VC Schemas
  */
@@ -36,6 +46,19 @@ class SchemaEventProcessor {
       timestamp: eventData.timestamp,
       schemaLength: eventData.schema?.length
     });
+
+    // Validate that critical fields are not keccak256 hashes
+    if (isKeccak256Hash(eventData.id)) {
+      const errorMsg = `CRITICAL: Cannot save schema - id is still a keccak256 hash: ${eventData.id}. Enrichment failed.`;
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    if (isKeccak256Hash(eventData.issuerDID)) {
+      const errorMsg = `CRITICAL: Cannot save schema - issuerDID is still a keccak256 hash: ${eventData.issuerDID}. Enrichment failed.`;
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
 
     try {
       // Parse schema JSON
@@ -168,6 +191,19 @@ class SchemaEventProcessor {
       `Processing SchemaUpdated: ${eventData.id} v${eventData.oldVersion} -> v${eventData.newVersion}`
     );
 
+    // Validate that critical fields are not keccak256 hashes
+    if (isKeccak256Hash(eventData.id)) {
+      const errorMsg = `CRITICAL: Cannot update schema - id is still a keccak256 hash: ${eventData.id}. Enrichment failed.`;
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    if (isKeccak256Hash(eventData.issuerDID)) {
+      const errorMsg = `CRITICAL: Cannot update schema - issuerDID is still a keccak256 hash: ${eventData.issuerDID}. Enrichment failed.`;
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+
     try {
       // Get the schema name from old version
       const oldSchema = await this.prisma.vCSchema.findUnique({
@@ -280,6 +316,13 @@ class SchemaEventProcessor {
       `Processing SchemaDeactivated: ${eventData.id} v${eventData.version}`
     );
 
+    // Validate that id is not a keccak256 hash (indexed parameter)
+    if (isKeccak256Hash(eventData.id)) {
+      const errorMsg = `CRITICAL: Cannot deactivate schema - id is still a keccak256 hash: ${eventData.id}. Enrichment failed.`;
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+
     try {
       // Update isActive to false
       const result = await this.prisma.vCSchema.updateMany({
@@ -320,6 +363,13 @@ class SchemaEventProcessor {
     logger.info(
       `Processing SchemaReactivated: ${eventData.id} v${eventData.version}`
     );
+
+    // Validate that id is not a keccak256 hash (indexed parameter)
+    if (isKeccak256Hash(eventData.id)) {
+      const errorMsg = `CRITICAL: Cannot reactivate schema - id is still a keccak256 hash: ${eventData.id}. Enrichment failed.`;
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
 
     try {
       // Update isActive to true
