@@ -889,11 +889,11 @@ class SchemaService {
     const result = await prisma.vCSchemaPrice.updateMany({
       where: {
         schemaId: params.schemaId,
+        version: params.version,
       },
       data: {
         price: params.price,
         currency: params.currency,
-        version: params.version,
       },
     });
     if (result.count === 0) {
