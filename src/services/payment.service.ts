@@ -307,12 +307,40 @@ class PaymentService {
                         requestDate = request?.createdAt;
                     }
 
+                    // Parse vcID to get schemaId and version (format: schema_id:version:holder_did:timestamp)
+                    let currency = 'IDR'; // Default currency
+                    const vcIdParts = item.vcID.split(':');
+                    if (vcIdParts.length >= 2) {
+                        const schemaId = vcIdParts[0];
+                        const version = parseInt(vcIdParts[1], 10);
+
+                        if (schemaId && !isNaN(version)) {
+                            // Get currency from VCSchemaPrice
+                            const schemaPrice = await prisma.vCSchemaPrice.findUnique({
+                                where: {
+                                    schemaId_version: {
+                                        schemaId: schemaId,
+                                        version: version,
+                                    },
+                                },
+                                select: {
+                                    currency: true,
+                                },
+                            });
+
+                            if (schemaPrice?.currency) {
+                                currency = schemaPrice.currency;
+                            }
+                        }
+                    }
+
                     return {
                         item_id: item.id,
                         vc_id: item.vcID,
                         item_type: item.itemType,
                         date: requestDate,
                         price: item.price.toString(),
+                        currency: currency,
                     };
                 })
             );

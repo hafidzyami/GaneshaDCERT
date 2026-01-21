@@ -207,9 +207,13 @@ router.post(
  *                             description: Request creation date from respective table (VCIssuanceRequest, VCRenewalRequest, or VCUpdateRequest)
  *                             example: "2024-01-15T10:30:45.123Z"
  *                           price:
- *                             type: number
+ *                             type: string
  *                             description: Price of the item
- *                             example: 50000 
+ *                             example: "50000"
+ *                           currency:
+ *                             type: string
+ *                             description: Currency code from VCSchemaPrice (e.g., IDR, USD)
+ *                             example: "IDR"
  *       400:
  *         description: Validation error
  *         content:
