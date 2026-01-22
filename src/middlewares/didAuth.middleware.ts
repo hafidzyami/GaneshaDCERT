@@ -308,8 +308,8 @@ export const verifyDIDSignature = async (
 
     logger.info(`Verifying JWT signature for DID: ${holderDID}`);
 
-    // Step 3: Get DID document to retrieve public key
-    const didDocument = await DIDService.getDIDDocument(holderDID);
+    // Step 3: Get DID document to retrieve public key (using legacy format for internal use)
+    const didDocument = await DIDService.getDIDDocumentLegacy(holderDID);
 
     // Check if DID exists
     if (!didDocument.found) {

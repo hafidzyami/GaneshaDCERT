@@ -797,7 +797,7 @@ class PresentationService {
       }
 
       // Step 2: Get issuer's public key from blockchain
-      const didDocument = await DIDService.getDIDDocument(issuerDID);
+      const didDocument = await DIDService.getDIDDocumentLegacy(issuerDID);
 
       if (!didDocument.found) {
         return {
@@ -902,7 +902,7 @@ class PresentationService {
     if (vp.proof && holderDID) {
       try {
         // Get holder's public key from blockchain
-        const didDocument = await DIDService.getDIDDocument(holderDID);
+        const didDocument = await DIDService.getDIDDocumentLegacy(holderDID);
 
         if (!didDocument.found) {
           result.vp_valid = false;

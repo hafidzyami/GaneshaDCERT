@@ -82,7 +82,7 @@ class SchemaEventProcessor {
       // Fetch issuer name from DID Document
       let issuerName: string | null = null;
       try {
-        const didDocument = await DIDBlockchainService.getDIDDocument(eventData.issuerDID);
+        const didDocument = await DIDBlockchainService.getDIDDocumentLegacy(eventData.issuerDID);
         if (didDocument.found && didDocument.details?.name) {
           issuerName = didDocument.details.name;
           logger.info(`Fetched issuer name from DID: ${issuerName}`);
@@ -242,7 +242,7 @@ class SchemaEventProcessor {
       // Fetch issuer name from DID Document
       let issuerName: string | null = null;
       try {
-        const didDocument = await DIDBlockchainService.getDIDDocument(eventData.issuerDID);
+        const didDocument = await DIDBlockchainService.getDIDDocumentLegacy(eventData.issuerDID);
         if (didDocument.found && didDocument.details?.name) {
           issuerName = didDocument.details.name;
           logger.info(`Fetched issuer name from DID: ${issuerName}`);

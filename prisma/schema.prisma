@@ -492,3 +492,62 @@ enum BlockchainTransactionType {
   UPDATE_PAYMENT_STATUS
   MARK_ITEM_AS_PAID
 }
+
+// ============================================
+// SELECTIVE DISCLOSURE (ZKP) MODELS
+// ============================================
+
+model SelectiveDisclosureRequest {
+  id                   String                       @id @default(uuid())
+  holderDID            String
+  verifierDID          String
+  verifierName         String
+  credentialTypes      String[]
+  purpose              String
+  challenge            String                       @unique
+  domain               String
+  expiresAt            DateTime
+  requestedAttributes  String?                      // JSON: RequestedAttribute[]
+  requestedPredicates  String?                      // JSON: RequestedPredicate[]
+  status               SelectiveDisclosureStatus    @default(PENDING)
+  verifyStatus         VPVerifyStatus               @default(NOT_VERIFIED)
+  vpId                 String?
+  verifiedAt           DateTime?
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
+
+  // Relations
+  vp                   SelectiveDisclosureVP?
+
+  @@index([holderDID])
+  @@index([verifierDID])
+  @@index([status])
+  @@index([challenge])
+  @@index([expiresAt])
+}
+
+model SelectiveDisclosureVP {
+  id                  String                       @id @default(uuid())
+  requestId           String                       @unique
+  holderDID           String
+  verifierDID         String
+  vpData              String                       // JSON: SelectiveDisclosureVP
+  revealedAttributes  String?                      // JSON: RevealedAttribute[]
+  predicateResults    String?                      // JSON: PredicateProofResult[]
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+
+  // Relations
+  request             SelectiveDisclosureRequest   @relation(fields: [requestId], references: [id])
+
+  @@index([holderDID])
+  @@index([verifierDID])
+  @@index([requestId])
+}
+
+enum SelectiveDisclosureStatus {
+  PENDING
+  ACCEPT
+  DECLINE
+  EXPIRED
+}

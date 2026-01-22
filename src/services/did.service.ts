@@ -5,6 +5,7 @@ import { PrismaClient, RequestStatus } from "@prisma/client";
 import { prisma } from "../config/database";
 import { logger } from "../config";
 import { encryptWithPublicKey } from "../utils/encryptUtil";
+import { DIDResolutionResult } from "../types";
 
 /**
  * DID Service with Dependency Injection
@@ -237,8 +238,8 @@ class DIDService {
       }
 
       try {
-        // Get issuer's public key from blockchain
-        const issuerDIDDocument = await this.blockchainService.getDIDDocument(
+        // Get issuer's public key from blockchain (using legacy format for internal use)
+        const issuerDIDDocument = await this.blockchainService.getDIDDocumentLegacy(
           vc.issuer_did
         );
 
@@ -307,11 +308,21 @@ class DIDService {
   }
 
   /**
-   * Get DID Document
-   * Returns 200 with found status instead of throwing NotFoundError
+   * Get DID Document (W3C Compliant)
+   * Returns W3C DID Core Specification compliant DID Resolution Result
    */
-  async getDIDDocument(did: string) {
-    const document = await this.blockchainService.getDIDDocument(did);
+  async getDIDDocument(did: string): Promise<DIDResolutionResult> {
+    const result = await this.blockchainService.getDIDDocument(did);
+    return result;
+  }
+
+  /**
+   * Get DID Document Legacy Format
+   * Returns legacy format for backward compatibility
+   * @deprecated Use getDIDDocument for W3C-compliant format
+   */
+  async getDIDDocumentLegacy(did: string) {
+    const document = await this.blockchainService.getDIDDocumentLegacy(did);
 
     // If DID not found, return the error response with 200 status
     if (!document.found) {

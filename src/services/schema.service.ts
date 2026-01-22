@@ -115,7 +115,7 @@ class SchemaService {
         if (!schema.issuer_name) {
           try {
             // Get DID document from blockchain
-            const didDocument = await DIDBlockchainService.getDIDDocument(
+            const didDocument = await DIDBlockchainService.getDIDDocumentLegacy(
               schema.issuer_did
             );
 

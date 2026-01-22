@@ -2,6 +2,14 @@ import { ethers, TransactionReceipt } from "ethers";
 import DIDBlockchainConfig from "../../config/didblockchain";
 import { BlockchainError, NotFoundError } from "../../utils/errors/AppError";
 import logger from "../../config/logger";
+import {
+  DIDDocument,
+  DIDDocumentMetadata,
+  DIDResolutionResult,
+  VerificationMethod,
+  ServiceEndpoint,
+  DID_CONTEXT,
+} from "../../types";
 
 /**
  * Blockchain Service with Dependency Injection
@@ -227,10 +235,11 @@ class DIDBlockchainService {
   }
 
   /**
-   * Get DID Document
+   * Get DID Document (Legacy Format)
    * Returns object with found status instead of throwing NotFoundError
+   * @deprecated Use getDIDDocumentW3C for W3C-compliant format
    */
-  async getDIDDocument(did: string): Promise<any> {
+  async getDIDDocumentLegacy(did: string): Promise<any> {
     try {
       const isRegistered = await this.isDIDRegistered(did);
 
@@ -270,6 +279,114 @@ class DIDBlockchainService {
         keyId: keyId,
         [keyId]: publicKey,
         details: jsonDetails,
+      };
+    } catch (error: any) {
+      logger.error("Failed to get DID document:", error);
+      throw new BlockchainError(`Failed to get DID document: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get DID Document (W3C Compliant Format)
+   * Returns W3C DID Core Specification compliant DID Document
+   * https://www.w3.org/TR/did-core/
+   */
+  async getDIDDocument(did: string): Promise<DIDResolutionResult> {
+    try {
+      const isRegistered = await this.isDIDRegistered(did);
+      const retrievedAt = new Date().toISOString();
+
+      if (!isRegistered) {
+        logger.warn(`DID not found on blockchain: ${did}`);
+        return {
+          didDocument: null,
+          didDocumentMetadata: {
+            deactivated: false,
+          },
+          didResolutionMetadata: {
+            error: "notFound",
+            retrieved: retrievedAt,
+          },
+        };
+      }
+
+      const document = await this.contract.getDIDDocument(did);
+      const keyId = await this.contract.getActiveKeyId(did);
+      const publicKey = await this.getDIDKey(did, keyId);
+
+      // Determine status and role
+      const isDeactivated = document[0] == 1;
+      const isInstitutional = document[1] == 2;
+
+      // Build verification method ID
+      const verificationMethodId = `${did}${keyId}`;
+
+      // Build verification method
+      const verificationMethod: VerificationMethod = {
+        id: verificationMethodId,
+        type: "EcdsaSecp256k1VerificationKey2019",
+        controller: did,
+        publicKeyHex: publicKey,
+      };
+
+      // Build base DID Document
+      const didDocument: DIDDocument = {
+        "@context": [
+          DID_CONTEXT.W3C_DID_V1_1,
+          DID_CONTEXT.SECP256K1_2019,
+        ],
+        id: did,
+        controller: did,
+        verificationMethod: [verificationMethod],
+        authentication: [verificationMethodId],
+        assertionMethod: [verificationMethodId],
+      };
+
+      // Add institutional details as service endpoints if available
+      if (isInstitutional) {
+        const institutionalDetails = await this.contract.getInstitutionDetails(did);
+        if (institutionalDetails && institutionalDetails.length > 1) {
+          const services: ServiceEndpoint[] = [];
+
+          // Add institution profile service
+          services.push({
+            id: `${did}#institution-profile`,
+            type: "InstitutionProfile",
+            serviceEndpoint: {
+              name: institutionalDetails[2],
+              email: institutionalDetails[1],
+              phone: institutionalDetails[3],
+              country: institutionalDetails[4],
+              website: institutionalDetails[5],
+              address: institutionalDetails[6],
+            },
+          });
+
+          // Add website as LinkedDomains service if available
+          if (institutionalDetails[5]) {
+            services.push({
+              id: `${did}#linked-domain`,
+              type: "LinkedDomains",
+              serviceEndpoint: institutionalDetails[5],
+            });
+          }
+
+          didDocument.service = services;
+        }
+      }
+
+      // Build metadata
+      const didDocumentMetadata: DIDDocumentMetadata = {
+        deactivated: isDeactivated,
+      };
+
+      return {
+        didDocument,
+        didDocumentMetadata,
+        didResolutionMetadata: {
+          contentType: "application/did+ld+json",
+          retrieved: retrievedAt,
+        },
       };
     } catch (error: any) {
       logger.error("Failed to get DID document:", error);

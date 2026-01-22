@@ -147,8 +147,8 @@ export const deleteDIDByAdmin = asyncHandler(
 );
 
 /**
- * Get DID Document Controller
- * Returns 200 even if DID not found
+ * Get DID Document Controller (W3C Compliant)
+ * Returns W3C DID Core Specification compliant DID Resolution Result
  */
 export const getDIDDocument = asyncHandler(
   async (req: RequestWithInstitution, res: Response) => {
@@ -162,21 +162,25 @@ export const getDIDDocument = asyncHandler(
     const result = await DIDService.getDIDDocument(did);
 
     // Handle bigint serialization
-    const sanitizedDocument = JSON.parse(
+    const sanitizedResult = JSON.parse(
       JSON.stringify(result, (key, value) =>
         typeof value === "bigint" ? value.toString() : value
       )
     );
 
-    // Return 200 with appropriate message
-    if (!sanitizedDocument.found) {
+    // Check if DID was found
+    if (sanitizedResult.didResolutionMetadata?.error === "notFound") {
       return ResponseHelper.success(
         res,
-        sanitizedDocument,
-        sanitizedDocument.message
+        sanitizedResult,
+        "DID not found on blockchain"
       );
     }
 
-    return ResponseHelper.success(res, sanitizedDocument);
+    return ResponseHelper.success(
+      res,
+      sanitizedResult,
+      "DID document retrieved successfully"
+    );
   }
 );
