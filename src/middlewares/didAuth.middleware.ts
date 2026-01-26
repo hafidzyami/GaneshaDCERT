@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { HTTP_STATUS } from "../constants";
 import { logger } from "../config";
+import { prisma } from "../config/database";
 import DIDService from "../services/did.service";
 import * as crypto from "crypto";
 
@@ -307,8 +308,8 @@ export const verifyDIDSignature = async (
 
     logger.info(`Verifying JWT signature for DID: ${holderDID}`);
 
-    // Step 3: Get DID document to retrieve public key
-    const didDocument = await DIDService.getDIDDocument(holderDID);
+    // Step 3: Get DID document to retrieve public key (using legacy format for internal use)
+    const didDocument = await DIDService.getDIDDocumentLegacy(holderDID);
 
     // Check if DID exists
     if (!didDocument.found) {
@@ -569,6 +570,29 @@ export const verifyDIDSignature = async (
       req.holderPublicKey = publicKeyHex;
       req.holderRole = payload.role;
       req.tokenPayload = payload;
+
+      // Update lastActive for Institution if DID belongs to an institution
+      try {
+        const institution = await prisma.institution.findUnique({
+          where: { did: holderDID },
+        });
+
+        if (institution) {
+          await prisma.institution.update({
+            where: { did: holderDID },
+            data: { lastActive: new Date() },
+          });
+          logger.debug(
+            `Updated lastActive for institution: ${institution.name} (${holderDID})`
+          );
+        }
+      } catch (updateError) {
+        // Log error but don't fail the authentication
+        logger.warn(
+          `Failed to update lastActive for DID ${holderDID}:`,
+          updateError
+        );
+      }
 
       next();
     } catch (error) {

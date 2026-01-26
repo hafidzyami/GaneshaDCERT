@@ -11,3 +11,4 @@ export * from './schema.controller';
 export * from './presentation.controller';
 export * from './notification.controller';
 export * from './institution.controller';
+export * from './blockchainTransaction.controller';

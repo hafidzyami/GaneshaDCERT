@@ -1,0 +1,124 @@
+{
+  "timestamp": "2025-12-03T09:26:44.921Z",
+  "summary": {
+    "total": 5,
+    "passed": 4,
+    "failed": 1
+  },
+  "results": [
+    {
+      "testName": "Data Consistency",
+      "passed": false,
+      "duration": 431,
+      "details": {
+        "totalChecked": 10,
+        "matched": 0,
+        "mismatched": 10,
+        "consistencyRate": 0,
+        "mismatches": [
+          {
+            "id": "6fd99894-75e8-42c8-9463-589a83e8257b",
+            "version": 1,
+            "error": "this.contract.getVCSchemaByVersion is not a function"
+          },
+          {
+            "id": "3526858d-efe5-42da-85f0-61ef3a4790ca",
+            "version": 1,
+            "error": "this.contract.getVCSchemaByVersion is not a function"
+          },
+          {
+            "id": "eb734141-d715-46a3-b572-cb9e911fb9c4",
+            "version": 1,
+            "error": "this.contract.getVCSchemaByVersion is not a function"
+          },
+          {
+            "id": "9781fa79-14ac-4de2-ba27-6696220b1f8b",
+            "version": 1,
+            "error": "this.contract.getVCSchemaByVersion is not a function"
+          },
+          {
+            "id": "36c18835-998c-4de6-99fc-49fa042f5438",
+            "version": 1,
+            "error": "this.contract.getVCSchemaByVersion is not a function"
+          },
+          {
+            "id": "5f9fef64-07cd-4354-b450-6d0a55a18c76",
+            "version": 1,
+            "error": "this.contract.getVCSchemaByVersion is not a function"
+          },
+          {
+            "id": "e507a627-3ce2-4e1b-884c-a4c83d7ccd8b",
+            "version": 1,
+            "error": "this.contract.getVCSchemaByVersion is not a function"
+          },
+          {
+            "id": "bc33b5cd-79da-4f4d-a65b-60a494f9d62b",
+            "version": 1,
+            "error": "this.contract.getVCSchemaByVersion is not a function"
+          },
+          {
+            "id": "6a0bd937-267f-4799-a969-050aef364d96",
+            "version": 1,
+            "error": "this.contract.getVCSchemaByVersion is not a function"
+          },
+          {
+            "id": "f66c80c0-ab42-4115-a5c2-b99f81263e09",
+            "version": 1,
+            "error": "this.contract.getVCSchemaByVersion is not a function"
+          }
+        ]
+      }
+    },
+    {
+      "testName": "Idempotency",
+      "passed": true,
+      "duration": 181,
+      "details": {
+        "duplicateCount": 0,
+        "totalEvents": 10,
+        "uniqueEvents": 10,
+        "duplicates": []
+      }
+    },
+    {
+      "testName": "Checkpoint Recovery",
+      "passed": true,
+      "duration": 151,
+      "details": {
+        "currentBlock": 155060,
+        "checkpointBlock": 155056,
+        "gap": 4,
+        "isSynced": true,
+        "rpo": 4,
+        "rpoTimeSeconds": 48,
+        "estimatedRecoverySeconds": 48
+      }
+    },
+    {
+      "testName": "Gap Detection",
+      "passed": true,
+      "duration": 62,
+      "details": {
+        "totalEventTypes": 4,
+        "avgGap": 4,
+        "maxGap": 4,
+        "largeGaps": []
+      }
+    },
+    {
+      "testName": "Data Loss",
+      "passed": true,
+      "duration": 155,
+      "details": {
+        "blockchainEvents": 0,
+        "databaseEvents": 0,
+        "difference": 0,
+        "dataLossDetected": false,
+        "blockRange": {
+          "from": 155056,
+          "to": 155060
+        }
+      }
+    }
+  ]
+}

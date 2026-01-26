@@ -11,4 +11,6 @@ export {
   iface,
 } from "./didblockchain";
 export { default as VCBlockchainConfig } from "./vcblockchain";
+export { default as CredentialsHistoryBlockchainConfig } from "./credentialsHistoryBlockchain";
+export { default as PaymentBlockchainConfig } from "./paymentBlockchain";
 export { default as logger } from "./logger";

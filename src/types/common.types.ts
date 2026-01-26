@@ -32,6 +32,8 @@ export interface HealthCheckResponse {
     database: boolean;
     didblockchain: boolean;
     vcblockchain: boolean;
+    credentialsHistoryBlockchain: boolean;
+    paymentBlockchain: boolean;
   };
 }
 

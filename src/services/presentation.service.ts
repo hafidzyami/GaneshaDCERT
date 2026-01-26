@@ -754,7 +754,9 @@ class PresentationService {
       let vcActiveOnBlockchain = false;
 
       try {
-        const vcStatus = await VCBlockchainService.getVCStatusFromBlockchain(vc.id);
+        const vcStatus = await VCBlockchainService.getVCStatusFromBlockchain(
+          vc.id
+        );
 
         if (vcStatus) {
           vcOnBlockchain = true;
@@ -763,7 +765,9 @@ class PresentationService {
           if (vcActiveOnBlockchain) {
             logger.info(`VC ${vc.id} found on blockchain and is active`);
           } else {
-            logger.warn(`VC ${vc.id} found on blockchain but is inactive/revoked`);
+            logger.warn(
+              `VC ${vc.id} found on blockchain but is inactive/revoked`
+            );
           }
         } else {
           logger.warn(`VC ${vc.id} not found on blockchain`);
@@ -793,7 +797,7 @@ class PresentationService {
       }
 
       // Step 2: Get issuer's public key from blockchain
-      const didDocument = await DIDService.getDIDDocument(issuerDID);
+      const didDocument = await DIDService.getDIDDocumentLegacy(issuerDID);
 
       if (!didDocument.found) {
         return {
@@ -898,7 +902,7 @@ class PresentationService {
     if (vp.proof && holderDID) {
       try {
         // Get holder's public key from blockchain
-        const didDocument = await DIDService.getDIDDocument(holderDID);
+        const didDocument = await DIDService.getDIDDocumentLegacy(holderDID);
 
         if (!didDocument.found) {
           result.vp_valid = false;

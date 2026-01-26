@@ -51,7 +51,7 @@ export const getHolderCredentialsFromDB = asyncHandler(
   }
 );
 
-export const processIssuanceVC = asyncHandler(
+export const approveIssuanceRequest = asyncHandler(
   async (req: Request, res: Response) => {
     // Validate request using the defined validator
     const errors = validationResult(req);
@@ -65,7 +65,7 @@ export const processIssuanceVC = asyncHandler(
 
     // Call the service method with the validated data
     // Service akan diubah di langkah berikutnya untuk menangani DTO baru
-    const result = await CredentialService.processIssuanceVC(requestData);
+    const result = await CredentialService.approveIssuanceRequest(requestData);
 
     // Send a standardized success response
     return ResponseHelper.success(res, result, result.message);
@@ -115,8 +115,7 @@ export const getCredentialRequestsByType = asyncHandler(
       holder_did as string | undefined // <-- Teruskan 'holder_did' ke service
     );
 
-    // --- PERBAIKAN DI SINI ---
-    // Gunakan 'result.data' dan 'result.message' dari service
+    // Return the full result object (contains message, count, data)
     return ResponseHelper.success(
       res,
       result,
@@ -222,8 +221,8 @@ export const requestCredentialRenewal = asyncHandler(
 
     return ResponseHelper.created(
       res,
-      result,
-      "Credential renewal request created successfully"
+      { new_request_id: result.new_request_id },
+      result.message
     );
   }
 );
@@ -324,7 +323,7 @@ export const revokeVC = asyncHandler(async (req: Request, res: Response) => {
   return ResponseHelper.success(res, result, result.message);
 });
 
-export const processRenewalVC = asyncHandler(
+export const approveRenewalRequest = asyncHandler(
   async (req: Request, res: Response) => {
     // Validate request body
     const errors = validationResult(req);
@@ -336,14 +335,14 @@ export const processRenewalVC = asyncHandler(
     const requestData: ProcessRenewalVCDTO = req.body;
 
     // Call the service function
-    const result = await CredentialService.processRenewalVC(requestData);
+    const result = await CredentialService.approveRenewalRequest(requestData);
 
     // Send success response
     return ResponseHelper.success(res, result, result.message);
   }
 );
 
-export const processUpdateVC = asyncHandler(
+export const approveUpdateRequest = asyncHandler(
   async (req: Request, res: Response) => {
     // Validate request body
     const errors = validationResult(req);
@@ -355,7 +354,7 @@ export const processUpdateVC = asyncHandler(
     const requestData: ProcessUpdateVCDTO = req.body;
 
     // Call the service function
-    const result = await CredentialService.processUpdateVC(requestData);
+    const result = await CredentialService.approveUpdateRequest(requestData);
 
     // Send success response
     return ResponseHelper.success(res, result, result.message);
@@ -893,11 +892,12 @@ export const updateIssuerVCData = asyncHandler(
     }
 
     const { id } = req.params;
-    const { issuer_did, encrypted_body } = req.body;
+    const { issuer_did, vc_id, encrypted_body } = req.body;
 
     const result = await CredentialService.updateIssuerVCData({
       id,
       issuer_did,
+      vc_id,
       encrypted_body,
     });
 

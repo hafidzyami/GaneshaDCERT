@@ -1,0 +1,140 @@
+import { Request, Response } from "express";
+import { validationResult } from "express-validator";
+import { PaymentService } from "../services";
+import { ValidationError } from "../utils";
+import { asyncHandler } from "../middlewares";
+import { ResponseHelper } from "../utils/helpers";
+
+/**
+ * Function to make payment transaction via DOKU API
+ */
+export const createPaymentTransaction = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { holder_did, item_ids, currency } = req.body;
+
+    const config = {
+      holder_did,
+      item_ids,
+      currency: currency || 'IDR' // Default to IDR if not provided
+    };
+
+    const result = await PaymentService.createTransaction(config);
+
+    return ResponseHelper.success(
+      res,
+      result,
+      'Payment transaction created successfully'
+    );
+  }
+);
+
+/**
+ * Get unpaid items for a holder
+ */
+export const getUnpaidItems = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { holder_did } = req.body;
+
+    const result = await PaymentService.getUnpaidItems(holder_did);
+
+    return ResponseHelper.success(
+      res,
+      result,
+      'Unpaid items retrieved successfully'
+    );
+  }
+);
+
+/**
+ * Handle DOKU VA payment notification webhook
+ * This endpoint is called by DOKU when a payment is completed
+ */
+export const handleVAPaymentNotification = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const notificationData = req.body;
+    const result = await PaymentService.handleVAPaymentNotification(notificationData);
+
+    return res.status(200).json(result);
+  }
+);
+
+/**
+ * Get order from blockchain by ID
+ */
+export const getOrderFromBlockchain = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { id } = req.params;
+
+    const result = await PaymentService.getOrderFromBlockchain(id);
+
+    return ResponseHelper.success(
+      res,
+      result,
+      'Order retrieved from blockchain successfully'
+    );
+  }
+);
+
+/**
+ * Get item from blockchain by ID
+ */
+export const getItemFromBlockchain = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { id } = req.params;
+
+    const result = await PaymentService.getItemFromBlockchain(id);
+
+    return ResponseHelper.success(
+      res,
+      result,
+      'Item retrieved from blockchain successfully'
+    );
+  }
+);
+
+/**
+ * Get payment from blockchain by ID
+ */
+export const getPaymentFromBlockchain = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { id } = req.params;
+
+    const result = await PaymentService.getPaymentFromBlockchain(id);
+
+    return ResponseHelper.success(
+      res,
+      result,
+      'Payment retrieved from blockchain successfully'
+    );
+  }
+);

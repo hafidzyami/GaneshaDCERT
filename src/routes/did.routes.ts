@@ -28,87 +28,137 @@ const router: Router = express.Router();
  * @swagger
  * components:
  *   schemas:
+ *     VerificationMethod:
+ *       type: object
+ *       description: W3C Verification Method
+ *       properties:
+ *         id:
+ *           type: string
+ *           example: "did:dcert:uBI57YIz1cgJ_iHkIYt-CDGDlU10y0khtjFH31PSP3iPN1hOEZxd3fodVKefn4eeipAyomLxY8lEl6GIZiBBEIys#key-1"
+ *           description: Verification method ID
+ *         type:
+ *           type: string
+ *           example: "EcdsaSecp256k1VerificationKey2019"
+ *           description: Verification method type
+ *         controller:
+ *           type: string
+ *           example: "did:dcert:uBI57YIz1cgJ_iHkIYt-CDGDlU10y0khtjFH31PSP3iPN1hOEZxd3fodVKefn4eeipAyomLxY8lEl6GIZiBBEIys"
+ *           description: DID controller
+ *         publicKeyHex:
+ *           type: string
+ *           pattern: '^[a-fA-F0-9]{66,130}$'
+ *           example: "044e78e5591ac4f0af85d92982cff7d00e0aad04e333063e56f1a1893507e9cc9b63a5d8948975d6483d0526940f2d82556a42353820a728f834e56fadca3a2b38"
+ *           description: Public key as hex string (NO 0x prefix)
+ *
+ *     ServiceEndpoint:
+ *       type: object
+ *       description: W3C Service Endpoint
+ *       properties:
+ *         id:
+ *           type: string
+ *           example: "did:dcert:iABCD...#institution-profile"
+ *           description: Service endpoint ID
+ *         type:
+ *           type: string
+ *           example: "InstitutionProfile"
+ *           description: Service type
+ *         serviceEndpoint:
+ *           oneOf:
+ *             - type: string
+ *             - type: object
+ *           description: Service endpoint URL or object
+ *
  *     DIDDocument:
  *       type: object
- *       description: W3C DID Document structure
+ *       description: W3C DID Core Specification compliant DID Document
  *       properties:
  *         '@context':
  *           type: array
  *           items:
  *             type: string
- *           example: ["https://www.w3.org/ns/did/v1"]
+ *           example: ["https://www.w3.org/ns/did/v1.1", "https://w3id.org/security/suites/secp256k1-2019/v1"]
  *           description: JSON-LD context
  *         id:
  *           type: string
- *           pattern: '^(?:did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})|[a-zA-Z0-9_-]{87})$'
- *           example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
- *           description: DID identifier (55 chars total - did:dcert:[i/u] + 44 identifier chars or 98 chars total - did:dcert:[i/u] + 87 identifier chars)
+ *           example: "did:dcert:uBI57YIz1cgJ_iHkIYt-CDGDlU10y0khtjFH31PSP3iPN1hOEZxd3fodVKefn4eeipAyomLxY8lEl6GIZiBBEIys"
+ *           description: DID identifier
  *         controller:
  *           type: string
- *           example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
+ *           example: "did:dcert:uBI57YIz1cgJ_iHkIYt-CDGDlU10y0khtjFH31PSP3iPN1hOEZxd3fodVKefn4eeipAyomLxY8lEl6GIZiBBEIys"
  *           description: DID controller
  *         verificationMethod:
  *           type: array
  *           items:
- *             type: object
- *             properties:
- *               id:
- *                 type: string
- *                 example: "did:dcert:iABCD...#key-1"
- *               type:
- *                 type: string
- *                 example: "EcdsaSecp256k1VerificationKey2019"
- *               controller:
- *                 type: string
- *                 example: "did:dcert:iABCD..."
- *               publicKeyHex:
- *                 type: string
- *                 pattern: '^[a-fA-F0-9]{66,130}$'
- *                 example: "04a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd"
- *                 description: Public key as hex string (NO 0x prefix)
+ *             $ref: '#/components/schemas/VerificationMethod'
+ *           description: Verification methods (public keys)
  *         authentication:
  *           type: array
  *           items:
  *             type: string
- *           example: ["did:dcert:iABCD...#key-1"]
+ *           example: ["did:dcert:uBI57YIz1cgJ_iHkIYt-CDGDlU10y0khtjFH31PSP3iPN1hOEZxd3fodVKefn4eeipAyomLxY8lEl6GIZiBBEIys#key-1"]
+ *           description: Authentication verification method references
  *         assertionMethod:
  *           type: array
  *           items:
  *             type: string
- *           example: ["did:dcert:iABCD...#key-1"]
+ *           example: ["did:dcert:uBI57YIz1cgJ_iHkIYt-CDGDlU10y0khtjFH31PSP3iPN1hOEZxd3fodVKefn4eeipAyomLxY8lEl6GIZiBBEIys#key-1"]
+ *           description: Assertion verification method references
+ *         service:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/ServiceEndpoint'
+ *           description: Service endpoints (for institutional DIDs)
+ *
+ *     DIDDocumentMetadata:
+ *       type: object
+ *       description: DID Document Metadata
+ *       properties:
  *         created:
  *           type: string
  *           format: date-time
- *           example: "2025-10-21T10:30:00Z"
+ *           description: When the DID was created
  *         updated:
  *           type: string
  *           format: date-time
- *           example: "2025-10-21T10:30:00Z"
+ *           description: When the DID was last updated
+ *         deactivated:
+ *           type: boolean
+ *           example: false
+ *           description: Whether the DID is deactivated
+ *         versionId:
+ *           type: string
+ *           description: Version identifier
  *
- *     DIDMetadata:
+ *     DIDResolutionMetadata:
  *       type: object
+ *       description: DID Resolution Metadata
  *       properties:
- *         name:
+ *         contentType:
  *           type: string
- *           example: "John Doe"
- *         email:
+ *           example: "application/did+ld+json"
+ *           description: Content type of the DID Document
+ *         error:
  *           type: string
- *           format: email
- *           example: "john.doe@example.com"
- *         phone:
+ *           enum: [notFound, invalidDid, representationNotSupported]
+ *           description: Error code if resolution failed
+ *         retrieved:
  *           type: string
- *           pattern: '^\+?[1-9]\d{1,14}$'
- *           example: "+6281234567890"
- *         country:
- *           type: string
- *           example: "Indonesia"
- *         website:
- *           type: string
- *           format: uri
- *           example: "https://example.com"
- *         address:
- *           type: string
- *           example: "Jl. Sudirman No. 1, Jakarta"
+ *           format: date-time
+ *           description: When the DID Document was retrieved
+ *
+ *     DIDResolutionResult:
+ *       type: object
+ *       description: W3C DID Resolution Result
+ *       properties:
+ *         didDocument:
+ *           oneOf:
+ *             - $ref: '#/components/schemas/DIDDocument'
+ *             - type: 'null'
+ *           description: The resolved DID Document (null if not found)
+ *         didDocumentMetadata:
+ *           $ref: '#/components/schemas/DIDDocumentMetadata'
+ *         didResolutionMetadata:
+ *           $ref: '#/components/schemas/DIDResolutionMetadata'
  */
 
 /**
@@ -517,12 +567,12 @@ router.get("/blocks", did.numberofBlocks);
  *       - Uncompressed: 130 hex characters
  *
  *       **Security Process:**
- *       1. Verify ownership using signature from old private key
+ *       1. Verify ownership using JWT token authentication
  *       2. Validate new public key format (hex only, no 0x)
  *       3. Update key on blockchain
  *       4. Update DID document
  *
- *       **Important:** Keep the old private key secure until rotation is complete.
+ *       **Important:** Authentication is handled via JWT token in Authorization header.
  *     tags:
  *       - DID Management
  *     security:
@@ -544,23 +594,12 @@ router.get("/blocks", did.numberofBlocks);
  *             type: object
  *             required:
  *               - new_public_key
- *               - signature
  *             properties:
  *               new_public_key:
  *                 type: string
  *                 pattern: '^[a-fA-F0-9]{66,130}$'
  *                 example: "04f6e5d4c3b2a19876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba98"
  *                 description: New public key hex string WITHOUT 0x prefix (66 or 130 hex chars)
- *               signature:
- *                 type: string
- *                 pattern: '^[a-fA-F0-9]+$'
- *                 example: "1234567890abcdef1234567890abcdef1234567890abcdef"
- *                 description: Signature hex string WITHOUT 0x prefix (sign with old private key)
- *               reason:
- *                 type: string
- *                 maxLength: 500
- *                 example: "Security upgrade - periodic key rotation"
- *                 description: Optional reason for key rotation
  *     responses:
  *       200:
  *         description: Key rotated successfully or DID not found
@@ -804,24 +843,31 @@ router.delete(
  * @swagger
  * /dids/{did}/document:
  *   get:
- *     summary: Get DID Document
+ *     summary: Get DID Document (W3C Compliant)
  *     description: |
- *       Retrieve the complete W3C DID Document containing all DID information, verification methods, and metadata.
+ *       Retrieve the complete W3C DID Document following the DID Core Specification.
  *
- *       **DID Format:** `did:dcert:[i/u][44 chars]` (55 chars total)
+ *       **DID Format:** `did:dcert:[i/u][44 chars]` or `did:dcert:[i/u][87 chars]`
  *       - Characters allowed: a-z, A-Z, 0-9, _ (underscore), - (hyphen)
  *
+ *       **Response Structure (W3C DID Resolution Result):**
+ *       - `didDocument`: The resolved DID Document (null if not found)
+ *       - `didDocumentMetadata`: Metadata about the DID Document
+ *       - `didResolutionMetadata`: Metadata about the resolution process
+ *
  *       **DID Document Contents:**
- *       - DID identifier
- *       - Verification methods (public keys)
- *       - Authentication methods
- *       - Assertion methods (for VCs)
- *       - Service endpoints
- *       - Created/Updated timestamps
+ *       - `@context`: JSON-LD context for semantic interoperability
+ *       - `id`: The DID identifier
+ *       - `controller`: The DID controller
+ *       - `verificationMethod`: Array of public keys
+ *       - `authentication`: References to keys for authentication
+ *       - `assertionMethod`: References to keys for VC signing
+ *       - `service`: Service endpoints (for institutional DIDs)
  *
  *       **Standards:**
- *       - Follows W3C DID Core specification
- *       - JSON-LD format with proper context
+ *       - W3C DID Core Specification v1.1
+ *       - W3C DID Resolution
+ *       - EcdsaSecp256k1VerificationKey2019 for key type
  *     tags:
  *       - DID Management
  *     parameters:
@@ -831,11 +877,11 @@ router.delete(
  *         schema:
  *           type: string
  *           pattern: '^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$'
- *         example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
- *         description: DID to get document for (55 chars total)
+ *         example: "did:dcert:uBI57YIz1cgJ_iHkIYt-CDGDlU10y0khtjFH31PSP3iPN1hOEZxd3fodVKefn4eeipAyomLxY8lEl6GIZiBBEIys"
+ *         description: DID to resolve
  *     responses:
  *       200:
- *         description: DID Document retrieved successfully or DID not found
+ *         description: DID Resolution Result
  *         content:
  *           application/json:
  *             schema:
@@ -844,52 +890,89 @@ router.delete(
  *                 success:
  *                   type: boolean
  *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "DID document retrieved successfully"
  *                 data:
- *                   oneOf:
- *                     - $ref: '#/components/schemas/DIDDocument'
- *                     - type: object
- *                       properties:
- *                         found:
- *                           type: boolean
- *                           example: false
- *                         error:
- *                           type: string
- *                           example: "Not Found"
- *                         message:
- *                           type: string
- *                           example: "DID not found on blockchain"
- *                         did:
- *                           type: string
+ *                   $ref: '#/components/schemas/DIDResolutionResult'
  *             examples:
- *               found:
- *                 summary: DID Document Found
+ *               individualDID:
+ *                 summary: Individual DID Document Found
  *                 value:
  *                   success: true
+ *                   message: "DID document retrieved successfully"
  *                   data:
- *                     found: true
- *                     message: "DID document retrieved successfully"
- *                     id: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
- *                     status: "Active"
- *                     role: "Institutional"
- *                     keyId: "#key-1"
- *                     "#key-1": "04a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd"
- *                     details:
- *                       email: "admin@ui.ac.id"
- *                       name: "Universitas Indonesia"
- *                       phone: "+6281234567890"
- *                       country: "Indonesia"
- *                       website: "https://ui.ac.id"
- *                       address: "Depok, West Java, Indonesia"
+ *                     didDocument:
+ *                       "@context":
+ *                         - "https://www.w3.org/ns/did/v1.1"
+ *                         - "https://w3id.org/security/suites/secp256k1-2019/v1"
+ *                       id: "did:dcert:uBI57YIz1cgJ_iHkIYt-CDGDlU10y0khtjFH31PSP3iPN1hOEZxd3fodVKefn4eeipAyomLxY8lEl6GIZiBBEIys"
+ *                       controller: "did:dcert:uBI57YIz1cgJ_iHkIYt-CDGDlU10y0khtjFH31PSP3iPN1hOEZxd3fodVKefn4eeipAyomLxY8lEl6GIZiBBEIys"
+ *                       verificationMethod:
+ *                         - id: "did:dcert:uBI57YIz1cgJ_iHkIYt-CDGDlU10y0khtjFH31PSP3iPN1hOEZxd3fodVKefn4eeipAyomLxY8lEl6GIZiBBEIys#key-1"
+ *                           type: "EcdsaSecp256k1VerificationKey2019"
+ *                           controller: "did:dcert:uBI57YIz1cgJ_iHkIYt-CDGDlU10y0khtjFH31PSP3iPN1hOEZxd3fodVKefn4eeipAyomLxY8lEl6GIZiBBEIys"
+ *                           publicKeyHex: "044e78e5591ac4f0af85d92982cff7d00e0aad04e333063e56f1a1893507e9cc9b63a5d8948975d6483d0526940f2d82556a42353820a728f834e56fadca3a2b38"
+ *                       authentication:
+ *                         - "did:dcert:uBI57YIz1cgJ_iHkIYt-CDGDlU10y0khtjFH31PSP3iPN1hOEZxd3fodVKefn4eeipAyomLxY8lEl6GIZiBBEIys#key-1"
+ *                       assertionMethod:
+ *                         - "did:dcert:uBI57YIz1cgJ_iHkIYt-CDGDlU10y0khtjFH31PSP3iPN1hOEZxd3fodVKefn4eeipAyomLxY8lEl6GIZiBBEIys#key-1"
+ *                     didDocumentMetadata:
+ *                       deactivated: false
+ *                     didResolutionMetadata:
+ *                       contentType: "application/did+ld+json"
+ *                       retrieved: "2026-01-22T10:30:00.000Z"
+ *               institutionalDID:
+ *                 summary: Institutional DID Document Found
+ *                 value:
+ *                   success: true
+ *                   message: "DID document retrieved successfully"
+ *                   data:
+ *                     didDocument:
+ *                       "@context":
+ *                         - "https://www.w3.org/ns/did/v1.1"
+ *                         - "https://w3id.org/security/suites/secp256k1-2019/v1"
+ *                       id: "did:dcert:iUniversityXYZ_1234567890abcdef1234567890abcd"
+ *                       controller: "did:dcert:iUniversityXYZ_1234567890abcdef1234567890abcd"
+ *                       verificationMethod:
+ *                         - id: "did:dcert:iUniversityXYZ_1234567890abcdef1234567890abcd#key-1"
+ *                           type: "EcdsaSecp256k1VerificationKey2019"
+ *                           controller: "did:dcert:iUniversityXYZ_1234567890abcdef1234567890abcd"
+ *                           publicKeyHex: "04a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd"
+ *                       authentication:
+ *                         - "did:dcert:iUniversityXYZ_1234567890abcdef1234567890abcd#key-1"
+ *                       assertionMethod:
+ *                         - "did:dcert:iUniversityXYZ_1234567890abcdef1234567890abcd#key-1"
+ *                       service:
+ *                         - id: "did:dcert:iUniversityXYZ_1234567890abcdef1234567890abcd#institution-profile"
+ *                           type: "InstitutionProfile"
+ *                           serviceEndpoint:
+ *                             name: "Universitas Indonesia"
+ *                             email: "admin@ui.ac.id"
+ *                             phone: "+6281234567890"
+ *                             country: "Indonesia"
+ *                             website: "https://ui.ac.id"
+ *                             address: "Depok, West Java, Indonesia"
+ *                         - id: "did:dcert:iUniversityXYZ_1234567890abcdef1234567890abcd#linked-domain"
+ *                           type: "LinkedDomains"
+ *                           serviceEndpoint: "https://ui.ac.id"
+ *                     didDocumentMetadata:
+ *                       deactivated: false
+ *                     didResolutionMetadata:
+ *                       contentType: "application/did+ld+json"
+ *                       retrieved: "2026-01-22T10:30:00.000Z"
  *               notFound:
  *                 summary: DID Not Found
  *                 value:
  *                   success: true
  *                   message: "DID not found on blockchain"
  *                   data:
- *                     found: false
- *                     error: "Not Found"
- *                     message: "DID not found on blockchain"
- *                     did: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
+ *                     didDocument: null
+ *                     didDocumentMetadata:
+ *                       deactivated: false
+ *                     didResolutionMetadata:
+ *                       error: "notFound"
+ *                       retrieved: "2026-01-22T10:30:00.000Z"
  *       500:
  *         description: Internal server error or blockchain failure
  */

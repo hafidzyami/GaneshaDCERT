@@ -992,6 +992,12 @@ export const updateIssuerVCDataValidator = [
     .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid issuer DID format"),
 
+  body("vc_id")
+    .optional()
+    .trim()
+    .isLength({ min: 1 })
+    .withMessage("vc_id must not be empty if provided"),
+
   body("encrypted_body")
     .trim()
     .notEmpty()

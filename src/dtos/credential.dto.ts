@@ -83,9 +83,25 @@ export interface ProcessIssuanceVCResponseDTO {
   message: string;
   request_id: string;
   status: RequestStatus;
-  vc_response_id?: string; // Only present if approved
-  transaction_hash?: string; // Blockchain transaction hash, only if approved
-  block_number?: number; // Blockchain block number, only if approved
+  stage?: "PAYMENT_PENDING" | "VC_ISSUED" | "REJECTED";
+  vc_response_id?: string; // ID of VCResponse record created during approval
+  
+  // Payment information (present when payment is required)
+  payment_info?: {
+    item_id: string;        // UUID of payment item
+    price: number;          // Amount to be paid
+    vc_id: string;          // VC ID for tracking
+    transaction_hash?: string; // Payment blockchain TX hash (legacy - only when sync)
+    blockchain_status?: string; // Blockchain transaction status (PENDING, PROCESSING, CONFIRMED, FAILED)
+    transaction_id?: string;    // Transaction ID for tracking async blockchain operations
+  };
+  
+  // VC issuance information (only after payment completed)
+  vc_info?: {
+    vc_response_id: string; // ID of VCResponse record
+    transaction_hash: string; // VC blockchain TX hash
+    block_number: number;   // VC blockchain block number
+  };
 }
 
 export interface HolderCredentialDTO {
@@ -128,9 +144,25 @@ export interface ProcessRenewalVCResponseDTO {
   message: string;
   request_id: string;
   status: RequestStatus;
-  vc_response_id?: string;
-  transaction_hash?: string;
-  block_number?: number;
+  stage?: "PAYMENT_PENDING" | "VC_RENEWED" | "REJECTED";
+  vc_response_id?: string; // ID of VCResponse record created during approval
+  
+  // Payment information (present when payment is required)
+  payment_info?: {
+    item_id: string;
+    price: number;
+    vc_id: string;
+    transaction_hash?: string; // Payment blockchain TX hash (legacy - only when sync)
+    blockchain_status?: string; // Blockchain transaction status (PENDING, PROCESSING, CONFIRMED, FAILED)
+    transaction_id?: string;    // Transaction ID for tracking async blockchain operations
+  };
+  
+  // VC renewal information (only after payment completed)
+  vc_info?: {
+    vc_response_id: string;
+    transaction_hash: string;
+    block_number: number;
+  };
 }
 
 export interface ProcessUpdateVCDTO {
@@ -151,9 +183,25 @@ export interface ProcessUpdateVCResponseDTO {
   message: string;
   request_id: string; // ID of the VCUpdateRequest processed
   status: RequestStatus; // Final status of the VCUpdateRequest
-  vc_response_id?: string; // ID of the new VCResponse record if approved
-  transaction_hash?: string; // Blockchain TX hash if approved & successful
-  block_number?: number; // Blockchain block number if approved & successful
+  stage?: "PAYMENT_PENDING" | "VC_UPDATED" | "REJECTED";
+  vc_response_id?: string; // ID of VCResponse record created during approval
+  
+  // Payment information (present when payment is required)
+  payment_info?: {
+    item_id: string;
+    price: number;
+    vc_id: string;
+    transaction_hash?: string; // Payment blockchain TX hash (legacy - only when sync)
+    blockchain_status?: string; // Blockchain transaction status (PENDING, PROCESSING, CONFIRMED, FAILED)
+    transaction_id?: string;    // Transaction ID for tracking async blockchain operations
+  };
+  
+  // VC update information (only after payment completed)
+  vc_info?: {
+    vc_response_id: string;
+    transaction_hash: string;
+    block_number: number;
+  };
 }
 
 export interface AggregatedRequestDTO {
