@@ -32,7 +32,6 @@ import {
   paymentRoutes,
   performanceRoutes,
   blockchainTransactionRoutes,
-  selectiveDisclosureRoutes,
 } from "./routes";
 
 // Schedulers
@@ -446,7 +445,6 @@ app.use("/api/v1/dids", didRoutes);
 app.use("/api/v1/schemas", schemaRoutes);
 app.use("/api/v1/credentials", credentialRoutes);
 app.use("/api/v1/presentations", presentationRoutes);
-app.use("/api/v1/presentations/selective", selectiveDisclosureRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/institutions", institutionRoutes);
 app.use("/api/v1/payment", paymentRoutes);

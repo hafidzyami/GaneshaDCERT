@@ -14,4 +14,3 @@ export { default as institutionRoutes } from "./institution.routes";
 export { default as performanceRoutes } from "./performance.routes";
 export { default as paymentRoutes } from "./payment.route";
 export { default as blockchainTransactionRoutes } from "./blockchainTransaction.routes";
-export { default as selectiveDisclosureRoutes } from "./selectiveDisclosure.routes";

@@ -1,7 +1,7 @@
 /**
- * Selective Disclosure Types for ZKP-based Verifiable Presentations
- * Uses BBS+ signatures for selective attribute disclosure
- * Based on W3C VC Data Integrity BBS Cryptosuites
+ * Selective Disclosure Types for Verifiable Presentations
+ * Uses DataIntegrityProof with ecdsa-rdfc-2019 cryptosuite
+ * and hash-based commitments for hidden attributes
  */
 
 import { JsonLdContext, JsonLdType } from "./jsonld.types";
@@ -29,7 +29,7 @@ export interface PredicateCondition {
  */
 export interface PredicateProofResult {
   attributePath: string;
-  attributeName: string;
+  attributeName?: string;
   predicate: PredicateCondition;
   satisfied: boolean;
   proofValue: string;
@@ -45,6 +45,8 @@ export interface PredicateProofResult {
 export interface RequestedAttribute {
   /** JSON path to the attribute (e.g., "credentialSubject.dateOfBirth") */
   attributePath: string;
+  /** Human-readable attribute name */
+  attributeName?: string;
   /** Whether this attribute is required */
   required: boolean;
   /** If true, accept a predicate proof instead of revealed value */
@@ -57,6 +59,8 @@ export interface RequestedAttribute {
 export interface RequestedPredicate {
   /** JSON path to the attribute */
   attributePath: string;
+  /** Human-readable attribute name */
+  attributeName?: string;
   /** Comparison operator */
   operator: PredicateOperator;
   /** Value to compare against */
@@ -97,38 +101,99 @@ export interface SelectiveDisclosurePresentationRequest {
 // ============================================
 
 /**
- * BBS+ selective disclosure proof
+ * DataIntegrityProof with ecdsa-rdfc-2019 cryptosuite
  */
-export interface BBSSelectiveDisclosureProof {
-  type: "BBS+SelectiveDisclosure2023";
+export interface DataIntegrityProof {
+  type: "DataIntegrityProof";
+  cryptosuite: "ecdsa-rdfc-2019";
   created: string;
   verificationMethod: string;
   proofPurpose: string;
-  challenge: string;
-  domain: string;
-  /** BBS+ derived proof value (multibase encoded) */
   proofValue: string;
-  /** Nonce used in proof generation */
-  nonce?: string;
+  challenge?: string;
+  domain?: string;
 }
 
 /**
- * Credential with selective disclosure
- * Contains only revealed attributes and predicate proofs
+ * Commitment for a hidden attribute
+ */
+export interface AttributeCommitment {
+  /** Hash algorithm used (e.g., "SHA256") */
+  algorithm: string;
+  /** Hash commitment value (base64) */
+  commitment: string;
+  /** Attribute key name */
+  key: string;
+  /** Salt hash (base64) */
+  saltHash: string;
+}
+
+/**
+ * Selective Disclosure Proof for each credential
+ */
+export interface SelectiveDisclosureProof2024 {
+  type: "SelectiveDisclosureProof2024";
+  created: string;
+  verificationMethod: string;
+  proofPurpose: string;
+  commitments: AttributeCommitment[];
+  /** Hash of the full original credential */
+  credentialHash: string;
+  /** Hash of the disclosed attributes */
+  disclosedAttributeHash: string;
+  /** ECDSA signature proving the selective disclosure */
+  proofValue: string;
+}
+
+/**
+ * Selective disclosure info for each credential
+ */
+export interface SelectiveDisclosureCredentialInfo {
+  /** VC identifier */
+  vcId: string;
+  /** List of disclosed attribute names */
+  disclosedAttributes: string[];
+  /** List of hidden attribute names */
+  hiddenAttributes: string[];
+  /** Commitments for hidden attributes */
+  commitments: AttributeCommitment[];
+  /** Proof of selective disclosure */
+  selectiveProof: SelectiveDisclosureProof2024;
+}
+
+/**
+ * Selective disclosure metadata in the VP
+ */
+export interface SelectiveDisclosureMetadata {
+  credentials: SelectiveDisclosureCredentialInfo[];
+  created: string;
+  holder: string;
+}
+
+/**
+ * Credential in the selective disclosure VP
+ * Contains only revealed attributes
  */
 export interface SelectiveDisclosureCredential {
   "@context": JsonLdContext;
+  id?: string;
   type: JsonLdType;
   issuer: string | { id: string; name?: string };
-  issuanceDate: string;
+  issuerName?: string;
+  validFrom?: string;
+  issuanceDate?: string;
+  expiredAt?: string | null;
   expirationDate?: string;
+  imageLink?: string;
+  fileId?: string;
+  fileUrl?: string;
   /** Contains ONLY revealed attributes */
   credentialSubject: {
     id?: string;
     [key: string]: any;
   };
-  /** Predicate proofs for hidden attributes */
-  predicateProofs?: PredicateProofResult[];
+  /** Original credential proof (DataIntegrityProof by issuer) */
+  proof: DataIntegrityProof;
   /** Original credential ID for revocation check */
   credentialId?: string;
 }
@@ -142,7 +207,12 @@ export interface SelectiveDisclosureVP {
   type: JsonLdType;
   holder: string;
   verifiableCredential: SelectiveDisclosureCredential[];
-  proof: BBSSelectiveDisclosureProof;
+  /** Selective disclosure metadata */
+  selectiveDisclosure: SelectiveDisclosureMetadata;
+  /** Predicate proofs for hidden attributes (optional, at VP level) */
+  predicateProofs?: PredicateProofResult[];
+  /** VP proof (DataIntegrityProof by holder with challenge/domain) */
+  proof: DataIntegrityProof;
 }
 
 // ============================================
@@ -153,8 +223,12 @@ export interface SelectiveDisclosureVP {
  * Individual verification check results
  */
 export interface VerificationChecks {
-  /** BBS+ derived proof is valid */
-  bbsProofValid: boolean;
+  /** VP proof is valid (DataIntegrityProof by holder) */
+  vpProofValid: boolean;
+  /** VC proof is valid (DataIntegrityProof by issuer) */
+  vcProofValid: boolean;
+  /** Selective disclosure proof is valid */
+  selectiveProofValid: boolean;
   /** Issuer is trusted/registered */
   issuerTrusted: boolean;
   /** Credential not revoked on blockchain */
@@ -244,54 +318,22 @@ export interface SelectiveDisclosureRequestResponse {
 }
 
 // ============================================
-// BBS+ KEY TYPES
-// ============================================
-
-/**
- * BBS+ public key for verification
- */
-export interface BBSPublicKey {
-  /** Key ID from DID document */
-  id: string;
-  /** Public key in multibase format */
-  publicKeyMultibase: string;
-  /** Controller DID */
-  controller: string;
-}
-
-/**
- * BBS+ verification context
- */
-export interface BBSVerificationContext {
-  /** Issuer's BBS+ public key */
-  publicKey: BBSPublicKey;
-  /** Original credential schema/structure */
-  credentialSchema?: any;
-  /** Challenge from request */
-  challenge: string;
-  /** Domain from request */
-  domain: string;
-}
-
-// ============================================
 // CONSTANTS
 // ============================================
 
 /**
- * BBS+ Proof Types
+ * Supported proof types
  */
-export const BBS_PROOF_TYPES = {
-  BBS_SIGNATURE_2023: "BBS+Signature2023",
-  BBS_SELECTIVE_DISCLOSURE_2023: "BBS+SelectiveDisclosure2023",
-  BBS_PROOF_2023: "BBS+Proof2023",
+export const SD_PROOF_TYPES = {
+  DATA_INTEGRITY_PROOF: "DataIntegrityProof",
+  SELECTIVE_DISCLOSURE_PROOF_2024: "SelectiveDisclosureProof2024",
 } as const;
 
 /**
- * BBS+ Contexts
+ * Supported cryptosuites
  */
-export const BBS_CONTEXTS = {
-  BBS_V1: "https://w3id.org/security/bbs/v1",
-  DATA_INTEGRITY_V2: "https://w3id.org/security/data-integrity/v2",
+export const CRYPTOSUITES = {
+  ECDSA_RDFC_2019: "ecdsa-rdfc-2019",
 } as const;
 
 /**

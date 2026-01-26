@@ -2,11 +2,11 @@ import express, { Router } from "express";
 import * as vp from "../controllers/presentation.controller";
 import {
   requestVPValidator,
-  getVPRequestDetailsValidator,
+  requestIdParamValidator,
+  acceptRequestByIdValidator,
   storeVPValidator,
   getVPValidator,
   verifyVPValidator,
-  acceptVPRequestValidator,
   confirmVPValidator,
   deleteVPValidator,
 } from "../validators/presentation.validator";
@@ -18,15 +18,21 @@ const router: Router = express.Router();
  * @swagger
  * tags:
  *   name: Verification & Presentation (VP) Flow
- *   description: Verifiable Presentation request and sharing endpoints
+ *   description: Unified Verifiable Presentation request and sharing endpoints (full + selective disclosure)
  */
+
+// ============================================
+// REQUEST FLOW (unified: full + selective)
+// ============================================
 
 /**
  * @swagger
  * /presentations/request:
  *   post:
- *     summary: Request Verifiable Presentation
- *     description: Verifier requests a Verifiable Presentation from a holder (requires DID authentication)
+ *     summary: Create VP Request (full or selective)
+ *     description: |
+ *       Verifier creates a VP request. Use `mode: "full"` for traditional VP flow
+ *       or `mode: "selective"` for ZKP-based selective disclosure.
  *     tags:
  *       - Verification & Presentation (VP) Flow
  *     security:
@@ -38,80 +44,92 @@ const router: Router = express.Router();
  *           schema:
  *             type: object
  *             required:
+ *               - mode
+ *               - holder_did
  *               - verifier_did
  *               - verifier_name
- *               - holder_did
  *               - purpose
- *               - requested_credentials
  *             properties:
- *               verifier_did:
+ *               mode:
  *                 type: string
- *                 example: did:dcert:iVerifier123
- *                 description: DID of the verifier requesting the VP
- *               verifier_name:
- *                 type: string
- *                 example: PT. ABC Company
- *                 description: Name of the verifier organization
+ *                 enum: [full, selective]
+ *                 description: Request mode
  *               holder_did:
  *                 type: string
  *                 example: did:dcert:uHolder456
- *                 description: DID of the holder who should provide the VP
+ *               verifier_did:
+ *                 type: string
+ *                 example: did:dcert:iVerifier123
+ *               verifier_name:
+ *                 type: string
+ *                 example: PT. ABC Company
  *               purpose:
  *                 type: string
  *                 example: Employment verification
- *                 description: Purpose of the verification request
  *               requested_credentials:
  *                 type: array
+ *                 description: (full mode only) Credential schemas requested
  *                 items:
  *                   type: object
- *                   required:
- *                     - schema_id
- *                     - schema_name
- *                     - schema_version
  *                   properties:
  *                     schema_id:
  *                       type: string
  *                       format: uuid
- *                       description: ID of the credential schema being requested
- *                       example: 550e8400-e29b-41d4-a716-446655440000
  *                     schema_name:
  *                       type: string
- *                       example: Academic Diploma
- *                       description: Name of the credential schema
  *                     schema_version:
  *                       type: number
- *                       example: 1
- *                       description: Version of the credential schema
- *                 description: List of credential schemas being requested (verifier only specifies schema, not specific VCs)
+ *               credential_types:
+ *                 type: array
+ *                 description: (selective mode only) Credential types requested
+ *                 items:
+ *                   type: string
+ *               domain:
+ *                 type: string
+ *                 description: (selective mode only) Domain for replay protection
+ *               expires_in:
+ *                 type: integer
+ *                 description: (selective mode only) Expiration in seconds (60-3600)
+ *               requested_attributes:
+ *                 type: array
+ *                 description: (selective mode only) Attributes to reveal
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     attribute_path:
+ *                       type: string
+ *                     attribute_name:
+ *                       type: string
+ *                     required:
+ *                       type: boolean
+ *                     accept_predicate:
+ *                       type: boolean
+ *               requested_predicates:
+ *                 type: array
+ *                 description: (selective mode only) Predicates to prove
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     attribute_path:
+ *                       type: string
+ *                     attribute_name:
+ *                       type: string
+ *                     operator:
+ *                       type: string
+ *                       enum: ['>', '<', '>=', '<=', '==', '!=']
+ *                     value:
+ *                       oneOf:
+ *                         - type: string
+ *                         - type: number
+ *                     required:
+ *                       type: boolean
  *     responses:
  *       201:
  *         description: VP request created successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: VP request created successfully
- *                 data:
- *                   type: object
- *                   properties:
- *                     vp_request_id:
- *                       type: string
- *                       format: uuid
- *                     message:
- *                       type: string
- *                       example: VP request sent successfully. Awaiting Holder's response.
  *       400:
  *         description: Invalid request data
  *       401:
- *         description: Unauthorized - invalid or missing JWT token
- *       500:
- *         description: Internal server error
+ *         description: Unauthorized
  */
 router.post("/request", verifyDIDSignature, requestVPValidator, vp.requestVP);
 
@@ -119,8 +137,8 @@ router.post("/request", verifyDIDSignature, requestVPValidator, vp.requestVP);
  * @swagger
  * /presentations/request:
  *   get:
- *     summary: Get VP requests with filtering
- *     description: Get VP requests filtered by verifier_did OR holder_did, and optionally by status (requires DID authentication)
+ *     summary: List VP requests
+ *     description: Get VP requests filtered by verifier_did OR holder_did, optionally by status and mode
  *     tags:
  *       - Verification & Presentation (VP) Flow
  *     security:
@@ -131,196 +149,222 @@ router.post("/request", verifyDIDSignature, requestVPValidator, vp.requestVP);
  *         name: verifier_did
  *         schema:
  *           type: string
- *         description: Filter by verifier DID (to see requests made by verifier)
  *       - in: query
  *         name: holder_did
  *         schema:
  *           type: string
- *         description: Filter by holder DID (to see requests made to holder)
  *       - in: query
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, ACCEPT, DECLINE]
- *         description: Optional filter by request status
+ *           enum: [PENDING, ACCEPT, DECLINE, EXPIRED]
+ *       - in: query
+ *         name: mode
+ *         schema:
+ *           type: string
+ *           enum: [full, selective]
+ *         description: Filter by mode (omit for both)
  *     responses:
  *       200:
  *         description: VP requests retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: object
- *                   properties:
- *                     requests:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           id:
- *                             type: string
- *                             format: uuid
- *                           holder_did:
- *                             type: string
- *                           verifier_did:
- *                             type: string
- *                           verifier_name:
- *                             type: string
- *                           purpose:
- *                             type: string
- *                           status:
- *                             type: string
- *                             enum: [PENDING, ACCEPT, DECLINE]
- *                           requested_credentials:
- *                             type: array
- *                             description: List of credentials requested by verifier
- *                             items:
- *                               type: object
- *                               properties:
- *                                 schema_id:
- *                                   type: string
- *                                   format: uuid
- *                                   description: Schema ID
- *                                 schema_name:
- *                                   type: string
- *                                   description: Schema name
- *                                 schema_version:
- *                                   type: integer
- *                                   description: Schema version
- *                           vp_id:
- *                             type: string
- *                             nullable: true
- *                           verify_status:
- *                             type: string
- *                             enum: [NOT_VERIFIED, VALID_VERIFICATION, INVALID_VERIFICATION]
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                           updatedAt:
- *                             type: string
- *                             format: date-time
  *       400:
- *         description: Invalid request - must provide either verifier_did or holder_did
+ *         description: Must provide verifier_did or holder_did
  *       401:
- *         description: Unauthorized - invalid or missing JWT token
- *       500:
- *         description: Internal server error
+ *         description: Unauthorized
  */
 router.get("/request", verifyDIDSignature, vp.getVPRequests);
 
 /**
  * @swagger
- * /presentations/request/{vpReqId}:
+ * /presentations/request/{id}:
  *   get:
  *     summary: Get VP request details
- *     description: Holder retrieves details of a VP request to decide whether to share credentials (requires DID authentication)
+ *     description: Get details of a VP request by ID (auto-detects mode)
+ *     tags:
+ *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - HolderBearerAuth: []
+ *       - VerifierBearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Request details retrieved
+ *       404:
+ *         description: Request not found
+ */
+router.get("/request/:id", verifyDIDSignature, requestIdParamValidator, vp.getVPRequestDetails);
+
+/**
+ * @swagger
+ * /presentations/request/{id}/accept:
+ *   post:
+ *     summary: Accept VP request
+ *     description: |
+ *       Holder accepts a VP request. For full mode, provide `vp_id` and `credentials`.
+ *       For selective mode, provide `selective_vp` (JSON stringified VP).
  *     tags:
  *       - Verification & Presentation (VP) Flow
  *     security:
  *       - HolderBearerAuth: []
  *     parameters:
  *       - in: path
- *         name: vpReqId
+ *         name: id
  *         required: true
  *         schema:
  *           type: string
  *           format: uuid
- *         description: ID of the VP request
- *     responses:
- *       200:
- *         description: VP request details retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               vp_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: (full mode) VP ID
+ *               credentials:
+ *                 type: array
+ *                 description: (full mode) Credentials being shared
+ *                 items:
  *                   type: object
  *                   properties:
- *                     id:
+ *                     schema_id:
  *                       type: string
- *                       format: uuid
- *                       description: VP request ID
- *                     holder_did:
+ *                     schema_name:
  *                       type: string
- *                       description: Holder DID
- *                     verifier_did:
- *                       type: string
- *                       description: Verifier DID
- *                     verifier_name:
- *                       type: string
- *                       example: PT. ABC Company
- *                       description: Verifier name
- *                     purpose:
- *                       type: string
- *                       description: Purpose of VP request
- *                     status:
- *                       type: string
- *                       enum: [PENDING, ACCEPT, DECLINE]
- *                       description: Request status
- *                     requested_credentials:
- *                       type: array
- *                       description: List of credentials requested by verifier
- *                       items:
- *                         type: object
- *                         properties:
- *                           schema_id:
- *                             type: string
- *                             format: uuid
- *                             description: Schema ID
- *                           schema_name:
- *                             type: string
- *                             description: Schema name
- *                           schema_version:
- *                             type: integer
- *                             description: Schema version
- *                     vp_id:
- *                       type: string
- *                       format: uuid
- *                       nullable: true
- *                       description: VP ID (null for PENDING/DECLINE, has value for ACCEPT)
- *                     verify_status:
- *                       type: string
- *                       enum: [NOT_VERIFIED, VALID_VERIFICATION, INVALID_VERIFICATION]
- *                       description: Verification status
- *                     createdAt:
- *                       type: string
- *                       format: date-time
- *                       description: Request creation timestamp
- *                     updatedAt:
- *                       type: string
- *                       format: date-time
- *                       description: Request last update timestamp
+ *                     schema_version:
+ *                       type: integer
+ *               selective_vp:
+ *                 type: string
+ *                 description: (selective mode) JSON stringified SelectiveDisclosureVP
+ *     responses:
+ *       200:
+ *         description: Request accepted
  *       400:
- *         description: Invalid request ID
- *       401:
- *         description: Unauthorized - invalid or missing JWT token
+ *         description: Invalid request
  *       404:
- *         description: VP request not found
- *       500:
- *         description: Internal server error
+ *         description: Request not found
  */
-router.get(
-  "/request/:vpReqId",
-  verifyDIDSignature,
-  getVPRequestDetailsValidator,
-  vp.getVPRequestDetails
-);
+router.post("/request/:id/accept", verifyDIDSignature, acceptRequestByIdValidator, vp.acceptVPRequest);
+
+/**
+ * @swagger
+ * /presentations/request/{id}/decline:
+ *   post:
+ *     summary: Decline VP request
+ *     description: Holder declines a VP request (auto-detects mode)
+ *     tags:
+ *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - HolderBearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Request declined
+ *       404:
+ *         description: Request not found
+ */
+router.post("/request/:id/decline", verifyDIDSignature, requestIdParamValidator, vp.declineVPRequest);
+
+/**
+ * @swagger
+ * /presentations/request/{id}/status:
+ *   get:
+ *     summary: Get request status
+ *     description: Verifier polls for the current status of a VP request
+ *     tags:
+ *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - VerifierBearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Current status
+ *       404:
+ *         description: Request not found
+ */
+router.get("/request/:id/status", verifyDIDSignature, requestIdParamValidator, vp.getRequestStatus);
+
+/**
+ * @swagger
+ * /presentations/request/{id}/result:
+ *   get:
+ *     summary: Get verification result
+ *     description: Verifier gets the verification result after holder submits VP
+ *     tags:
+ *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - VerifierBearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Verification result
+ *       404:
+ *         description: Request not found
+ */
+router.get("/request/:id/result", verifyDIDSignature, requestIdParamValidator, vp.getRequestResult);
+
+/**
+ * @swagger
+ * /presentations/request/{id}/cancel:
+ *   post:
+ *     summary: Cancel VP request
+ *     description: Verifier cancels a pending VP request
+ *     tags:
+ *       - Verification & Presentation (VP) Flow
+ *     security:
+ *       - VerifierBearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Request cancelled
+ *       404:
+ *         description: Request not found
+ */
+router.post("/request/:id/cancel", verifyDIDSignature, requestIdParamValidator, vp.cancelRequest);
+
+// ============================================
+// QR/BARCODE FLOW (unchanged)
+// ============================================
 
 /**
  * @swagger
  * /presentations:
  *   post:
  *     summary: Store Verifiable Presentation
- *     description: Holder creates and stores a VP to share with the verifier (requires DID authentication). VP must be a signed JSON string from frontend.
+ *     description: Holder stores a VP for QR/barcode sharing
  *     tags:
  *       - Verification & Presentation (VP) Flow
  *     security:
@@ -336,170 +380,22 @@ router.get(
  *             properties:
  *               vp:
  *                 type: string
- *                 description: Signed Verifiable Presentation as JSON string
- *                 example: '{"@context":["https://www.w3.org/2018/credentials/v1"],"type":["VerifiablePresentation"],"holder":"did:dcert:holder123","verifiableCredential":[...],"proof":{"type":"DataIntegrityProof","cryptosuite":"eddsa-rdfc-2022","created":"2024-01-01T00:00:00Z","verificationMethod":"did:dcert:holder123#key-1","proofPurpose":"authentication","proofValue":"z..."}}'
+ *                 description: Signed VP as JSON string
  *               is_barcode:
  *                 type: boolean
- *                 description: Indicates whether the VP sharing is from a barcode scan (optional, defaults to false)
- *                 example: true
+ *                 description: Whether VP is for barcode scanning (reusable)
  *     responses:
  *       201:
  *         description: VP stored successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: VP stored successfully
- *                 data:
- *                   type: object
- *                   properties:
- *                     vp_id:
- *                       type: string
- *                       format: uuid
- *                       description: ID of the stored VP for QR code generation
- *       400:
- *         description: Invalid request data or invalid JSON string
- *       401:
- *         description: Unauthorized - invalid or missing JWT token
- *       500:
- *         description: Internal server error
  */
 router.post("/", verifyDIDSignature, storeVPValidator, vp.storeVP);
-
-/**
- * @swagger
- * /presentations/accept:
- *   post:
- *     summary: Accept VP Request
- *     description: Holder accepts a VP request and provides the VP ID and credentials being shared (requires DID authentication)
- *     tags:
- *       - Verification & Presentation (VP) Flow
- *     security:
- *       - HolderBearerAuth: []
- *     parameters:
- *       - in: query
- *         name: vpReqId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: ID of the VP request to accept
- *       - in: query
- *         name: vpId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: ID of the VP created for this request
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - credentials
- *             properties:
- *               credentials:
- *                 type: array
- *                 description: List of credentials being shared by the holder
- *                 items:
- *                   type: object
- *                   required:
- *                     - schema_id
- *                     - schema_name
- *                     - schema_version
- *                   properties:
- *                     schema_id:
- *                       type: string
- *                       format: uuid
- *                       description: Schema ID
- *                     schema_name:
- *                       type: string
- *                       description: Schema name
- *                     schema_version:
- *                       type: integer
- *                       description: Schema version
- *     responses:
- *       200:
- *         description: VP request accepted successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: VP request accepted successfully
- *       400:
- *         description: Invalid request parameters
- *       401:
- *         description: Unauthorized - invalid or missing JWT token
- *       404:
- *         description: VP request not found
- *       500:
- *         description: Internal server error
- */
-router.post("/accept", verifyDIDSignature, acceptVPRequestValidator, vp.acceptVPRequest);
-
-/**
- * @swagger
- * /presentations/decline:
- *   post:
- *     summary: Decline VP Request
- *     description: Holder declines a VP request (requires DID authentication)
- *     tags:
- *       - Verification & Presentation (VP) Flow
- *     security:
- *       - HolderBearerAuth: []
- *     parameters:
- *       - in: query
- *         name: vpReqId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: ID of the VP request to decline
- *     responses:
- *       200:
- *         description: VP request declined successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: VP request declined successfully
- *       400:
- *         description: Invalid request parameters
- *       401:
- *         description: Unauthorized - invalid or missing JWT token
- *       404:
- *         description: VP request not found
- *       500:
- *         description: Internal server error
- */
-router.post("/decline", verifyDIDSignature, vp.declineVPRequest);
 
 /**
  * @swagger
  * /presentations/claim:
  *   post:
  *     summary: Claim VPs by Verifier (Phase 1)
- *     description: Verifier claims all pending VPs that were created for their requests. This does NOT mark VPs as claimed yet. Verifier must call /presentations/confirm after saving VPs to local storage to complete the claim process (requires DID authentication).
+ *     description: Verifier claims pending VPs created for their requests
  *     tags:
  *       - Verification & Presentation (VP) Flow
  *     security:
@@ -515,66 +411,9 @@ router.post("/decline", verifyDIDSignature, vp.declineVPRequest);
  *             properties:
  *               verifier_did:
  *                 type: string
- *                 example: did:dcert:iVerifier123
- *                 description: DID of the verifier claiming VPs
  *     responses:
  *       200:
  *         description: VPs claimed successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: VPs claimed successfully
- *                 data:
- *                   type: object
- *                   properties:
- *                     vp_sharings:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           vp_id:
- *                             type: string
- *                             format: uuid
- *                           holder_did:
- *                             type: string
- *                           vp_request_id:
- *                             type: string
- *                             format: uuid
- *                             nullable: true
- *                             description: ID of the VP request (if initiated by verifier request)
- *                           credentials:
- *                             type: array
- *                             nullable: true
- *                             description: List of credentials requested by verifier
- *                             items:
- *                               type: object
- *                               properties:
- *                                 schema_id:
- *                                   type: string
- *                                   format: uuid
- *                                 schema_name:
- *                                   type: string
- *                                 schema_version:
- *                                   type: integer
- *                           purpose:
- *                             type: string
- *                             description: Purpose of Verifiable Presentation (VP)
- *                           created_at:
- *                             type: string
- *                             format: date-time
- *       400:
- *         description: Invalid request data
- *       401:
- *         description: Unauthorized - invalid or missing JWT token
- *       500:
- *         description: Internal server error
  */
 router.post("/claim", verifyDIDSignature, vp.claimVP);
 
@@ -582,8 +421,8 @@ router.post("/claim", verifyDIDSignature, vp.claimVP);
  * @swagger
  * /presentations/confirm:
  *   post:
- *     summary: Confirm VPs saved to local storage (Phase 2)
- *     description: Verifier confirms that VPs have been saved to local storage. This updates hasClaim to true for the specified VPs (requires DID authentication).
+ *     summary: Confirm VPs saved (Phase 2)
+ *     description: Verifier confirms VPs have been saved to local storage
  *     tags:
  *       - Verification & Presentation (VP) Flow
  *     security:
@@ -600,44 +439,14 @@ router.post("/claim", verifyDIDSignature, vp.claimVP);
  *             properties:
  *               verifier_did:
  *                 type: string
- *                 example: did:dcert:iVerifier123
- *                 description: DID of the verifier confirming VPs
  *               vp_ids:
  *                 type: array
- *                 description: List of VP IDs to confirm
  *                 items:
  *                   type: string
  *                   format: uuid
- *                 example: ["3fa85f64-5717-4562-b3fc-2c963f66afa6", "4gb96g75-6828-5673-c4gd-3d074g77bgb7"]
  *     responses:
  *       200:
  *         description: VPs confirmed successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: Successfully confirmed 2 VP(s)
- *                 data:
- *                   type: object
- *                   properties:
- *                     message:
- *                       type: string
- *                       example: Successfully confirmed 2 VP(s)
- *                     confirmed_count:
- *                       type: integer
- *                       example: 2
- *       400:
- *         description: Invalid request data or empty vp_ids array
- *       401:
- *         description: Unauthorized - invalid or missing JWT token
- *       500:
- *         description: Internal server error
  */
 router.post("/confirm", verifyDIDSignature, confirmVPValidator, vp.confirmVP);
 
@@ -646,7 +455,7 @@ router.post("/confirm", verifyDIDSignature, confirmVPValidator, vp.confirmVP);
  * /presentations/{vpId}:
  *   get:
  *     summary: Get Verifiable Presentation
- *     description: Verifier retrieves the stored VP from holder (requires DID authentication)
+ *     description: Retrieve a stored VP by ID
  *     tags:
  *       - Verification & Presentation (VP) Flow
  *     security:
@@ -658,67 +467,11 @@ router.post("/confirm", verifyDIDSignature, confirmVPValidator, vp.confirmVP);
  *         schema:
  *           type: string
  *           format: uuid
- *         description: ID of the VP to retrieve
  *     responses:
  *       200:
- *         description: VP retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: object
- *                   properties:
- *                     vp_id:
- *                       type: string
- *                       format: uuid
- *                     '@context':
- *                       type: string
- *                       example: https://www.w3.org/2018/credentials/v1
- *                     type:
- *                       type: array
- *                       items:
- *                         type: string
- *                       example: ["VerifiablePresentation"]
- *                     holder:
- *                       type: string
- *                       example: did:dcert:holder456
- *                     verifiableCredential:
- *                       type: array
- *                       items:
- *                         type: object
- *                         description: Disclosed credentials
- *                     proof:
- *                       type: object
- *                       properties:
- *                         type:
- *                           type: string
- *                         created:
- *                           type: string
- *                           format: date-time
- *                         proofPurpose:
- *                           type: string
- *                         verificationMethod:
- *                           type: string
- *                         signature:
- *                           type: string
- *                     created_at:
- *                       type: string
- *                       format: date-time
- *       400:
- *         description: Invalid VP ID
- *       401:
- *         description: Unauthorized - invalid or missing JWT token
- *       403:
- *         description: Forbidden - unauthorized to access this VP
+ *         description: VP retrieved
  *       404:
  *         description: VP not found
- *       500:
- *         description: Internal server error
  */
 router.get("/:vpId", verifyDIDSignature, getVPValidator, vp.getVP);
 
@@ -728,17 +481,8 @@ router.get("/:vpId", verifyDIDSignature, getVPValidator, vp.getVP);
  *   get:
  *     summary: Verify Verifiable Presentation
  *     description: |
- *       Verify the authenticity and integrity of a VP and its contained VCs (requires DID authentication).
- *
- *       **Conditional Behavior based on is_barcode**:
- *       - **is_barcode = false**: One-time use VP. After verification (regardless of valid or invalid result),
- *         the VP will be soft-deleted to prevent reuse. Calling this endpoint again will return 404
- *         "VP not found or already verified".
- *       - **is_barcode = true**: Reusable VP for barcode scanning scenarios. The VP will never be deleted
- *         and can be verified multiple times.
- *
- *       This allows barcode-based VPs to be scanned and verified repeatedly while maintaining
- *       security for traditional one-time VP sharing.
+ *       Verify VP authenticity. One-time VPs are soft-deleted after verification.
+ *       Barcode VPs remain reusable.
  *     tags:
  *       - Verification & Presentation (VP) Flow
  *     parameters:
@@ -748,51 +492,11 @@ router.get("/:vpId", verifyDIDSignature, getVPValidator, vp.getVP);
  *         schema:
  *           type: string
  *           format: uuid
- *         description: ID of the VP to verify
  *     responses:
  *       200:
- *         description: VP verification completed (one-time VPs are soft-deleted, barcode VPs remain reusable)
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: object
- *                   properties:
- *                     vp:
- *                       type: object
- *                       description: The Verifiable Presentation
- *                     vp_valid:
- *                       type: boolean
- *                       description: Whether the VP signature is valid
- *                     holder_did:
- *                       type: string
- *                       description: DID of the holder who signed the VP
- *                     credentials_verification:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           vc_id:
- *                             type: string
- *                           issuer:
- *                             type: string
- *                           valid:
- *                             type: boolean
- *                           error:
- *                             type: string
- *       400:
- *         description: Invalid VP ID
- *       401:
- *         description: Unauthorized - invalid or missing JWT token
+ *         description: VP verification completed
  *       404:
- *         description: VP not found, or already verified and deleted (for one-time use VPs only)
- *       500:
- *         description: Internal server error
+ *         description: VP not found
  */
 router.get("/:vpId/verify", verifyVPValidator, vp.verifyVP);
 
@@ -800,8 +504,8 @@ router.get("/:vpId/verify", verifyVPValidator, vp.verifyVP);
  * @swagger
  * /presentations/{vpId}:
  *   delete:
- *     summary: Delete Verifiable Presentation (Soft Delete)
- *     description: Holder soft deletes their stored VP by setting deletedAt timestamp. The VP will no longer be accessible. Holder DID is extracted from JWT authentication token.
+ *     summary: Delete VP (Soft Delete)
+ *     description: Holder soft deletes their stored VP
  *     tags:
  *       - Verification & Presentation (VP) Flow
  *     security:
@@ -813,35 +517,11 @@ router.get("/:vpId/verify", verifyVPValidator, vp.verifyVP);
  *         schema:
  *           type: string
  *           format: uuid
- *         description: ID of the VP to delete
  *     responses:
  *       200:
- *         description: VP deleted successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: VP deleted successfully
- *                 data:
- *                   type: object
- *                   properties:
- *                     message:
- *                       type: string
- *                       example: VP deleted successfully
- *       400:
- *         description: Invalid request data, VP already deleted, or unauthorized (holder_did mismatch)
- *       401:
- *         description: Unauthorized - invalid or missing JWT token
+ *         description: VP deleted
  *       404:
  *         description: VP not found
- *       500:
- *         description: Internal server error
  */
 router.delete("/:vpId", verifyDIDSignature, deleteVPValidator, vp.deleteVP);
 
