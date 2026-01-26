@@ -99,45 +99,55 @@ class SchemaService {
 
   /**
    * Get all VC schemas with optional filters (from RDBMS)
-   * Only returns schemas that have a price entry in VCSchemaPrice with price != 0
+   * - If issuerDid is NOT provided: only returns schemas with price != 0
+   * - If issuerDid IS provided: returns all schemas for that issuer (including price = 0)
    */
   async getAllSchemas(filter: SchemaFilterDTO = {}): Promise<VCSchema[]> {
     try {
       this.logStart("Get all schemas from RDBMS", JSON.stringify(filter));
 
       const where = this.buildWhereClause(filter);
+      let schemas: VCSchema[];
 
-      // Get all schema IDs that have a price > 0 in VCSchemaPrice
-      const schemaPrices = await prisma.vCSchemaPrice.findMany({
-        where: {
-          price: {
-            not: 0,
+      // If issuerDid is provided, return all schemas for that issuer (no price filter)
+      if (filter.issuerDid) {
+        schemas = await prisma.vCSchema.findMany({
+          where,
+          orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
+        });
+      } else {
+        // If issuerDid is NOT provided, only return schemas with price != 0
+        const schemaPrices = await prisma.vCSchemaPrice.findMany({
+          where: {
+            price: {
+              not: 0,
+            },
           },
-        },
-        select: {
-          schemaId: true,
-        },
-      });
+          select: {
+            schemaId: true,
+          },
+        });
 
-      // Extract unique schema IDs with price > 0
-      const schemaIdsWithPrice = [...new Set(schemaPrices.map((sp) => sp.schemaId))];
+        // Extract unique schema IDs with price != 0
+        const schemaIdsWithPrice = [...new Set(schemaPrices.map((sp) => sp.schemaId))];
 
-      // If no schemas have prices, return empty array
-      if (schemaIdsWithPrice.length === 0) {
-        this.logSuccess("Get all schemas from RDBMS", "No schemas with price found");
-        return [];
+        // If no schemas have prices, return empty array
+        if (schemaIdsWithPrice.length === 0) {
+          this.logSuccess("Get all schemas from RDBMS", "No schemas with price found");
+          return [];
+        }
+
+        // Add filter to only include schemas with price
+        schemas = await prisma.vCSchema.findMany({
+          where: {
+            ...where,
+            id: {
+              in: schemaIdsWithPrice,
+            },
+          },
+          orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
+        });
       }
-
-      // Add filter to only include schemas with price
-      const schemas = await prisma.vCSchema.findMany({
-        where: {
-          ...where,
-          id: {
-            in: schemaIdsWithPrice,
-          },
-        },
-        orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
-      });
 
       for (const schema of schemas) {
         if (!schema.issuer_name) {
@@ -170,7 +180,7 @@ class SchemaService {
 
       this.logSuccess(
         "Get all schemas from RDBMS",
-        `Retrieved ${schemas.length} schema(s) with price`
+        `Retrieved ${schemas.length} schema(s)${filter.issuerDid ? ` for issuer ${filter.issuerDid}` : " with price"}`
       );
       return schemas;
     } catch (error: any) {
