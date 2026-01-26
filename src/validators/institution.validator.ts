@@ -49,8 +49,8 @@ export const getInstitutionByDIDValidator = [
   param("did")
     .trim()
     .notEmpty()
-    .withMessage("DID is required")
-    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
+    .withMessage("DID parameter is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid DID format"),
 ];
 
@@ -61,8 +61,8 @@ export const updateInstitutionValidator = [
   param("did")
     .trim()
     .notEmpty()
-    .withMessage("DID is required")
-    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
+    .withMessage("DID parameter is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid DID format"),
 
   body("name")
@@ -83,11 +83,7 @@ export const updateInstitutionValidator = [
     .isLength({ min: 2, max: 100 })
     .withMessage("Country must be between 2 and 100 characters"),
 
-  body("website")
-    .optional()
-    .trim()
-    .isURL()
-    .withMessage("Must be a valid URL"),
+  body("website").optional().trim().isURL().withMessage("Must be a valid URL"),
 
   body("address")
     .optional()
@@ -103,7 +99,7 @@ export const deleteInstitutionValidator = [
   param("did")
     .trim()
     .notEmpty()
-    .withMessage("DID is required")
-    .matches(/^did:dcert:[iu][a-zA-Z0-9_-]{44}$/)
+    .withMessage("DID parameter is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid DID format"),
 ];

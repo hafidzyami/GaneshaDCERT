@@ -59,7 +59,7 @@ app.use(
       // Store raw body for DOKU signature verification
       req.rawBody = buf.toString("utf-8");
     },
-  })
+  }),
 );
 
 // // CORS Configuration
@@ -139,7 +139,7 @@ const swaggerOptions: swaggerJsdoc.Options = {
         description: "Production Server",
       },
       {
-        url: "http://192.168.55.122:3069/api/v1",
+        url: "http://192.168.55.128:3069/api/v1",
         description: "Local Server",
       },
     ],
@@ -201,7 +201,7 @@ app.use(
       showExtensions: true,
       showCommonExtensions: true,
     },
-  })
+  }),
 );
 
 /**
@@ -376,7 +376,7 @@ app.get(
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
-  }
+  },
 );
 
 /**
@@ -407,7 +407,7 @@ app.get(
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
-  }
+  },
 );
 
 /**
@@ -479,7 +479,7 @@ const startServer = async () => {
       logger.success("   ✓ DID Blockchain connected");
     } else {
       logger.warn(
-        "   ⚠ DID Blockchain connection failed, server will continue"
+        "   ⚠ DID Blockchain connection failed, server will continue",
       );
     }
 
@@ -496,7 +496,7 @@ const startServer = async () => {
       logger.success("   ✓ CredentialsHistory Blockchain connected");
     } else {
       logger.warn(
-        "   ⚠ CredentialsHistory Blockchain connection failed, server will continue"
+        "   ⚠ CredentialsHistory Blockchain connection failed, server will continue",
       );
     }
 
@@ -506,7 +506,7 @@ const startServer = async () => {
       logger.success("   ✓ Payment Blockchain connected");
     } else {
       logger.warn(
-        "   ⚠ Payment Blockchain connection failed, server will continue"
+        "   ⚠ Payment Blockchain connection failed, server will continue",
       );
     }
 
@@ -534,10 +534,10 @@ const startServer = async () => {
     } catch (error) {
       logger.error(
         "   ✗ Failed to start Credentials History event listener:",
-        error
+        error,
       );
       logger.warn(
-        "   Server will continue without Credentials History event listener"
+        "   Server will continue without Credentials History event listener",
       );
     }
 
@@ -568,7 +568,7 @@ const startServer = async () => {
         error: error,
       });
       logger.warn(
-        "   Server will continue without blockchain transaction worker"
+        "   Server will continue without blockchain transaction worker",
       );
     }
     // logger.warn("🔨 Blockchain transaction worker is DISABLED");

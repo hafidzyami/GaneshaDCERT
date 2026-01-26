@@ -40,6 +40,7 @@ function isKeccak256Hash(value: string): boolean {
 /**
  * BlockchainEventPublisher
  * Listens to blockchain events and processes them with checkpoint mechanism
+ * Uses polling-based approach to avoid "Filter not found" errors
  */
 class BlockchainEventPublisher {
   private contract: ethers.Contract;
@@ -47,6 +48,10 @@ class BlockchainEventPublisher {
   private contractAddress: string;
   private isRunning: boolean = false;
   private schemaProcessor: SchemaEventProcessor;
+  private pollingInterval: NodeJS.Timeout | null = null;
+  private lastProcessedBlock: number = 0;
+  private readonly POLLING_INTERVAL_MS = 15000; // Poll every 15 seconds
+  private readonly BLOCK_BATCH_SIZE = 100; // Process 100 blocks at a time
 
   constructor() {
     this.contract = VCBlockchainConfig.contract;
@@ -95,7 +100,13 @@ class BlockchainEventPublisher {
   async stop(): Promise<void> {
     logger.info("Stopping Blockchain Event Publisher...");
 
-    // Remove all listeners
+    // Stop polling interval
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+    }
+
+    // Remove all listeners (for any residual listeners)
     this.contract.removeAllListeners();
 
     this.isRunning = false;
@@ -181,67 +192,114 @@ class BlockchainEventPublisher {
   }
 
   /**
-   * Start listening to real-time events
+   * Start listening to real-time events using polling
+   * This approach avoids "Filter not found" errors that occur with eth_newFilter
    */
   private async startRealtimeListeners(): Promise<void> {
-    // Schema events
-    // Note: Indexed string parameters come as { hash: "0x...", _isIndexed: true } from ethers.js
-    // We extract the hash here, then enrich with real values from transaction data
-    this.contract.on(
-      "SchemaCreated",
-      async (id, name, schema, issuerDID, imageLink, version, timestamp, event) => {
-        await this.handleEvent("SchemaCreated", event, {
-          id: extractIndexedString(id),              // indexed string - extract hash
-          name: String(name),                        // not indexed - safe to convert
-          schema: String(schema),                    // not indexed - safe to convert
-          issuerDID: extractIndexedString(issuerDID), // indexed string - extract hash
-          imageLink: String(imageLink),              // not indexed - safe to convert
-          version: Number(version),                  // not indexed uint - safe to convert
-          timestamp: Number(timestamp),              // not indexed uint - safe to convert
+    // Get the latest block to start polling from
+    this.lastProcessedBlock = await this.provider.getBlockNumber();
+    logger.info(`Starting event polling from block ${this.lastProcessedBlock}`);
+
+    // Start polling interval
+    this.pollingInterval = setInterval(async () => {
+      await this.pollForNewEvents();
+    }, this.POLLING_INTERVAL_MS);
+
+    // Also run immediately
+    await this.pollForNewEvents();
+
+    logger.success(`Real-time event polling started (interval: ${this.POLLING_INTERVAL_MS}ms)`);
+  }
+
+  /**
+   * Poll for new events since last processed block
+   */
+  private async pollForNewEvents(): Promise<void> {
+    if (!this.isRunning) return;
+
+    try {
+      const currentBlock = await this.provider.getBlockNumber();
+
+      // No new blocks
+      if (currentBlock <= this.lastProcessedBlock) {
+        return;
+      }
+
+      const fromBlock = this.lastProcessedBlock + 1;
+      const toBlock = Math.min(fromBlock + this.BLOCK_BATCH_SIZE - 1, currentBlock);
+
+      logger.debug(`Polling events from block ${fromBlock} to ${toBlock}`);
+
+      const eventTypes = [
+        "SchemaCreated",
+        "SchemaUpdated",
+        "SchemaDeactivated",
+        "SchemaReactivated",
+      ];
+
+      for (const eventType of eventTypes) {
+        try {
+          const filter = this.contract.filters[eventType]();
+          const events = await this.contract.queryFilter(filter, fromBlock, toBlock);
+
+          if (events.length > 0) {
+            logger.info(`Found ${events.length} ${eventType} events in blocks ${fromBlock}-${toBlock}`);
+
+            for (const event of events) {
+              const eventLog = event as ethers.EventLog;
+              const eventData = this.extractEventData(eventType, eventLog);
+              await this.handlePolledEvent(eventType, eventLog, eventData);
+            }
+          }
+        } catch (eventError: any) {
+          // Handle specific RPC errors gracefully
+          if (eventError.code === 'UNKNOWN_ERROR' && eventError.error?.message?.includes('Filter not found')) {
+            logger.warn(`Filter expired for ${eventType}, continuing with next poll...`);
+          } else {
+            logger.error(`Error polling ${eventType} events:`, eventError.message || eventError);
+          }
+        }
+      }
+
+      // Update last processed block
+      this.lastProcessedBlock = toBlock;
+
+      // Update checkpoints for all event types
+      for (const eventType of eventTypes) {
+        await this.updateCheckpoint(eventType, BigInt(toBlock)).catch((err) => {
+          logger.warn(`Failed to update checkpoint for ${eventType}:`, err.message);
         });
       }
-    );
 
-    this.contract.on(
-      "SchemaUpdated",
-      async (id, schema, issuerDID, imageLink, oldVersion, newVersion, timestamp, event) => {
-        await this.handleEvent("SchemaUpdated", event, {
-          id: extractIndexedString(id),              // indexed string - extract hash
-          schema: String(schema),                    // not indexed - safe to convert
-          issuerDID: extractIndexedString(issuerDID), // indexed string - extract hash
-          imageLink: String(imageLink),              // not indexed - safe to convert
-          oldVersion: Number(oldVersion),            // not indexed uint - safe to convert
-          newVersion: Number(newVersion),            // not indexed uint - safe to convert
-          timestamp: Number(timestamp),              // not indexed uint - safe to convert
-        });
+    } catch (error: any) {
+      // Handle connection errors gracefully
+      if (error.code === 'UNKNOWN_ERROR' && error.error?.message?.includes('Filter not found')) {
+        logger.warn('Filter expired during polling, will retry on next interval...');
+      } else {
+        logger.error('Error during event polling:', error.message || error);
       }
-    );
+    }
+  }
 
-    this.contract.on(
-      "SchemaDeactivated",
-      async (id, version, issuerDID, timestamp, event) => {
-        await this.handleEvent("SchemaDeactivated", event, {
-          id: extractIndexedString(id),              // indexed string - extract hash
-          version: Number(version),                  // indexed uint - safe to convert
-          issuerDID: String(issuerDID),              // not indexed - safe to convert
-          timestamp: Number(timestamp),              // not indexed uint - safe to convert
-        });
-      }
-    );
+  /**
+   * Handle event from polling (similar to handleEvent but for polled events)
+   */
+  private async handlePolledEvent(
+    eventType: string,
+    eventLog: ethers.EventLog,
+    eventData: any
+  ): Promise<void> {
+    logger.info(`Processing polled ${eventType} event:`, {
+      blockNumber: eventLog.blockNumber,
+      transactionHash: eventLog.transactionHash,
+      logIndex: eventLog.index,
+    });
 
-    this.contract.on(
-      "SchemaReactivated",
-      async (id, version, issuerDID, timestamp, event) => {
-        await this.handleEvent("SchemaReactivated", event, {
-          id: extractIndexedString(id),              // indexed string - extract hash
-          version: Number(version),                  // indexed uint - safe to convert
-          issuerDID: String(issuerDID),              // not indexed - safe to convert
-          timestamp: Number(timestamp),              // not indexed uint - safe to convert
-        });
-      }
-    );
-
-    logger.success("Real-time event listeners started");
+    try {
+      await this.processEventWithRetry(eventType, eventLog, eventData);
+    } catch (error) {
+      logger.error(`Failed to process polled ${eventType} event:`, error);
+    }
   }
 
   /**

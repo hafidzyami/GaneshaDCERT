@@ -99,6 +99,7 @@ class SchemaService {
 
   /**
    * Get all VC schemas with optional filters (from RDBMS)
+   * Only returns schemas that have a price entry in VCSchemaPrice with price != 0
    */
   async getAllSchemas(filter: SchemaFilterDTO = {}): Promise<VCSchema[]> {
     try {
@@ -106,8 +107,35 @@ class SchemaService {
 
       const where = this.buildWhereClause(filter);
 
+      // Get all schema IDs that have a price > 0 in VCSchemaPrice
+      const schemaPrices = await prisma.vCSchemaPrice.findMany({
+        where: {
+          price: {
+            not: 0,
+          },
+        },
+        select: {
+          schemaId: true,
+        },
+      });
+
+      // Extract unique schema IDs with price > 0
+      const schemaIdsWithPrice = [...new Set(schemaPrices.map((sp) => sp.schemaId))];
+
+      // If no schemas have prices, return empty array
+      if (schemaIdsWithPrice.length === 0) {
+        this.logSuccess("Get all schemas from RDBMS", "No schemas with price found");
+        return [];
+      }
+
+      // Add filter to only include schemas with price
       const schemas = await prisma.vCSchema.findMany({
-        where,
+        where: {
+          ...where,
+          id: {
+            in: schemaIdsWithPrice,
+          },
+        },
         orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
       });
 
@@ -142,7 +170,7 @@ class SchemaService {
 
       this.logSuccess(
         "Get all schemas from RDBMS",
-        `Retrieved ${schemas.length} schema(s)`
+        `Retrieved ${schemas.length} schema(s) with price`
       );
       return schemas;
     } catch (error: any) {

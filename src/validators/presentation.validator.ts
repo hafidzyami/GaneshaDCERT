@@ -10,11 +10,22 @@ const VALID_OPERATORS = [">", "<", ">=", "<=", "==", "!="];
  * Presentation Validators
  */
 
+// Helper function to check if mode is "full" (or not provided, since "full" is default)
+const isFullMode = (value: any, { req }: any) => {
+  const mode = req.body.mode;
+  return mode === "full" || mode === undefined || mode === null || mode === "";
+};
+
+// Helper function to check if mode is "selective"
+const isSelectiveMode = (value: any, { req }: any) => {
+  return req.body.mode === "selective";
+};
+
 export const requestVPValidator = [
+  // Mode is optional, defaults to "full" in controller
   body("mode")
+    .optional()
     .trim()
-    .notEmpty()
-    .withMessage("mode is required")
     .isIn(["full", "selective"])
     .withMessage("mode must be 'full' or 'selective'"),
 
@@ -46,14 +57,14 @@ export const requestVPValidator = [
     .isLength({ min: 1, max: 500 })
     .withMessage("Purpose must be between 1 and 500 characters"),
 
-  // Full mode fields
+  // Full mode fields (required when mode is "full" or not provided)
   body("requested_credentials")
-    .if(body("mode").equals("full"))
+    .if(isFullMode)
     .isArray({ min: 1 })
     .withMessage("requested_credentials must be a non-empty array for full mode"),
 
   body("requested_credentials.*.schema_id")
-    .if(body("mode").equals("full"))
+    .if(isFullMode)
     .optional()
     .trim()
     .notEmpty()
@@ -62,33 +73,33 @@ export const requestVPValidator = [
     .withMessage("schema_id must be a valid UUID"),
 
   body("requested_credentials.*.schema_name")
-    .if(body("mode").equals("full"))
+    .if(isFullMode)
     .optional()
     .trim()
     .notEmpty()
     .withMessage("schema_name is required for each requested credential"),
 
   body("requested_credentials.*.schema_version")
-    .if(body("mode").equals("full"))
+    .if(isFullMode)
     .optional()
     .isInt({ min: 1 })
     .withMessage("schema_version must be a positive integer"),
 
   // Selective mode fields
   body("credential_types")
-    .if(body("mode").equals("selective"))
+    .if(isSelectiveMode)
     .isArray({ min: 1 })
     .withMessage("credential_types must be a non-empty array for selective mode"),
 
   body("credential_types.*")
-    .if(body("mode").equals("selective"))
+    .if(isSelectiveMode)
     .optional()
     .trim()
     .notEmpty()
     .withMessage("Each credential type must be a non-empty string"),
 
   body("domain")
-    .if(body("mode").equals("selective"))
+    .if(isSelectiveMode)
     .trim()
     .notEmpty()
     .withMessage("domain is required for selective mode"),

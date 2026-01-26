@@ -10,6 +10,7 @@ import { prisma } from "../config/database";
 
 /**
  * Request VP Controller (unified: full + selective)
+ * Default mode is "full" if not specified
  */
 export const requestVP = asyncHandler(async (req: RequestWithDID, res: Response) => {
   const errors = validationResult(req);
@@ -17,13 +18,14 @@ export const requestVP = asyncHandler(async (req: RequestWithDID, res: Response)
     throw new ValidationError("Validation error", errors.array());
   }
 
-  const { mode } = req.body;
+  // Default to "full" mode if not provided
+  const mode = req.body.mode || "full";
 
   if (mode === "selective") {
     return createSelectiveRequest(req, res);
   }
 
-  // Full mode
+  // Full mode (default)
   const { holder_did, verifier_did, verifier_name, purpose, requested_credentials } = req.body;
 
   const result = await PresentationService.requestVP({
