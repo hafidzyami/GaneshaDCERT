@@ -42,6 +42,7 @@ export const getAllVCSchemas = asyncHandler(
         req.query.isActive !== undefined
           ? req.query.isActive === "true"
           : undefined,
+      pricingOnly: req.query.pricingOnly === "true", // Default: false
     };
 
     const schemas = await SchemaService.getAllSchemas(filter);

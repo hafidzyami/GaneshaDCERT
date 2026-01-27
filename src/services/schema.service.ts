@@ -99,8 +99,8 @@ class SchemaService {
 
   /**
    * Get all VC schemas with optional filters (from RDBMS)
-   * - If issuerDid is NOT provided: only returns schemas with price != 0
-   * - If issuerDid IS provided: returns all schemas for that issuer (including price = 0)
+   * - If pricingOnly is false or not provided: returns all schemas
+   * - If pricingOnly is true: only returns schemas with price != 0
    */
   async getAllSchemas(filter: SchemaFilterDTO = {}): Promise<VCSchema[]> {
     try {
@@ -109,14 +109,8 @@ class SchemaService {
       const where = this.buildWhereClause(filter);
       let schemas: VCSchema[];
 
-      // If issuerDid is provided, return all schemas for that issuer (no price filter)
-      if (filter.issuerDid) {
-        schemas = await prisma.vCSchema.findMany({
-          where,
-          orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
-        });
-      } else {
-        // If issuerDid is NOT provided, only return schemas with price != 0
+      // If pricingOnly is true, only return schemas with price != 0
+      if (filter.pricingOnly === true) {
         const schemaPrices = await prisma.vCSchemaPrice.findMany({
           where: {
             price: {
@@ -145,6 +139,12 @@ class SchemaService {
               in: schemaIdsWithPrice,
             },
           },
+          orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
+        });
+      } else {
+        // Default: return all schemas (no price filter)
+        schemas = await prisma.vCSchema.findMany({
+          where,
           orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
         });
       }
@@ -180,7 +180,7 @@ class SchemaService {
 
       this.logSuccess(
         "Get all schemas from RDBMS",
-        `Retrieved ${schemas.length} schema(s)${filter.issuerDid ? ` for issuer ${filter.issuerDid}` : " with price"}`
+        `Retrieved ${schemas.length} schema(s)${filter.pricingOnly ? " with price" : ""}`
       );
       return schemas;
     } catch (error: any) {
