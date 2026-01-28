@@ -1,0 +1,113 @@
+@startuml cross-blockchain-architecture
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Arial
+skinparam rectangleBorderThickness 2
+skinparam databaseBorderThickness 2
+skinparam componentBorderThickness 2
+
+title Cross-Blockchain Architecture\nVDR Blockchain + DCERT Blockchain
+
+' Define colors
+!define VDR_COLOR #E3F2FD
+!define DCERT_COLOR #FFF3E0
+!define BACKEND_COLOR #E8F5E9
+!define DB_COLOR #F5F5F5
+
+' VDR Blockchain
+package "VDR Blockchain\n<size:9>(Private → Future Public)</size>" as vdr_blockchain #VDR_COLOR {
+  rectangle "Smart Contracts" as vdr_contracts {
+    component "<b>DIDManager.sol</b>\n<size:8>• Create DID\n• Update DID\n• Deactivate DID</size>" as did_manager
+    component "<b>VCManager.sol</b>\n<size:8>• Issue VC\n• Renew VC\n• Update VC\n• Revoke VC\n• <color:red>getVCStatus()</color>\n• <color:red>Returns: VC Hash</color></size>" as vc_manager
+  }
+
+  database "<b>Blockchain State</b>\n<size:8>Source of Truth\nfor Identity & VCs</size>" as vdr_state #F5F5F5
+}
+
+' Backend Server
+package "Backend Server\n<size:9>(Bridge Layer)</size>" as backend #BACKEND_COLOR {
+  component "<b>Cross-Blockchain Service</b>\n<size:8>• Verify VC on VDR\n• Get VC Hash\n• Create History on DCERT\n• Sync Events to DB</size>" as cross_service
+
+  component "<b>Event Listeners</b>\n<size:8>VDR Events:\n  • SchemaCreated\n  • SchemaUpdated\nDCERT Events:\n  • CredentialHistoryCreated\n  • StatusChanged</size>" as event_listeners
+
+  component "<b>API Layer</b>\n<size:8>RESTful API\nfor Client Apps</size>" as api_layer
+}
+
+' DCERT Blockchain
+package "DCERT Blockchain\n<size:9>(Private)</size>" as dcert_blockchain #DCERT_COLOR {
+  rectangle "Smart Contracts" as dcert_contracts {
+    component "<b>CredentialsHistory\nManager.sol</b>\n<size:8>• Create History\n• Approve/Reject\n• Store <color:red>VC Hash</color>\n• Emit Events</size>" as history_manager
+    component "<b>PaymentManager.sol</b>\n<size:8>• Process Payments\n• Fee Management</size>" as payment_manager
+  }
+
+  database "<b>Blockchain State</b>\n<size:8>Business Logic\n& Payment Data</size>" as dcert_state #F5F5F5
+}
+
+' PostgreSQL Database
+database "<b>PostgreSQL</b>\n<size:9>(Synchronized from both blockchains)</size>" as postgres #DB_COLOR {
+  component "VCSchema" as vc_schema
+  component "CredentialHistory" as cred_history
+  component "EventCheckpoint" as checkpoint
+  component "ProcessedEvent" as processed
+}
+
+' Client Applications
+actor "Issuer\nApp" as issuer
+actor "Holder\nApp" as holder
+actor "Verifier\nApp" as verifier
+
+' Connections
+' VDR connections
+did_manager -down-> vdr_state
+vc_manager -down-> vdr_state
+
+' DCERT connections
+history_manager -down-> dcert_state
+payment_manager -down-> dcert_state
+
+' Backend to VDR (Read-only)
+cross_service -up-> vc_manager : <size:8>RPC Read\n<color:red><b>getVCStatus()</b></color>\n<color:red><b>Returns VC Hash</b></color></size>
+
+' Backend to DCERT (Read-Write)
+cross_service -down-> history_manager : <size:8>RPC Write\n<b>createHistory()</b>\n<b>with VC Hash</b></size>
+
+' Event listeners
+event_listeners -up-> vc_manager : <size:8>Listen VDR Events</size>
+event_listeners -down-> history_manager : <size:8>Listen DCERT Events</size>
+
+' Backend to Database
+event_listeners -right-> postgres : <size:8>Sync Events</size>
+cross_service -right-> postgres : <size:8>Query/Update</size>
+
+' Clients to API
+issuer -down-> api_layer
+holder -down-> api_layer
+verifier -down-> api_layer
+
+api_layer -up-> cross_service
+
+' Flow annotations
+note right of cross_service
+  <b>Cross-Blockchain Flow:</b>
+  1. Receive request from API
+  2. Query VDR: getVCStatus(vcID)
+  3. Verify VC exists & get hash
+  4. Create history on DCERT with hash
+  5. Event emitted → sync to PostgreSQL
+end note
+
+note bottom of vdr_blockchain
+  <b>VDR Blockchain Role:</b>
+  • Source of Truth for Identity
+  • Immutable VC records
+  • Future: Public blockchain
+end note
+
+note bottom of dcert_blockchain
+  <b>DCERT Blockchain Role:</b>
+  • Business logic & workflows
+  • Payment processing
+  • Audit trail with VC hash proof
+end note
+
+@enduml

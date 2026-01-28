@@ -194,3 +194,68 @@ export const deleteVCSchemaValidator = [
   schemaIdValidation,
   schemaVersionValidation,
 ];
+
+/**
+ * Validator for POST /schemas/price
+ */
+export const createVCSchemaPriceValidator = [
+  body("schemaId")
+    .trim()
+    .notEmpty()
+    .withMessage("Schema ID is required")
+    .isUUID()
+    .withMessage("Schema ID must be a valid UUID"),
+  body("price")
+    .notEmpty()
+    .withMessage("Price is required")
+    .isFloat({ min: 0 })
+    .withMessage("Price must be a positive number"),
+  body("currency")
+    .trim()
+    .notEmpty()
+    .withMessage("Currency is required")
+    .isLength({ min: 3, max: 3 })
+    .withMessage("Currency must be a 3-letter code (e.g., USD, EUR, IDR)"),
+  body("issuerId")
+    .trim()
+    .notEmpty()
+    .withMessage("Issuer ID is required")
+    .isUUID()
+    .withMessage("Issuer ID must be a valid UUID"),
+  body("version")
+    .trim()
+    .notEmpty()
+    .isInt({ min: 1 })
+    .withMessage("Version must be a positive integer")
+    .toInt(),
+];
+
+/**
+ * Validator for PUT /schemas/price
+ */
+export const updateVCSchemaPriceValidator = [
+  body("schemaId")
+    .trim()
+    .notEmpty()
+    .withMessage("Schema ID is required")
+    .isUUID()
+    .withMessage("Schema ID must be a valid UUID"),
+  body("price")
+    .notEmpty()
+    .withMessage("Price is required")
+    .isFloat({ min: 0 })
+    .withMessage("Price must be a positive number"),
+  body("currency")
+    .trim()
+    .notEmpty()
+    .withMessage("Currency is required")
+    .isLength({ min: 3, max: 3 })
+    .withMessage("Currency must be a 3-letter code (e.g., USD, EUR, IDR)"),
+  body("version")
+    .trim()
+    .notEmpty()
+    .withMessage("Version is required")
+    .isInt({ min: 1 })
+    .withMessage("Version must be a positive integer")
+    .toInt(),
+];

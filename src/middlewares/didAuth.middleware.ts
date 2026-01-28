@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { HTTP_STATUS } from "../constants";
 import { logger } from "../config";
+import { prisma } from "../config/database";
 import DIDService from "../services/did.service";
 import * as crypto from "crypto";
 
@@ -569,6 +570,29 @@ export const verifyDIDSignature = async (
       req.holderPublicKey = publicKeyHex;
       req.holderRole = payload.role;
       req.tokenPayload = payload;
+
+      // Update lastActive for Institution if DID belongs to an institution
+      try {
+        const institution = await prisma.institution.findUnique({
+          where: { did: holderDID },
+        });
+
+        if (institution) {
+          await prisma.institution.update({
+            where: { did: holderDID },
+            data: { lastActive: new Date() },
+          });
+          logger.debug(
+            `Updated lastActive for institution: ${institution.name} (${holderDID})`
+          );
+        }
+      } catch (updateError) {
+        // Log error but don't fail the authentication
+        logger.warn(
+          `Failed to update lastActive for DID ${holderDID}:`,
+          updateError
+        );
+      }
 
       next();
     } catch (error) {

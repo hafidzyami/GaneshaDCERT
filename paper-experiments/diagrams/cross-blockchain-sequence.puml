@@ -1,0 +1,141 @@
+@startuml cross-blockchain-sequence
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Arial
+skinparam sequenceMessageAlign center
+
+title Cross-Blockchain Credential History Creation Flow
+
+actor "Issuer/Holder" as client
+participant "Backend API" as api
+participant "Cross-Blockchain\nService" as service
+database "VDR Blockchain\n(VCManager)" as vdr
+database "DCERT Blockchain\n(HistoryManager)" as dcert
+participant "Event Listener" as listener
+database "PostgreSQL" as db
+
+== Request Phase ==
+
+client -> api: POST /credential-history/create
+activate api
+note right
+  Request Body:
+  {
+    "id": "hist-123",
+    "issuerDID": "did:ebsi:issuer",
+    "holderDID": "did:ebsi:holder",
+    "historyType": "ISSUE",
+    "vcID": "vc-abc"
+  }
+end note
+
+api -> service: createCredentialHistory(data)
+activate service
+
+== VDR Blockchain Verification ==
+
+service -> vdr: <b>getVCStatus(vcID)</b>
+activate vdr
+note right of vdr
+  <b>Query VDR Blockchain</b>
+  Read VC metadata
+end note
+
+vdr --> service: VCStatus{ id, hash, ... }
+deactivate vdr
+
+service -> service: Validate VC exists\nValidate VC is active\nValidate DIDs match
+
+note right of service
+  <b>Cryptographic Proof:</b>
+  VC Hash = "0xabc...def"
+
+  This hash proves that:
+  • VC exists on VDR blockchain
+  • VC content is immutable
+  • Can verify integrity later
+end note
+
+== DCERT Blockchain Transaction ==
+
+service -> dcert: <b>createCredentialHistory(</b>\n  id, issuerDID, holderDID,\n  type, vcID, <b><color:red>vcHash</color></b>\n<b>)</b>
+activate dcert
+
+note right of dcert
+  <b>Write to DCERT Blockchain</b>
+  Store history with VC hash
+  as cryptographic proof
+end note
+
+dcert -> dcert: Validate history ID\nStore record\nEmit event
+
+dcert --> service: Transaction Receipt\n(txHash, blockNumber)
+deactivate dcert
+
+service --> api: { txHash, historyId }
+deactivate service
+
+api --> client: 201 Created\n{ txHash, historyId }
+deactivate api
+
+== Event Synchronization ==
+
+dcert -> listener: Event: <b>CredentialHistoryCreated</b>
+activate listener
+
+note right of listener
+  <b>Event Data:</b>
+  {
+    id, issuerDID, holderDID,
+    historyType, status,
+    vcID, <color:red><b>vcHash</b></color>,
+    timestamp, blockNumber
+  }
+end note
+
+listener -> db: INSERT INTO credential_history
+activate db
+note right of db
+  <b>PostgreSQL Record:</b>
+  id: "hist-123"
+  vcID: "vc-abc"
+  <color:red><b>vcHash: "0xabc...def"</b></color>
+  status: INITIATED
+  createdAt: timestamp
+  blockNumber: 12345
+end note
+db --> listener: Success
+deactivate db
+
+listener -> db: INSERT INTO processed_event
+db --> listener: Success
+
+listener -> db: UPDATE event_checkpoint
+db --> listener: Success
+deactivate listener
+
+== Verification Query (Later) ==
+
+client -> api: GET /credential-history/:id
+activate api
+
+api -> db: SELECT * FROM credential_history
+activate db
+db --> api: History record with vcHash
+deactivate db
+
+api -> vdr: getVCStatus(vcID)
+activate vdr
+vdr --> api: Current VC with hash
+deactivate vdr
+
+api -> api: <b>Verify Hash Integrity</b>\nstored_hash === current_hash
+
+alt Hash matches
+  api --> client: 200 OK\n{ history, verified: true }
+else Hash mismatch (VC tampered!)
+  api --> client: 200 OK\n{ history, verified: false,\n  warning: "VC hash mismatch" }
+end
+deactivate api
+
+@enduml

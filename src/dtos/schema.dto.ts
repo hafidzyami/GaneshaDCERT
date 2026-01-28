@@ -34,6 +34,7 @@ export interface UpdateVCSchemaDTO {
 export interface SchemaFilterDTO {
   issuerDid?: string;
   isActive?: boolean;
+  pricingOnly?: boolean; // true (default) = only schemas with price > 0, false = all schemas
 }
 
 /**
@@ -96,4 +97,20 @@ export interface SchemaActiveStatusDTO {
 export interface SchemaDeleteResponseDTO {
   message: string;
   transaction_hash?: string;
+}
+
+
+/**
+ * DTO for create schema price
+ */
+export interface VCSchemaPrice {
+  schemaId: string;
+  price: number;
+  currency: string;
+  version: number;
+}
+
+export interface VCSchemaPriceResponseDTO {
+  message: string;
+  result?: string;
 }

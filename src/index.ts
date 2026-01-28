@@ -7,6 +7,8 @@ import {
   DatabaseService,
   DIDBlockchainConfig,
   VCBlockchainConfig,
+  CredentialsHistoryBlockchainConfig,
+  PaymentBlockchainConfig,
   logger,
 } from "./config";
 import {
@@ -27,16 +29,81 @@ import {
   presentationRoutes,
   notificationRoutes,
   institutionRoutes,
+  paymentRoutes,
+  performanceRoutes,
+  blockchainTransactionRoutes,
 } from "./routes";
 
 // Schedulers
 import { scheduleVCCleanup } from "./jobs/vcCleanupScheduler";
 
+// Blockchain Event Publishers
+import blockchainEventPublisher from "./services/blockchainEventPublisher.service";
+import credentialsHistoryEventPublisher from "./services/credentialsHistoryEventPublisher.service";
+import paymentEventPublisher from "./services/paymentEventPublisher.service";
+
+// Blockchain Transaction Worker
+import blockchainTransactionWorker from "./workers/blockchainTransactionWorker";
+
+// Database for performance comparison
+import { PrismaClient } from "@prisma/client";
+const prisma = new PrismaClient();
+
 const app: Application = express();
 const PORT: number = env.PORT;
 
-// Middleware untuk parsing JSON
-app.use(express.json());
+// Middleware untuk parsing JSON dengan raw body untuk signature verification
+app.use(
+  express.json({
+    verify: (req: any, res, buf) => {
+      // Store raw body for DOKU signature verification
+      req.rawBody = buf.toString("utf-8");
+    },
+  })
+);
+
+// // CORS Configuration
+// const corsOptions = {
+//   origin: (
+//     origin: string | undefined,
+//     callback: (err: Error | null, allow?: boolean) => void
+//   ) => {
+//     // Allow requests with no origin (like mobile apps or Postman)
+//     if (!origin) {
+//       return callback(null, true);
+//     }
+
+//     // List of allowed origins
+//     const allowedOrigins = [
+//       env.FRONTEND_URL, // From environment variable
+//       "http://localhost:3000", // Local development frontend
+//       "http://localhost:5173", // Vite dev server
+//       `http://localhost:${PORT}`, // Backend API (for Swagger UI)
+//       "https://dev-api-dcert.ganeshait.com", // Dev API (for Swagger UI)
+//       "https://api-dcert.ganeshait.com", // Production API (for Swagger UI)
+//       "https://dev-dcert.ganeshait.com", // Dev frontend
+//       "https://dcert.ganeshait.com", // Production frontend
+//     ];
+
+//     if (allowedOrigins.includes(origin)) {
+//       callback(null, true);
+//     } else {
+//       logger.warn(`CORS blocked origin: ${origin}`);
+//       callback(new Error("Not allowed by CORS"));
+//     }
+//   },
+//   credentials: true, // Allow cookies and authorization headers
+//   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+//   allowedHeaders: [
+//     "Content-Type",
+//     "Authorization",
+//     "X-Requested-With",
+//     "Accept",
+//   ],
+//   exposedHeaders: ["Content-Range", "X-Content-Range"],
+//   maxAge: 86400, // 24 hours
+// };
+
 app.use(cors());
 
 // Request logger (before all routes)
@@ -72,7 +139,7 @@ const swaggerOptions: swaggerJsdoc.Options = {
         description: "Production Server",
       },
       {
-        url: "http://192.168.55.115:3069/api/v1",
+        url: "http://192.168.55.122:3069/api/v1",
         description: "Local Server",
       },
     ],
@@ -221,20 +288,154 @@ app.get("/api/v1/health", async (req: Request, res: Response) => {
   const dbHealth = await DatabaseService.isConnected();
   const didBCHealth = await DIDBlockchainConfig.isConnected();
   const vcBCHealth = await VCBlockchainConfig.isConnected();
+  const credHistoryBCHealth =
+    await CredentialsHistoryBlockchainConfig.isConnected();
+  const paymentBCHealth = await PaymentBlockchainConfig.isConnected();
 
   const response: HealthCheckResponse = {
-    success: dbHealth && didBCHealth,
+    success:
+      dbHealth &&
+      didBCHealth &&
+      vcBCHealth &&
+      credHistoryBCHealth &&
+      paymentBCHealth,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     services: {
       database: dbHealth,
       didblockchain: didBCHealth,
       vcblockchain: vcBCHealth,
+      credentialsHistoryBlockchain: credHistoryBCHealth,
+      paymentBlockchain: paymentBCHealth,
     },
   };
 
-  const statusCode = response.success ? 200 : 503;
-  res.status(statusCode).json(response);
+  if (response.success) {
+    res.status(200).json(response);
+  } else {
+    res.status(503).json(response);
+  }
+});
+
+/**
+ * @swagger
+ * /health/blockchain-sync:
+ *   get:
+ *     summary: Blockchain Sync Status
+ *     description: Check blockchain event synchronization status
+ *     tags:
+ *       - System
+ *     responses:
+ *       200:
+ *         description: Blockchain sync status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 currentBlockchainBlock:
+ *                   type: number
+ *                   example: 12345
+ *                 checkpoints:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       eventType:
+ *                         type: string
+ *                         example: SchemaCreated
+ *                       lastSyncedBlock:
+ *                         type: string
+ *                         example: "12340"
+ *                       blockGap:
+ *                         type: number
+ *                         example: 5
+ *                       isSynced:
+ *                         type: boolean
+ *                         example: true
+ *                       lastSyncedAt:
+ *                         type: string
+ *                         format: date-time
+ */
+app.get(
+  "/api/v1/health/blockchain-sync",
+  async (req: Request, res: Response) => {
+    try {
+      const status = await blockchainEventPublisher.getSyncStatus();
+      res.json({
+        success: true,
+        ...status,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Failed to get blockchain sync status",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /health/credentials-history-sync:
+ *   get:
+ *     summary: Credentials History Blockchain Sync Status
+ *     description: Check credentials history blockchain event synchronization status
+ *     tags:
+ *       - System
+ *     responses:
+ *       200:
+ *         description: Credentials history sync status
+ */
+app.get(
+  "/api/v1/health/credentials-history-sync",
+  async (req: Request, res: Response) => {
+    try {
+      const status = await credentialsHistoryEventPublisher.getSyncStatus();
+      res.json({
+        success: true,
+        ...status,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Failed to get credentials history sync status",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /health/payment-sync:
+ *   get:
+ *     summary: Payment Blockchain Sync Status
+ *     description: Check payment blockchain event synchronization status
+ *     tags:
+ *       - System
+ *     responses:
+ *       200:
+ *         description: Payment sync status
+ */
+app.get("/api/v1/health/payment-sync", async (req: Request, res: Response) => {
+  try {
+    const status = await paymentEventPublisher.getSyncStatus();
+    res.json({
+      success: true,
+      ...status,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to get payment sync status",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
 });
 
 // API Routes with /api/v1 prefix
@@ -246,6 +447,9 @@ app.use("/api/v1/credentials", credentialRoutes);
 app.use("/api/v1/presentations", presentationRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/institutions", institutionRoutes);
+app.use("/api/v1/payment", paymentRoutes);
+app.use("/api/v1/performance", performanceRoutes);
+app.use("/api/v1/blockchain-transactions", blockchainTransactionRoutes);
 
 // 404 Handler - must be after all routes
 app.use(notFoundHandler);
@@ -263,18 +467,47 @@ const startServer = async () => {
     logger.info(`   Port: ${PORT}`);
 
     // Connect to Database
+    logger.info("📦 Connecting to database...");
     await DatabaseService.connect();
+    logger.success("   ✓ Database connected");
 
-    // Test DID Blockchain Connection
+    // Test Blockchain Connections
+    logger.info("⛓️  Testing blockchain connections...");
+
     const didBlockchainConnected = await DIDBlockchainConfig.testConnection();
-    if (!didBlockchainConnected) {
-      logger.warn("DID Blockchain connection failed, but server will continue");
+    if (didBlockchainConnected) {
+      logger.success("   ✓ DID Blockchain connected");
+    } else {
+      logger.warn(
+        "   ⚠ DID Blockchain connection failed, server will continue"
+      );
     }
 
-    // Test VC Blockchain Connection
-    const vcBlockchainConnected = await DIDBlockchainConfig.testConnection();
-    if (!vcBlockchainConnected) {
-      logger.warn("VC Blockchain connection failed, but server will continue");
+    const vcBlockchainConnected = await VCBlockchainConfig.testConnection();
+    if (vcBlockchainConnected) {
+      logger.success("   ✓ VC Blockchain connected");
+    } else {
+      logger.warn("   ⚠ VC Blockchain connection failed, server will continue");
+    }
+
+    const credHistoryBlockchainConnected =
+      await CredentialsHistoryBlockchainConfig.testConnection();
+    if (credHistoryBlockchainConnected) {
+      logger.success("   ✓ CredentialsHistory Blockchain connected");
+    } else {
+      logger.warn(
+        "   ⚠ CredentialsHistory Blockchain connection failed, server will continue"
+      );
+    }
+
+    const paymentBlockchainConnected =
+      await PaymentBlockchainConfig.testConnection();
+    if (paymentBlockchainConnected) {
+      logger.success("   ✓ Payment Blockchain connected");
+    } else {
+      logger.warn(
+        "   ⚠ Payment Blockchain connection failed, server will continue"
+      );
     }
 
     // Initialize Background Jobs
@@ -282,15 +515,84 @@ const startServer = async () => {
     scheduleVCCleanup();
     logger.success("   ✓ VC cleanup scheduler started (runs every 5 minutes)");
 
+    // Start Blockchain Event Listeners
+    logger.info("🔗 Starting blockchain event listeners...");
+
+    // VC Schema Event Listener (Credentials Blockchain)
+    try {
+      await blockchainEventPublisher.start();
+      logger.success("   ✓ VC Schema event listener started");
+    } catch (error) {
+      logger.error("   ✗ Failed to start VC Schema event listener:", error);
+      logger.warn("   Server will continue without VC Schema event listener");
+    }
+
+    // Credentials History Event Listener (History Blockchain)
+    try {
+      await credentialsHistoryEventPublisher.start();
+      logger.success("   ✓ Credentials History event listener started");
+    } catch (error) {
+      logger.error(
+        "   ✗ Failed to start Credentials History event listener:",
+        error
+      );
+      logger.warn(
+        "   Server will continue without Credentials History event listener"
+      );
+    }
+
+    // Payment Event Listener (History Blockchain)
+    try {
+      await paymentEventPublisher.start();
+      logger.success("   ✓ Payment event listener started");
+    } catch (error: any) {
+      logger.error("   ✗ Failed to start Payment event listener:", {
+        message: error?.message,
+        stack: error?.stack,
+        name: error?.name,
+        error: error,
+      });
+      logger.warn("   Server will continue without Payment event listener");
+    }
+
+    // Start Blockchain Transaction Worker
+    logger.info("🔨 Starting blockchain transaction worker...");
+    try {
+      await blockchainTransactionWorker.start();
+      logger.success("   ✓ Blockchain transaction worker started");
+    } catch (error: any) {
+      logger.error("   ✗ Failed to start blockchain transaction worker:", {
+        message: error?.message,
+        stack: error?.stack,
+        name: error?.name,
+        error: error,
+      });
+      logger.warn(
+        "   Server will continue without blockchain transaction worker"
+      );
+    }
+    // logger.warn("🔨 Blockchain transaction worker is DISABLED");
+
     // Start Express Server
+    logger.info("🎯 Starting HTTP server...");
     app.listen(PORT, () => {
-      logger.success("GaneshaDCERT API Server is running!");
+      logger.success("=".repeat(60));
+      logger.success("✅ GaneshaDCERT API Server is running!");
+      logger.success("=".repeat(60));
       logger.info(`   🌐 API: http://localhost:${PORT}`);
       logger.info(`   📖 Swagger Docs: http://localhost:${PORT}/api-docs`);
       logger.info(`   🔍 Health Check: http://localhost:${PORT}/api/v1/health`);
+      logger.success("=".repeat(60));
     });
   } catch (error) {
-    logger.error("Failed to start server", error);
+    logger.error("=".repeat(60));
+    logger.error("❌ FATAL: Failed to start server");
+    logger.error("=".repeat(60));
+    logger.error("Error details:", error);
+    if (error instanceof Error) {
+      logger.error("Stack trace:", error.stack);
+    }
+    logger.error("=".repeat(60));
     process.exit(1);
   }
 };
@@ -298,12 +600,20 @@ const startServer = async () => {
 // Graceful Shutdown
 process.on("SIGINT", async () => {
   logger.info("Shutting down gracefully...");
+  await blockchainEventPublisher.stop();
+  await credentialsHistoryEventPublisher.stop();
+  await paymentEventPublisher.stop();
+  await blockchainTransactionWorker.stop();
   await DatabaseService.disconnect();
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
   logger.info("Shutting down gracefully...");
+  await blockchainEventPublisher.stop();
+  await credentialsHistoryEventPublisher.stop();
+  await paymentEventPublisher.stop();
+  await blockchainTransactionWorker.stop();
   await DatabaseService.disconnect();
   process.exit(0);
 });

@@ -19,7 +19,7 @@ class VCBlockchainConfig {
   public static get provider(): ethers.JsonRpcProvider {
     if (!VCBlockchainConfig._provider) {
       VCBlockchainConfig._provider = new ethers.JsonRpcProvider(
-        env.BLOCKCHAIN_RPC_URL
+        env.CREDENTIALS_BLOCKCHAIN_RPC_URL
       );
     }
     return VCBlockchainConfig._provider;
@@ -27,7 +27,7 @@ class VCBlockchainConfig {
 
   public static get signer(): ethers.Wallet {
     if (!VCBlockchainConfig._signer) {
-      const privateKey = env.ACCOUNT_PRIVATE_KEY.trim();
+      const privateKey = env.CREDENTIALS_ACCOUNT_PRIVATE_KEY.trim();
       VCBlockchainConfig._signer = new ethers.Wallet(
         privateKey,
         VCBlockchainConfig.provider
@@ -55,11 +55,14 @@ class VCBlockchainConfig {
         VCBlockchainConfig.signer.address
       );
 
-      console.log("✅ VC Blockchain connected successfully");
-      console.log(`   Network: ${network.name} (Chain ID: ${network.chainId})`);
-      console.log(`   Signer: ${VCBlockchainConfig.signer.address}`);
-      console.log(`   Balance: ${ethers.formatEther(balance)} ETH`);
-      console.log(`   Contract: ${env.VC_CONTRACT_ADDRESS}`);
+      logger.success("VC Blockchain connected successfully");
+      logger.info("VC Blockchain Details", {
+        network: network.name,
+        chainId: network.chainId.toString(),
+        signer: VCBlockchainConfig.signer.address,
+        balance: `${ethers.formatEther(balance)} ETH`,
+        contract: env.VC_CONTRACT_ADDRESS,
+      });
 
       return true;
     } catch (error) {

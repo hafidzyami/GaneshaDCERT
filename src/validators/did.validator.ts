@@ -105,23 +105,10 @@ export const keyRotationValidator = [
     .withMessage("New public key is required")
     .matches(/^[a-fA-F0-9]{66,130}$/)
     .withMessage("Invalid new public key format"),
-
-  body("signature")
-    .trim()
-    .notEmpty()
-    .withMessage("Signature is required for verification")
-    .matches(/^[a-fA-F0-9]+$/)
-    .withMessage("Invalid signature format"),
-
-  body("reason")
-    .optional()
-    .trim()
-    .isLength({ max: 500 })
-    .withMessage("Reason must not exceed 500 characters"),
 ];
 
 /**
- * Validator for DID deletion/deactivation
+ * Validator for DID deletion/deactivation (User path)
  */
 export const deleteDIDValidator = [
   param("did")
@@ -130,19 +117,18 @@ export const deleteDIDValidator = [
     .withMessage("DID parameter is required")
     .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
     .withMessage("Invalid DID format"),
+];
 
-  body("signature")
+/**
+ * Validator for DID deletion/deactivation (Admin path)
+ */
+export const deleteDIDByAdminValidator = [
+  param("did")
     .trim()
     .notEmpty()
-    .withMessage("Signature is required for verification")
-    .matches(/^[a-fA-F0-9]+$/)
-    .withMessage("Invalid signature format"),
-
-  body("reason")
-    .optional()
-    .trim()
-    .isLength({ max: 500 })
-    .withMessage("Reason must not exceed 500 characters"),
+    .withMessage("DID parameter is required")
+    .matches(/^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$/)
+    .withMessage("Invalid DID format"),
 ];
 
 /**

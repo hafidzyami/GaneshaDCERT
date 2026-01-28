@@ -13,6 +13,7 @@ import {
   InternalServerError,
 } from "../utils/errors/AppError";
 import logger from "../config/logger";
+import { extractSchemaAndHolder, extractVCID } from "../utils/extractDataFromVCID";
 import {
   ProcessUpdateVCDTO,
   ProcessUpdateVCResponseDTO,
@@ -42,12 +43,21 @@ import {
   ConfirmIssuerInitiatedVCsResponseDTO,
   ValidateVCDTO,
   VCValidationResult,
+  CombinedClaimVCDTO,
+  CombinedClaimVCsResponseDTO,
+  CombinedClaimConfirmationItemDTO,
+  CombinedConfirmVCsBatchDTO,
+  CombinedConfirmVCsResponseDTO,
   UploadVCDocumentResponseDTO,
   DeleteVCDocumentResponseDTO,
+  VCSchemaData,
 } from "../dtos";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
 import NotificationService from "./notification.service";
+import PaymentBlockchainService from "./blockchain/paymentBlockchain.service";
+import blockchainTransactionQueueService from "./blockchain/blockchainTransactionQueue.service";
 import StorageService from "./storage.service";
+import SchemaService from "./schema.service";
 import { v4 as uuidv4 } from "uuid";
 
 /**
@@ -255,33 +265,57 @@ class CredentialService {
   /**
    * Get holder's VCs from blockchain
    */
+  /**
+   * Get all active VCs for a holder
+   * Query blockchain and return only active (not revoked) credentials
+   * Note: This uses getAllVCs which may fail for large number of VCs
+   */
   async getHolderVCs(holderDid: string) {
-    // TODO: Implement blockchain query to get all VCs for holder
-    logger.info(`Fetching VCs for holder DID: ${holderDid}`);
+    logger.info(`Fetching active VCs for holder DID: ${holderDid}`);
 
-    // Placeholder data
-    const placeholderVCs = [
-      {
-        vc_id: "vc:hid:11111",
-        schema_id: "sch:hid:22222",
-        issuer_did: "did:example:b34ca6cd37bbf23",
-        hash: "0x123abc...",
-        status: true,
-      },
-      {
-        vc_id: "vc:hid:33333",
-        schema_id: "sch:hid:44444",
-        issuer_did: "did:example:c56ef89abce56",
-        hash: "0x456def...",
-        status: true,
-      },
-    ];
+    try {
+      // Query all VCs from blockchain
+      const allVCs = await VCBlockchainService.getAllVCsFromBlockchain();
 
-    return {
-      message: `Successfully retrieved VCs for holder ${holderDid}.`,
-      count: placeholderVCs.length,
-      data: placeholderVCs,
-    };
+      // Filter VCs by holder_did and active status
+      const activeVCs = allVCs
+        .filter((vc: any) => {
+          const isHolder = vc.holderDID === holderDid;
+          const isActive = !vc.revoked;
+          return isHolder && isActive;
+        })
+        .map((vc: any) => ({
+          vc_id: vc.id,
+          holder_did: vc.holderDID,
+          issuer_did: vc.issuerDID,
+          schema_id: vc.schemaID,
+          hash: vc.hashValue,
+          revoked: vc.revoked,
+          issued_at: new Date(Number(vc.issuedAt) * 1000).toISOString(),
+          expires_at: vc.expiresAt && Number(vc.expiresAt) > 0
+            ? new Date(Number(vc.expiresAt) * 1000).toISOString()
+            : null,
+        }));
+
+      logger.success(`Found ${activeVCs.length} active VCs for holder ${holderDid}`);
+
+      return {
+        message: `Successfully retrieved active VCs for holder ${holderDid}`,
+        count: activeVCs.length,
+        credentials: activeVCs,
+      };
+    } catch (error) {
+      logger.error(`Error fetching VCs for holder ${holderDid}:`, error);
+
+      // If blockchain query fails (e.g., out of gas), return empty array
+      logger.warn(`Returning empty credentials array due to blockchain error`);
+      return {
+        message: `Unable to retrieve VCs from blockchain. Please try again later.`,
+        count: 0,
+        credentials: [],
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
   }
 
   /**
@@ -426,7 +460,7 @@ class CredentialService {
     }
   }
 
-  async processIssuanceVC(
+  async approveIssuanceRequest(
     data: ProcessIssuanceVCDTO
   ): Promise<ProcessIssuanceVCResponseDTO> {
     const {
@@ -582,105 +616,154 @@ class CredentialService {
         // The new VC can still be issued
       }
 
-      // --- Blockchain Call (Directly, similar to did.service.ts) ---
-      let blockchainReceipt: any;
-      try {
-        blockchainReceipt = await VCBlockchainService.issueVCInBlockchain(
-          vc_id,
-          issuer_did,
-          holder_did,
-          vc_type,
-          schema_id,
-          schema_version,
-          expired_at,
-          vc_hash
-        );
-        logger.info(
-          `Blockchain issuance successful for ${vc_id}. TX: ${blockchainReceipt?.hash}`
-        );
-      } catch (blockchainError: any) {
-        logger.error("Blockchain issuance failed:", blockchainError);
-        // Decide how to handle this: rethrow or just log and potentially skip DB updates?
-        // Rethrowing is safer to indicate the overall operation failed.
+      // --- Payment Flow: Create Item on Payment Blockchain ---
+      const price = await SchemaService.getPriceBasedOnSchemaId(schema_id, schema_version);
+      
+      // Validate price - must be greater than 0 for paid credentials
+      if (price <= 0) {
+        logger.error(`Invalid price for credential: ${price}. Price must be greater than 0.`);
         throw new BadRequestError(
-          `Blockchain issuance failed: ${blockchainError.message}`
+          "Credential price must be greater than 0. Free credentials are not supported in this flow."
         );
       }
-      // ----------------------------------------------------------------
 
-      // --- Database Updates (Perform AFTER successful blockchain call) ---
-      // !! Note: If these fail, the blockchain entry exists but DB is inconsistent !!
-      let updatedRequest;
-      let newVCResponse;
+      const itemId = uuidv4();
+
+      // Price > 0: Normal payment flow
+      // 1. IMMEDIATELY save to database (for fast response)
       try {
-        updatedRequest = await this.db.vCIssuanceRequest.update({
-          where: { id: request_id },
-          data: { 
-            status: RequestStatus.APPROVED,
-            vc_id: vc_id // <-- SIMPAN VC_ID DI SINI
+        await this.db.itemBlockchain.create({
+          data: {
+            id: itemId,
+            issuerDID: issuer_did,
+            holderDID: holder_did,
+            price: price,
+            vcID: vc_id,
+            vcHash: vc_hash,
+            itemType: "ISSUANCE",
+            isPaid: false,
+            blockNumber: 0,
+            txHash: "pending-blockchain",
           },
         });
+        logger.success(`Item saved to database: ${itemId} (isPaid=false)`);
+      } catch (dbError: any) {
+        logger.error(`Failed to save item to database: ${itemId}`, dbError);
+        throw new InternalServerError(
+          `Failed to save item to database: ${dbError.message}`
+        );
+      }
 
+      // 2. Queue blockchain transaction for async processing (parallel)
+      let queueResult: any;
+      try {
+        queueResult = await blockchainTransactionQueueService.queueCreateItem({
+          itemId,
+          price,
+          vcID: vc_id,
+          issuerDID: issuer_did,
+          holderDID: holder_did,
+          vcHash: vc_hash,
+          itemType: 0 // ISSUANCE
+        });
+        logger.info(
+          `Payment item queued for blockchain. Item ID: ${itemId}, Status: ${queueResult.status}`
+        );
+      } catch (queueError: any) {
+        logger.error("Failed to queue payment item:", queueError);
+        // Don't throw - item already saved to database
+        // User can still proceed with payment
+        logger.warn("Item saved to database but blockchain transaction failed to queue. Will retry later.");
+      }
+
+      // 3. Create VCResponse immediately with issuer's encrypted_body
+      // This stores the full signed VC from issuer, ready for holder to claim after payment
+      let newVCResponse;
+      try {
         newVCResponse = await this.db.vCResponse.create({
           data: {
             request_id: request_id,
             request_type: RequestType.ISSUANCE,
             issuer_did: issuer_did,
             holder_did: holder_did,
-            encrypted_body: encrypted_body,
+            order_id: itemId, // Link to ItemBlockchain for payment tracking
+            encrypted_body: encrypted_body, // Full signed VC from issuer
+            vc_hash: vc_hash,
+            status: VCResponseStatus.PENDING, // PENDING but requires payment before claim
           },
         });
         logger.success(
-          `Database updated for approved request: ${request_id}. VCResponse created: ${newVCResponse.id}`
+          `VCResponse created: ${newVCResponse.id} (pending payment, linked to item ${itemId})`
+        );
+      } catch (dbError: any) {
+        logger.error(`Failed to create VCResponse:`, dbError);
+        throw new InternalServerError(
+          `Failed to create VCResponse: ${dbError.message}`
+        );
+      }
+
+      // 4. Update request status to APPROVED
+      let updatedRequest;
+      try {
+        updatedRequest = await this.db.vCIssuanceRequest.update({
+          where: { id: request_id },
+          data: {
+            status: RequestStatus.APPROVED,
+            vc_id: vc_id,
+          },
+        });
+        logger.success(
+          `Issuance request ${request_id} marked as APPROVED, pending payment`
         );
 
-        // Send push notification to holder
+        // Send push notification to holder about payment requirement
         try {
           await NotificationService.sendVCStatusNotification(
             holder_did,
-            "Credential Issued Successfully",
-            "Your verifiable credential has been issued and is now available for use.",
+            "Payment Required",
+            `Your credential issuance has been approved. Please complete payment of ${price} to receive your credential.`,
             {
-              type: "VC_ISSUED",
-              vc_response_id: newVCResponse.id,
+              type: "PAYMENT_REQUIRED",
               request_id: request_id,
               request_type: RequestType.ISSUANCE,
-              transaction_hash: blockchainReceipt?.hash,
+              item_id: itemId,
+              vc_response_id: newVCResponse.id,
+              price: price,
+              vc_id: vc_id,
             }
           );
-          logger.success(`Push notification sent to holder: ${holder_did}`);
+          logger.success(`Payment notification sent to holder: ${holder_did}`);
         } catch (notifError: any) {
-          // Don't fail the issuance if notification fails
           logger.error(
-            `Failed to send push notification to ${holder_did}:`,
+            `Failed to send payment notification to ${holder_did}:`,
             notifError
           );
         }
       } catch (dbError: any) {
         logger.error(
-          `Database update failed for approved request ${request_id} after successful blockchain TX ${blockchainReceipt?.hash}:`,
+          `Database update failed for request ${request_id}:`,
           dbError
         );
-        return {
-          message:
-            "Blockchain issuance succeeded, but database update failed. Please check logs.",
-          request_id: request_id, // Return original request ID
-          status: RequestStatus.APPROVED, // Reflect intended status
-          vc_response_id: undefined, // Indicate DB write failure
-          transaction_hash: blockchainReceipt?.hash,
-          block_number: blockchainReceipt?.blockNumber,
-        };
+        throw new InternalServerError(
+          "Failed to update request status in database"
+        );
       }
-      // ------------------------------------------------------------------
 
+      // Return response with payment information
       return {
         message:
-          "Verifiable Credential issued successfully on blockchain and database.",
+          "Verifiable Credential issuance approved. VC stored and ready for claim after payment.",
         request_id: updatedRequest.id,
         status: updatedRequest.status,
+        stage: "PAYMENT_PENDING",
         vc_response_id: newVCResponse.id,
-        transaction_hash: blockchainReceipt?.hash,
-        block_number: blockchainReceipt?.blockNumber,
+        payment_info: {
+          item_id: itemId,
+          price: price,
+          vc_id: vc_id,
+          blockchain_status: queueResult?.status || "PENDING",
+          transaction_id: queueResult?.transaction_id,
+        },
       };
     } else {
       throw new BadRequestError(
@@ -723,9 +806,9 @@ class CredentialService {
   }
 
   async revokeVC(data: RevokeVCDTO): Promise<RevokeVCResponseDTO> {
-    const { request_id, action, vc_id } = data;
+    const { request_id, action, vc_id, encrypted_body } = data;
 
-    // 1. Find the original revocation request in the database
+    // 1. Find the original revocation request
     const revokeRequest = await this.db.vCRevokeRequest.findUnique({
       where: { id: request_id },
     });
@@ -739,6 +822,9 @@ class CredentialService {
     // 2. Get issuer_did and holder_did from database
     const issuer_did = revokeRequest.issuer_did;
     const holder_did = revokeRequest.holder_did;
+    
+    // [NEW] Get the encrypted_body (reason) from the original request
+    const encrypted_body_reason = revokeRequest.encrypted_body;
 
     // 3. Check if already processed
     if (revokeRequest.status !== RequestStatus.PENDING) {
@@ -747,9 +833,9 @@ class CredentialService {
       );
     }
 
-    // 4. Process based on action (Logika ini tetap sama)
+    // 4. Process based on action
     if (action === RequestStatus.REJECTED) {
-      // ... (logika REJECTED tidak berubah)
+      // ... (logic for REJECTED remains the same) ...
       const updatedRequest = await this.db.vCRevokeRequest.update({
         where: { id: request_id },
         data: { status: RequestStatus.REJECTED },
@@ -757,7 +843,7 @@ class CredentialService {
 
       logger.warn(`VC Revocation request rejected: ${request_id}`);
 
-      // Send push notification to holder
+      // ... (push notification logic remains the same) ...
       try {
         await NotificationService.sendVCStatusNotification(
           holder_did,
@@ -782,10 +868,15 @@ class CredentialService {
         request_id: updatedRequest.id,
         status: updatedRequest.status,
       };
+
     } else if (action === RequestStatus.APPROVED) {
-      // ... (logika APPROVED tidak berubah)
+      
       if (!vc_id) {
         throw new BadRequestError("vc_id is required when action is APPROVED.");
+      }
+
+      if (!encrypted_body) {
+        throw new BadRequestError("encrypted_body is required when action is APPROVED.");
       }
 
       logger.info(
@@ -800,12 +891,12 @@ class CredentialService {
           logger.warn(
             `Attempted to approve revocation for an already revoked VC: ${vc_id}`
           );
+          // [MODIFICATION] Still update request status even if already revoked
           await this.db.vCRevokeRequest.update({
-            // Still update request status
             where: { id: request_id },
-            data: { 
+            data: {
               status: RequestStatus.APPROVED,
-              vc_id: vc_id // <-- SIMPAN VC_ID DI SINI
+              vc_id: vc_id 
             },
           });
           throw new BadRequestError(
@@ -816,6 +907,7 @@ class CredentialService {
           `VC ${vc_id} found and is currently active. Proceeding with blockchain revocation.`
         );
       } catch (error: any) {
+        // ... (pre-check error handling remains the same) ...
         logger.error(`Pre-revocation check failed for VC ${vc_id}:`, error);
         if (error instanceof NotFoundError) {
           throw new NotFoundError(
@@ -829,8 +921,7 @@ class CredentialService {
           `Failed to verify VC status before revocation: ${error.message}`
         );
       }
-      // ------------------------------------
-
+      
       // --- Blockchain Revocation Call ---
       let blockchainReceipt: any;
       try {
@@ -851,16 +942,30 @@ class CredentialService {
       }
       // ---------------------------------
 
-      // --- Update DB Status ---
+      // --- Update DB Status and Create VCResponse ---
       const updatedRequest = await this.db.vCRevokeRequest.update({
         where: { id: request_id },
-        data: { 
+        data: {
           status: RequestStatus.APPROVED,
-          vc_id: vc_id // <-- SIMPAN VC_ID DI SINI
+          vc_id: vc_id, // <-- SIMPAN VC_ID DI SINI
         },
       });
       logger.info(
         `Revocation request ${request_id} status updated to APPROVED in DB.`
+      );
+
+      // Create VCResponse so holder can see the revoked VC data
+      const newVCResponse = await this.db.vCResponse.create({
+        data: {
+          request_id: request_id,
+          request_type: RequestType.REVOKE,
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          encrypted_body: encrypted_body,
+        },
+      });
+      logger.success(
+        `VCResponse created for revocation: ${newVCResponse.id}`
       );
       // ------------------------
 
@@ -898,7 +1003,7 @@ class CredentialService {
     }
   }
 
-  async processRenewalVC(
+  async approveRenewalRequest(
     data: ProcessRenewalVCDTO
   ): Promise<ProcessRenewalVCResponseDTO> {
     const { request_id, action, vc_id, encrypted_body, expired_at } = data;
@@ -972,101 +1077,160 @@ class CredentialService {
         `Processing approval for renewal request ${request_id} targeting VC ${vc_id}`
       );
 
-      // --- Blockchain Call ---
-      let blockchainReceipt: any;
+      // --- Validation: hash is required when approved ---
+      if (!data.hash) {
+        throw new BadRequestError("hash is required when action is APPROVED.");
+      }
+
+      // Extract schema_id and version from vc_id (format: schema_id:version:holder_did:timestamp)
+      const { schemaId, version } = extractVCID(vc_id);
+
+      // --- Payment Flow: Create Item on Payment Blockchain ---
+      const price = await SchemaService.getPriceBasedOnSchemaId(schemaId, parseInt(version, 10));
+      const itemId = uuidv4();
+
+      // 1. IMMEDIATELY save to database (for fast response)
       try {
-        // Call the renew function on the blockchain
-        blockchainReceipt = await VCBlockchainService.renewVCInBlockchain(
-          vc_id,
-          expired_at
-        );
-        logger.success(
-          `VC ${vc_id} renewed successfully on blockchain. TX: ${blockchainReceipt?.hash}`
-        );
-      } catch (blockchainError: any) {
-        logger.error(
-          `Blockchain renewal failed during approval for request ${request_id} (VC ${vc_id}):`,
-          blockchainError
-        );
-        // Handle specific errors like NotFoundError if the service throws them
-        if (blockchainError instanceof NotFoundError) {
-          throw new NotFoundError(
-            `VC with ID ${vc_id} not found on the blockchain. Cannot process renewal request ${request_id}.`
-          );
-        }
-        throw new BadRequestError(
-          `Blockchain renewal failed: ${blockchainError.message}`
+        await this.db.itemBlockchain.create({
+          data: {
+            id: itemId,
+            issuerDID: issuer_did,
+            holderDID: holder_did,
+            price: price,
+            vcID: vc_id,
+            vcHash: data.hash,
+            itemType: "RENEWAL",
+            isPaid: false,
+            blockNumber: 0,
+            txHash: "pending-blockchain",
+          },
+        });
+        logger.success(`Item saved to database: ${itemId} (RENEWAL, isPaid=false)`);
+      } catch (dbError: any) {
+        logger.error(`Failed to save renewal item to database: ${itemId}`, dbError);
+        throw new InternalServerError(
+          `Failed to save renewal item to database: ${dbError.message}`
         );
       }
-      // -------------------------
 
-      // --- Database Updates ---
-      // Use a transaction for atomicity
-      const result = await this.db.$transaction(async (tx) => {
-        // Update renewal request status
-        const updatedRequest = await tx.vCRenewalRequest.update({
-          where: { id: request_id },
-          data: { 
-            status: RequestStatus.APPROVED,
-            vc_id: vc_id // <-- SIMPAN VC_ID DI SINI
-          },
-        });
-
-        // Create a new VCResponse record for the renewal
-        const newVCResponse = await tx.vCResponse.create({
-          data: {
-            request_id: request_id, // Link to the VCRenewalRequest
-            request_type: RequestType.RENEWAL, // Set type to RENEWAL
-            issuer_did: issuer_did,
-            holder_did: holder_did,
-            encrypted_body: encrypted_body, // Store the new encrypted body
-          },
-        });
-
-        logger.info(
-          `Renewal request ${request_id} status updated to APPROVED. New VCResponse created: ${newVCResponse.id}`
-        );
-        return { updatedRequest, newVCResponse };
-      });
-      // ------------------------
-
-      // Send push notification to holder
+      // 2. Queue blockchain transaction for async processing (parallel)
+      let queueResult: any;
       try {
-        await NotificationService.sendVCStatusNotification(
-          holder_did,
-          "Credential Renewed Successfully",
-          "Your verifiable credential has been renewed and is ready for continued use.",
-          {
-            type: "VC_RENEWED",
-            vc_response_id: result.newVCResponse.id,
+        queueResult = await blockchainTransactionQueueService.queueCreateItem({
+          itemId,
+          price,
+          vcID: vc_id,
+          issuerDID: issuer_did,
+          holderDID: holder_did,
+          vcHash: data.hash,
+          itemType: 1 // RENEWAL
+        });
+        logger.info(
+          `Payment item queued for renewal. Item ID: ${itemId}, Status: ${queueResult.status}`
+        );
+      } catch (queueError: any) {
+        logger.error("Failed to queue payment item for renewal:", queueError);
+        // Don't throw - item already saved to database
+        logger.warn("Renewal item saved to database but blockchain transaction failed to queue. Will retry later.");
+      }
+
+      // 3. Create VCResponse immediately with issuer's encrypted_body
+      // This stores the renewed VC from issuer, ready for holder to claim after payment
+      let newVCResponse;
+      try {
+        newVCResponse = await this.db.vCResponse.create({
+          data: {
             request_id: request_id,
             request_type: RequestType.RENEWAL,
-            transaction_hash: blockchainReceipt?.hash,
-          }
+            issuer_did: issuer_did,
+            holder_did: holder_did,
+            order_id: itemId, // Link to ItemBlockchain for payment tracking
+            encrypted_body: encrypted_body, // Full renewed VC from issuer
+            vc_hash: data.hash,
+            status: VCResponseStatus.PENDING, // PENDING but requires payment before claim
+          },
+        });
+        logger.success(
+          `VCResponse created for renewal: ${newVCResponse.id} (pending payment, linked to item ${itemId})`
         );
-        logger.success(`Push notification sent to holder: ${holder_did}`);
-      } catch (notifError: any) {
-        logger.error(
-          `Failed to send push notification to ${holder_did}:`,
-          notifError
+      } catch (dbError: any) {
+        logger.error(`Failed to create VCResponse for renewal:`, dbError);
+        throw new InternalServerError(
+          `Failed to create VCResponse for renewal: ${dbError.message}`
         );
       }
 
+      // 4. Update request status to APPROVED
+      let updatedRequest;
+      try {
+        updatedRequest = await this.db.vCRenewalRequest.update({
+          where: { id: request_id },
+          data: {
+            status: RequestStatus.APPROVED,
+            vc_id: vc_id,
+          },
+        });
+        logger.success(
+          `Renewal request ${request_id} marked as APPROVED, pending payment`
+        );
+
+        // Send push notification to holder about payment requirement
+        try {
+          await NotificationService.sendVCStatusNotification(
+            holder_did,
+            "Payment Required for Renewal",
+            `Your credential renewal has been approved. Please complete payment of ${price} to renew your credential.`,
+            {
+              type: "PAYMENT_REQUIRED",
+              request_id: request_id,
+              request_type: RequestType.RENEWAL,
+              item_id: itemId,
+              vc_response_id: newVCResponse.id,
+              price: price,
+              vc_id: vc_id,
+            }
+          );
+          logger.success(
+            `Payment notification sent to holder: ${holder_did}`
+          );
+        } catch (notifError: any) {
+          logger.error(
+            `Failed to send payment notification to ${holder_did}:`,
+            notifError
+          );
+        }
+      } catch (dbError: any) {
+        logger.error(
+          `Database update failed for renewal request ${request_id}:`,
+          dbError
+        );
+        throw new InternalServerError(
+          "Failed to update request status in database"
+        );
+      }
+
+      // Return response with payment information
       return {
         message:
-          "Verifiable Credential renewal request approved and VC renewed on blockchain.",
-        request_id: result.updatedRequest.id,
-        status: result.updatedRequest.status,
-        vc_response_id: result.newVCResponse.id, // Include the new VCResponse ID
-        transaction_hash: blockchainReceipt?.hash,
-        block_number: blockchainReceipt?.blockNumber,
+          "Verifiable Credential renewal approved. VC stored and ready for claim after payment.",
+        request_id: updatedRequest.id,
+        status: updatedRequest.status,
+        stage: "PAYMENT_PENDING",
+        vc_response_id: newVCResponse.id,
+        payment_info: {
+          item_id: itemId,
+          price: price,
+          vc_id: vc_id,
+          blockchain_status: queueResult?.status || "PENDING",
+          transaction_id: queueResult?.transaction_id,
+        },
       };
     } else {
       throw new BadRequestError(`Invalid action specified: ${action}.`);
     }
   }
 
-  async processUpdateVC(
+  async approveUpdateRequest(
     data: ProcessUpdateVCDTO
   ): Promise<ProcessUpdateVCResponseDTO> {
     const {
@@ -1159,126 +1323,145 @@ class CredentialService {
         `Processing approval for update request ${request_id} targeting VC ${vc_id}`
       );
 
-      // --- Pre-Update Blockchain Check ---
+      // --- Payment Flow: Create Item on Payment Blockchain ---
+      const price = await SchemaService.getPriceBasedOnSchemaId(schema_id, schema_version);
+      const itemId = uuidv4();
+
+      // 1. IMMEDIATELY save to database (for fast response)
       try {
-        const currentVcStatus =
-          await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
-        if (currentVcStatus && currentVcStatus.status === false) {
-          logger.warn(
-            `Attempted to approve update for an inactive/revoked VC: ${vc_id}`
-          );
-          // Decide if you should allow updating a revoked VC. Usually not.
-          throw new BadRequestError(
-            `Cannot approve update for VC ${vc_id} because it is currently inactive/revoked on the blockchain.`
-          );
-        }
-        logger.info(
-          `VC ${vc_id} found and is active. Proceeding with blockchain update.`
-        );
-      } catch (error: any) {
-        logger.error(`Pre-update check failed for VC ${vc_id}:`, error);
-        if (error instanceof NotFoundError) {
-          throw new NotFoundError(
-            `Original VC with ID ${vc_id} not found on the blockchain. Cannot approve update request ${request_id}.`
-          );
-        }
-        if (error instanceof BadRequestError) {
-          throw error;
-        } // Rethrow specific errors
-        throw new BadRequestError(
-          `Failed to verify VC status before update: ${error.message}`
-        );
-      }
-      // ------------------------------------
-
-      // --- Blockchain Update Call ---
-      let blockchainReceipt: any;
-      try {
-        // Call the update function on the blockchain
-        blockchainReceipt = await VCBlockchainService.updateVCInBlockchain(
-          vc_id,
-          new_vc_id,
-          issuer_did,
-          holder_did,
-          vc_type,
-          schema_id,
-          schema_version,
-          expired_at,
-          new_vc_hash
-        );
-        logger.success(
-          `VC ${vc_id} updated successfully on blockchain with new hash. TX: ${blockchainReceipt?.hash}`
-        );
-      } catch (blockchainError: any) {
-        logger.error(
-          `Blockchain update failed during approval for request ${request_id} (VC ${vc_id}):`,
-          blockchainError
-        );
-        throw new BadRequestError(
-          `Blockchain update failed: ${blockchainError.message}`
-        );
-      }
-      // -----------------------------
-
-      // --- Database Updates ---
-      const result = await this.db.$transaction(async (tx) => {
-        // Update update request status
-        const updatedRequest = await tx.vCUpdateRequest.update({
-          where: { id: request_id },
-          data: { 
-            status: RequestStatus.APPROVED,
-            vc_id: new_vc_id // <-- SIMPAN NEW_VC_ID DI SINI
-          },
-        });
-
-        // Create a new VCResponse record for the update
-        const newVCResponse = await tx.vCResponse.create({
+        await this.db.itemBlockchain.create({
           data: {
-            request_id: request_id, // Link to the VCUpdateRequest
-            request_type: RequestType.UPDATE, // Set type to UPDATE
-            issuer_did: issuer_did,
-            holder_did: holder_did,
-            encrypted_body: encrypted_body, // Store the new encrypted body
+            id: itemId,
+            issuerDID: issuer_did,
+            holderDID: holder_did,
+            price: price,
+            vcID: new_vc_id, // Use new_vc_id for tracking
+            vcHash: new_vc_hash,
+            itemType: "UPDATE",
+            isPaid: false,
+            blockNumber: 0,
+            txHash: "pending-blockchain",
           },
         });
-
-        logger.info(
-          `Update request ${request_id} status updated to APPROVED. New VCResponse created: ${newVCResponse.id}`
+        logger.success(`Item saved to database: ${itemId} (UPDATE, isPaid=false)`);
+      } catch (dbError: any) {
+        logger.error(`Failed to save update item to database: ${itemId}`, dbError);
+        throw new InternalServerError(
+          `Failed to save update item to database: ${dbError.message}`
         );
-        return { updatedRequest, newVCResponse };
-      });
-      // ------------------------
+      }
 
-      // Send push notification to holder
+      // 2. Queue blockchain transaction for async processing (parallel)
+      let queueResult: any;
       try {
-        await NotificationService.sendVCStatusNotification(
-          holder_did,
-          "Credential Updated Successfully",
-          "Your verifiable credential has been updated with the latest information.",
-          {
-            type: "VC_UPDATED",
-            vc_response_id: result.newVCResponse.id,
+        queueResult = await blockchainTransactionQueueService.queueCreateItem({
+          itemId,
+          price,
+          vcID: new_vc_id, // Use new_vc_id for tracking
+          issuerDID: issuer_did,
+          holderDID: holder_did,
+          vcHash: new_vc_hash,
+          itemType: 2 // UPDATE
+        });
+        logger.info(
+          `Payment item queued for update. Item ID: ${itemId}, Status: ${queueResult.status}`
+        );
+      } catch (queueError: any) {
+        logger.error("Failed to queue payment item for update:", queueError);
+        // Don't throw - item already saved to database
+        logger.warn("Update item saved to database but blockchain transaction failed to queue. Will retry later.");
+      }
+
+      // 3. Create VCResponse immediately with issuer's encrypted_body
+      // This stores the updated VC from issuer, ready for holder to claim after payment
+      let newVCResponse;
+      try {
+        newVCResponse = await this.db.vCResponse.create({
+          data: {
             request_id: request_id,
             request_type: RequestType.UPDATE,
-            transaction_hash: blockchainReceipt?.hash,
-          }
+            issuer_did: issuer_did,
+            holder_did: holder_did,
+            order_id: itemId, // Link to ItemBlockchain for payment tracking
+            encrypted_body: encrypted_body, // Full updated VC from issuer
+            vc_hash: new_vc_hash,
+            status: VCResponseStatus.PENDING, // PENDING but requires payment before claim
+          },
+        });
+        logger.success(
+          `VCResponse created for update: ${newVCResponse.id} (pending payment, linked to item ${itemId})`
         );
-        logger.success(`Push notification sent to holder: ${holder_did}`);
-      } catch (notifError: any) {
-        logger.error(
-          `Failed to send push notification to ${holder_did}:`,
-          notifError
+      } catch (dbError: any) {
+        logger.error(`Failed to create VCResponse for update:`, dbError);
+        throw new InternalServerError(
+          `Failed to create VCResponse for update: ${dbError.message}`
         );
       }
 
+      // 4. Update request status to APPROVED
+      let updatedRequest;
+      try {
+        updatedRequest = await this.db.vCUpdateRequest.update({
+          where: { id: request_id },
+          data: {
+            status: RequestStatus.APPROVED,
+            vc_id: new_vc_id,
+          },
+        });
+        logger.success(
+          `Update request ${request_id} marked as APPROVED, pending payment`
+        );
+
+        // Send push notification to holder about payment requirement
+        try {
+          await NotificationService.sendVCStatusNotification(
+            holder_did,
+            "Payment Required for Update",
+            `Your credential update has been approved. Please complete payment of ${price} to update your credential.`,
+            {
+              type: "PAYMENT_REQUIRED",
+              request_id: request_id,
+              request_type: RequestType.UPDATE,
+              item_id: itemId,
+              vc_response_id: newVCResponse.id,
+              price: price,
+              vc_id: new_vc_id,
+            }
+          );
+          logger.success(
+            `Payment notification sent to holder: ${holder_did}`
+          );
+        } catch (notifError: any) {
+          logger.error(
+            `Failed to send payment notification to ${holder_did}:`,
+            notifError
+          );
+        }
+      } catch (dbError: any) {
+        logger.error(
+          `Database update failed for update request ${request_id}:`,
+          dbError
+        );
+        throw new InternalServerError(
+          "Failed to update request status in database"
+        );
+      }
+
+      // Return response with payment information
       return {
         message:
-          "Verifiable Credential update request approved and VC updated on blockchain.",
-        request_id: result.updatedRequest.id,
-        status: result.updatedRequest.status,
-        vc_response_id: result.newVCResponse.id, // Include the new VCResponse ID
-        transaction_hash: blockchainReceipt?.hash,
-        block_number: blockchainReceipt?.blockNumber,
+          "Verifiable Credential update approved. VC stored and ready for claim after payment.",
+        request_id: updatedRequest.id,
+        status: updatedRequest.status,
+        stage: "PAYMENT_PENDING",
+        vc_response_id: newVCResponse.id,
+        payment_info: {
+          item_id: itemId,
+          price: price,
+          vc_id: new_vc_id,
+          blockchain_status: queueResult.status, // PENDING
+          transaction_id: queueResult.transaction_id,
+        },
       };
     } else {
       throw new BadRequestError(`Invalid action specified: ${action}.`);
@@ -1288,24 +1471,44 @@ class CredentialService {
   /**
    * Phase 1: Claim VC - Atomically update status to PROCESSING
    * This uses a raw SQL query to ensure atomicity
+   *
+   * NEW: Only claims VCs where payment is confirmed (ItemBlockchain.isPaid = true)
+   * VCResponse.order_id links to ItemBlockchain.id for payment tracking
    */
   async claimVC(holderDid: string) {
     logger.info(`Attempting to claim VC for holder DID: ${holderDid}`);
 
     // Use Prisma's raw query for atomic UPDATE...RETURNING
     // This ensures only one VC is claimed at a time and prevents race conditions
+    // Checks:
+    // 1. claimable = true (set by payment notification after successful payment)
+    // 2. ItemBlockchain.isPaid = true (legacy check, kept for backward compatibility)
+    // Note: Using subqueries instead of LEFT JOIN to avoid FOR UPDATE limitation
     const result = await this.db.$queryRaw<any[]>`
       UPDATE "VCResponse"
       SET status = 'PROCESSING'::"VCResponseStatus",
           processing_at = NOW(),
           "updatedAt" = NOW()
       WHERE id = (
-        SELECT id
-        FROM "VCResponse"
-        WHERE holder_did = ${holderDid}
-          AND status = 'PENDING'::"VCResponseStatus"
-          AND "deletedAt" IS NULL
-        ORDER BY "createdAt" ASC
+        SELECT vc.id
+        FROM "VCResponse" vc
+        WHERE vc.holder_did = ${holderDid}
+          AND vc.status = 'PENDING'::"VCResponseStatus"
+          AND vc."deletedAt" IS NULL
+          AND (
+            -- Primary check - claimable flag must be true
+            vc.claimable = true
+            -- OR legacy check for backward compatibility:
+            OR (
+              -- 1. No order_id link (legacy data or free credentials)
+              vc.order_id IS NULL
+              -- 2. Or no ItemBlockchain record exists for this order_id
+              OR NOT EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id)
+              -- 3. Or ItemBlockchain exists and is paid
+              OR EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id AND ib."isPaid" = true)
+            )
+          )
+        ORDER BY vc."createdAt" ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED
       )
@@ -1313,7 +1516,7 @@ class CredentialService {
     `;
 
     if (!result || result.length === 0) {
-      logger.info(`No pending VCs found for holder DID: ${holderDid}`);
+      logger.info(`No claimable VCs found for holder DID: ${holderDid}`);
       return null;
     }
 
@@ -1367,6 +1570,10 @@ class CredentialService {
    *
    * Idempotent re-claim: Also allows claiming VCs stuck in PROCESSING
    * for more than 5 minutes to handle network failures/crashes
+   *
+   * Checks:
+   * 1. claimable = true (set by payment notification after successful payment)
+   * 2. ItemBlockchain.isPaid = true (legacy check, kept for backward compatibility)
    */
   async claimVCsBatch(holderDid: string, limit: number = 10) {
     logger.info(
@@ -1378,56 +1585,105 @@ class CredentialService {
 
     // Use Prisma's raw query for atomic batch UPDATE...RETURNING
     // Includes PENDING VCs AND stuck PROCESSING VCs (>5 min timeout)
+    // Checks claimable flag AND ItemBlockchain.isPaid for payment verification
+    // Note: Using subqueries instead of LEFT JOIN to avoid FOR UPDATE limitation
     const result = await this.db.$queryRaw<any[]>`
       UPDATE "VCResponse"
       SET status = 'PROCESSING'::"VCResponseStatus",
           processing_at = NOW(),
           "updatedAt" = NOW()
       WHERE id IN (
-        SELECT id
-        FROM "VCResponse"
-        WHERE holder_did = ${holderDid}
-          AND "deletedAt" IS NULL
+        SELECT vc.id
+        FROM "VCResponse" vc
+        WHERE vc.holder_did = ${holderDid}
+          AND vc."deletedAt" IS NULL
           AND (
-            status = 'PENDING'::"VCResponseStatus"
+            vc.status = 'PENDING'::"VCResponseStatus"
             OR (
-              status = 'PROCESSING'::"VCResponseStatus"
-              AND processing_at < NOW() - INTERVAL '5 minutes'
+              vc.status = 'PROCESSING'::"VCResponseStatus"
+              AND vc.processing_at < NOW() - INTERVAL '5 minutes'
             )
           )
-        ORDER BY "createdAt" ASC
+          AND (
+            -- Primary check - claimable flag must be true
+            vc.claimable = true
+            -- OR legacy check for backward compatibility:
+            OR (
+              -- 1. No order_id link (legacy data or free credentials)
+              vc.order_id IS NULL
+              -- 2. Or no ItemBlockchain record exists for this order_id
+              OR NOT EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id)
+              -- 3. Or ItemBlockchain exists and is paid
+              OR EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id AND ib."isPaid" = true)
+            )
+          )
+        ORDER BY vc."createdAt" ASC
         LIMIT ${safeLimit}
         FOR UPDATE SKIP LOCKED
       )
-      RETURNING request_id, encrypted_body, status, processing_at;
+      RETURNING request_id, encrypted_body, status, processing_at, order_id;
     `;
 
     if (!result || result.length === 0) {
       logger.info(`No claimable VCs found for holder DID: ${holderDid}`);
+
+      // Check if there are pending VCs that are awaiting payment
+      const pendingPaymentCount = await this.db.$queryRaw<any[]>`
+        SELECT COUNT(*) as count
+        FROM "VCResponse" vc
+        LEFT JOIN "ItemBlockchain" ib ON vc.order_id = ib.id
+        WHERE vc.holder_did = ${holderDid}
+          AND vc."deletedAt" IS NULL
+          AND vc.status = 'PENDING'::"VCResponseStatus"
+          AND ib.id IS NOT NULL
+          AND ib."isPaid" = false
+      `;
+
+      const awaitingPayment = parseInt(pendingPaymentCount[0]?.count || '0');
+
       return {
         claimed_vcs: [],
         claimed_count: 0,
         remaining_count: 0,
+        awaiting_payment_count: awaitingPayment,
         has_more: false,
+        message: awaitingPayment > 0
+          ? `${awaitingPayment} credential(s) are awaiting payment before they can be claimed.`
+          : "No claimable VCs found.",
       };
     }
 
-    // Check if there are more claimable VCs (PENDING or stuck PROCESSING)
-    const remainingCount = await this.db.vCResponse.count({
-      where: {
-        holder_did: holderDid,
-        deletedAt: null,
-        OR: [
-          { status: "PENDING" },
-          {
-            status: "PROCESSING",
-            processing_at: {
-              lt: new Date(Date.now() - 5 * 60 * 1000), // 5 minutes ago
-            },
-          },
-        ],
-      },
-    });
+    // Check if there are more claimable VCs (PENDING or stuck PROCESSING) that are PAID
+    const remainingResult = await this.db.$queryRaw<any[]>`
+      SELECT COUNT(*) as count
+      FROM "VCResponse" vc
+      LEFT JOIN "ItemBlockchain" ib ON vc.order_id = ib.id
+      WHERE vc.holder_did = ${holderDid}
+        AND vc."deletedAt" IS NULL
+        AND (
+          vc.status = 'PENDING'::"VCResponseStatus"
+          OR (
+            vc.status = 'PROCESSING'::"VCResponseStatus"
+            AND vc.processing_at < NOW() - INTERVAL '5 minutes'
+          )
+        )
+        AND (ib.id IS NULL OR ib."isPaid" = true)
+    `;
+
+    const remainingCount = parseInt(remainingResult[0]?.count || '0');
+
+    // Also count VCs awaiting payment
+    const pendingPaymentResult = await this.db.$queryRaw<any[]>`
+      SELECT COUNT(*) as count
+      FROM "VCResponse" vc
+      INNER JOIN "ItemBlockchain" ib ON vc.order_id = ib.id
+      WHERE vc.holder_did = ${holderDid}
+        AND vc."deletedAt" IS NULL
+        AND vc.status = 'PENDING'::"VCResponseStatus"
+        AND ib."isPaid" = false
+    `;
+
+    const awaitingPayment = parseInt(pendingPaymentResult[0]?.count || '0');
 
     logger.success(
       `Batch claimed ${result.length} VCs for holder DID: ${holderDid} (includes re-claims)`
@@ -1437,6 +1693,7 @@ class CredentialService {
       claimed_vcs: result,
       claimed_count: result.length,
       remaining_count: remainingCount,
+      awaiting_payment_count: awaitingPayment,
       has_more: remainingCount > 0,
     };
   }
@@ -1495,13 +1752,13 @@ class CredentialService {
    */
   async resetStuckProcessingVCs(timeoutMinutes: number = 15) {
     logger.info(
-      `Running cleanup job: resetting VCs stuck in PROCESSING for >${timeoutMinutes} minutes`
+      `Running cleanup job: resetting VCs stuck in PROCESSING for >${timeoutMinutes} minutes from all sources`
     );
 
     const cutoffTime = new Date(Date.now() - timeoutMinutes * 60 * 1000);
 
-    // Find and reset stuck PROCESSING VCs atomically
-    const result = await this.db.$queryRaw<any[]>`
+    // [NEW] Create a promise for the VCResponse table
+    const resetVCResponsePromise = this.db.$queryRaw<any[]>`
       UPDATE "VCResponse"
       SET status = 'PENDING'::"VCResponseStatus",
           processing_at = NULL,
@@ -1512,24 +1769,68 @@ class CredentialService {
       RETURNING id, holder_did, processing_at;
     `;
 
-    const resetCount = result?.length || 0;
+    // [NEW] Create a promise for the VCinitiatedByIssuer table
+    const resetVCinitiatedPromise = this.db.$queryRaw<any[]>`
+      UPDATE "VCinitiatedByIssuer"
+      SET status = 'PENDING'::"VCResponseStatus",
+          processing_at = NULL,
+          "updatedAt" = NOW()
+      WHERE status = 'PROCESSING'::"VCResponseStatus"
+        AND processing_at < ${cutoffTime}
+        AND "deletedAt" IS NULL
+      RETURNING id, holder_did, processing_at;
+    `;
 
-    if (resetCount > 0) {
+    // [NEW] Execute both cleanup queries in parallel
+    const [resultVCResponse, resultVCinitiated] = await Promise.all([
+      resetVCResponsePromise,
+      resetVCinitiatedPromise,
+    ]);
+
+    const resetCountVCResponse = resultVCResponse?.length || 0;
+    const resetCountVCinitiated = resultVCinitiated?.length || 0;
+    const totalResetCount = resetCountVCResponse + resetCountVCinitiated;
+
+    // [NEW] Updated logging for combined results
+    if (totalResetCount > 0) {
       logger.warn(
-        `Cleanup job reset ${resetCount} stuck PROCESSING VCs back to PENDING`
+        `[Scheduler] Cleanup job reset ${totalResetCount} total stuck PROCESSING VCs back to PENDING`
       );
-      // Log the affected VCs for debugging
-      result.forEach((vc: any) => {
+
+      // Log details for VCResponse
+      if (resetCountVCResponse > 0) {
         logger.debug(
-          `Reset VC ${vc.id} for holder ${vc.holder_did}, stuck since ${vc.processing_at}`
+          `  - Reset ${resetCountVCResponse} VCs from VCResponse (holder-initiated)`
         );
-      });
+        resultVCResponse.forEach((vc: any) => {
+          logger.debug(
+            `    - Reset VCResponse ${vc.id} for holder ${vc.holder_did}, stuck since ${vc.processing_at}`
+          );
+        });
+      }
+
+      // Log details for VCinitiatedByIssuer
+      if (resetCountVCinitiated > 0) {
+        logger.debug(
+          `  - Reset ${resetCountVCinitiated} VCs from VCinitiatedByIssuer (issuer-initiated)`
+        );
+        resultVCinitiated.forEach((vc: any) => {
+          logger.debug(
+            `    - Reset VCinitiated ${vc.id} for holder ${vc.holder_did}, stuck since ${vc.processing_at}`
+          );
+        });
+      }
     } else {
-      logger.info(`Cleanup job completed: no stuck PROCESSING VCs found`);
+      logger.info(
+        `[Scheduler] Cleanup job completed: no stuck PROCESSING VCs found in either table`
+      );
     }
 
+    // [NEW] Return a more detailed object with the breakdown
     return {
-      reset_count: resetCount,
+      total_reset_count: totalResetCount,
+      vc_response_reset_count: resetCountVCResponse,
+      vc_initiated_reset_count: resetCountVCinitiated,
       timeout_minutes: timeoutMinutes,
       cutoff_time: cutoffTime,
     };
@@ -1537,17 +1838,21 @@ class CredentialService {
 
   async getAllIssuerRequests(
     issuerDid: string,
-    status?: RequestStatus | 'ALL'
+    status?: RequestStatus | "ALL"
   ): Promise<AllIssuerRequestsResponseDTO> {
-    
-    logger.info(`Fetching all requests for issuer: ${issuerDid}, status: ${status || 'ALL'}`);
+    logger.info(
+      `Fetching all requests for issuer: ${issuerDid}, status: ${
+        status || "ALL"
+      }`
+    );
 
     // 1. Definisikan klausa 'where' untuk tabel Request
-    const whereClauseRequests: { issuer_did: string; status?: RequestStatus } = {
-      issuer_did: issuerDid,
-    };
+    const whereClauseRequests: { issuer_did: string; status?: RequestStatus } =
+      {
+        issuer_did: issuerDid,
+      };
 
-    if (status && status !== 'ALL') {
+    if (status && status !== "ALL") {
       whereClauseRequests.status = status;
     }
 
@@ -1560,12 +1865,12 @@ class CredentialService {
       vc_id: true,
       createdAt: true,
     };
-    
+
     // 2. Definisikan klausa 'where' untuk tabel Log
     const whereClauseLogs: { issuer_did: string } = {
       issuer_did: issuerDid,
     };
-    
+
     const selectFieldsLogs = {
       id: true,
       action_type: true,
@@ -1583,76 +1888,94 @@ class CredentialService {
       renewalRequests,
       updateRequests,
       revokeRequests,
-      issuerLogs
+      issuerLogs,
     ] = await Promise.all([
-      this.db.vCIssuanceRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
-      this.db.vCRenewalRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
-      this.db.vCUpdateRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
-      this.db.vCRevokeRequest.findMany({ where: whereClauseRequests, select: selectFieldsRequests }),
-      
-      (status === 'ALL' || !status)
-        ? this.db.issuerActionLog.findMany({ where: whereClauseLogs, select: selectFieldsLogs, orderBy: { createdAt: "desc" } })
-        : Promise.resolve([]) 
+      this.db.vCIssuanceRequest.findMany({
+        where: whereClauseRequests,
+        select: selectFieldsRequests,
+      }),
+      this.db.vCRenewalRequest.findMany({
+        where: whereClauseRequests,
+        select: selectFieldsRequests,
+      }),
+      this.db.vCUpdateRequest.findMany({
+        where: whereClauseRequests,
+        select: selectFieldsRequests,
+      }),
+      this.db.vCRevokeRequest.findMany({
+        where: whereClauseRequests,
+        select: selectFieldsRequests,
+      }),
+
+      status === "ALL" || !status
+        ? this.db.issuerActionLog.findMany({
+            where: whereClauseLogs,
+            select: selectFieldsLogs,
+            orderBy: { createdAt: "desc" },
+          })
+        : Promise.resolve([]),
     ]);
 
     // 4. Petakan (map) hasil query Request ke DTO
     //    --- PERUBAHAN UTAMA ADA DI SINI: "as 'REQUEST'" ---
     const mappedRequests: AggregatedRequestDTO[] = [
-      ...issuanceRequests.map(req => ({ 
-        ...req, 
-        request_type: RequestType.ISSUANCE, 
-        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
+      ...issuanceRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.ISSUANCE,
+        history_type: "REQUEST" as "REQUEST", // <-- PERBAIKAN
         new_vc_id: null,
         transaction_hash: null,
-        holder_did: req.holder_did 
+        holder_did: req.holder_did,
       })),
-      ...renewalRequests.map(req => ({ 
-        ...req, 
-        request_type: RequestType.RENEWAL, 
-        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
+      ...renewalRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.RENEWAL,
+        history_type: "REQUEST" as "REQUEST", // <-- PERBAIKAN
         new_vc_id: null,
         transaction_hash: null,
-        holder_did: req.holder_did
+        holder_did: req.holder_did,
       })),
-      ...updateRequests.map(req => ({ 
-        ...req, 
-        request_type: RequestType.UPDATE, 
-        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
-        new_vc_id: req.vc_id, 
+      ...updateRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.UPDATE,
+        history_type: "REQUEST" as "REQUEST", // <-- PERBAIKAN
+        new_vc_id: req.vc_id,
         transaction_hash: null,
-        holder_did: req.holder_did
+        holder_did: req.holder_did,
       })),
-      ...revokeRequests.map(req => ({ 
-        ...req, 
-        request_type: RequestType.REVOKE, 
-        history_type: 'REQUEST' as 'REQUEST', // <-- PERBAIKAN
+      ...revokeRequests.map((req) => ({
+        ...req,
+        request_type: RequestType.REVOKE,
+        history_type: "REQUEST" as "REQUEST", // <-- PERBAIKAN
         new_vc_id: null,
         transaction_hash: null,
-        holder_did: req.holder_did
+        holder_did: req.holder_did,
       })),
     ];
 
     // 5. Petakan (map) hasil query Log ke DTO
     //    --- "as 'DIRECT_ACTION'" ---
-    const mappedLogs: AggregatedRequestDTO[] = issuerLogs.map(log => ({
+    const mappedLogs: AggregatedRequestDTO[] = issuerLogs.map((log) => ({
       id: log.id,
       request_type: log.action_type,
       issuer_did: log.issuer_did,
       holder_did: log.holder_did,
-      status: null, 
-      encrypted_body: null, 
+      status: null,
+      encrypted_body: null,
       vc_id: log.vc_id,
       new_vc_id: log.new_vc_id,
       transaction_hash: log.transaction_hash,
       createdAt: log.createdAt,
-      history_type: 'DIRECT_ACTION' as 'DIRECT_ACTION', // <-- PERBAIKAN
+      history_type: "DIRECT_ACTION" as "DIRECT_ACTION", // <-- PERBAIKAN
     }));
 
     // 6. Gabungkan dan urutkan
     const allHistory = [...mappedRequests, ...mappedLogs];
     allHistory.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    
-    logger.success(`Found ${allHistory.length} total history items for issuer: ${issuerDid}`);
+
+    logger.success(
+      `Found ${allHistory.length} total history items for issuer: ${issuerDid}`
+    );
 
     return {
       count: allHistory.length,
@@ -1724,6 +2047,7 @@ class CredentialService {
           request_type: RequestType.ISSUANCE, // Hardcode sebagai ISSUANCE
           issuer_did: issuer_did,
           holder_did: holder_did,
+          vc_id: vc_id, // Store vc_id for schema parsing
           encrypted_body: encrypted_body,
           // --- MENGGUNAKAN VCResponseStatus YANG DIIMPOR ---
           status: VCResponseStatus.PENDING, // Status default PENDING
@@ -1737,7 +2061,7 @@ class CredentialService {
           holder_did: holder_did,
           vc_id: vc_id, // Log VC ID yang baru
           transaction_hash: blockchainReceipt.hash,
-        }
+        },
       });
 
       logger.success(
@@ -1879,6 +2203,7 @@ class CredentialService {
           request_type: RequestType.UPDATE, // Hardcode sebagai UPDATE
           issuer_did: issuer_did,
           holder_did: holder_did,
+          vc_id: new_vc_id, // Store new vc_id for schema parsing
           encrypted_body: encrypted_body, // Menyimpan body VC yang BARU
           status: VCResponseStatus.PENDING, // Status default PENDING
         },
@@ -1889,10 +2214,10 @@ class CredentialService {
           action_type: RequestType.UPDATE,
           issuer_did: issuer_did,
           holder_did: holder_did,
-          vc_id: old_vc_id,     // Log VC ID lama
+          vc_id: old_vc_id, // Log VC ID lama
           new_vc_id: new_vc_id, // Log VC ID baru
           transaction_hash: blockchainReceipt.hash,
-        }
+        },
       });
 
       logger.success(
@@ -1952,20 +2277,18 @@ class CredentialService {
         "Authenticated DID does not match the issuer_did in the request body."
       );
     }
-    const { issuer_did, vc_id } = data;
+    
+    // [MODIFIED] Destructure new fields
+    const { issuer_did, holder_did, vc_id, encrypted_body } = data;
 
     logger.info(
       `Attempting direct revoke by issuer ${issuer_did} for VC ${vc_id}`
     );
 
-    // 2. Pre-Check: Pastikan VC ada dan aktif
-    let holder_did: string | undefined;
+    // 2. Pre-Check: Pastikan VC ada dan aktif, dan holder-nya cocok
     try {
       const currentVcStatus =
         await VCBlockchainService.getVCStatusFromBlockchain(vc_id);
-
-      // Simpan holder_did untuk notifikasi
-      holder_did = currentVcStatus.holderDID;
 
       // Periksa apakah issuer-nya cocok
       if (currentVcStatus.issuerDID !== issuer_did) {
@@ -1976,6 +2299,16 @@ class CredentialService {
           `Authenticated issuer (${issuer_did}) did not issue this VC.`
         );
       }
+      
+      // [NEW] Periksa apakah holder-nya cocok
+      if (currentVcStatus.holderDID !== holder_did) {
+        logger.warn(
+          `Revoke attempt failed: VC ${vc_id} holder (${currentVcStatus.holderDID}) does not match request holder (${holder_did}).`
+        );
+        throw new ForbiddenError(
+          `Holder DID in request does not match the VC's owner on blockchain.`
+        );
+      }
 
       if (currentVcStatus && currentVcStatus.status === false) {
         logger.warn(`Attempted to revoke an already revoked VC: ${vc_id}`);
@@ -1984,7 +2317,7 @@ class CredentialService {
         );
       }
       logger.info(
-        `VC ${vc_id} found, is active, and matches issuer. Proceeding with blockchain revocation.`
+        `VC ${vc_id} found, is active, and matches issuer/holder. Proceeding with blockchain revocation.`
       );
     } catch (error: any) {
       logger.error(`Pre-revocation check failed for VC ${vc_id}:`, error);
@@ -2018,22 +2351,49 @@ class CredentialService {
       );
     }
 
-    // 4. Kirim notifikasi push ke holder
-    if (holder_did) {
+    // [MODIFIED] 4. Simpan ke tabel VCinitiatedByIssuer dan log
+    try {
+      // [NEW] Simpan "pesan" pencabutan ke tabel VCinitiatedByIssuer
+      const newRecord = await this.db.vCinitiatedByIssuer.create({
+        data: {
+          request_type: RequestType.REVOKE, // Hardcode sebagai REVOKE
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          vc_id: vc_id, // Store vc_id for schema parsing
+          encrypted_body: encrypted_body, // Menyimpan alasan/pesan pencabutan
+          status: VCResponseStatus.PENDING, // Status default PENDING
+        },
+      });
+
+      // Buat log di IssuerActionLog (mengikuti pola yang ada)
+      await this.db.issuerActionLog.create({
+        data: {
+          action_type: RequestType.REVOKE,
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          vc_id: vc_id,
+          transaction_hash: blockchainReceipt.hash,
+        }
+      });
+
+      logger.success(
+        `New revocation notice created in VCinitiatedByIssuer: ${newRecord.id}`
+      );
+
+      // [NEW] Kirim notifikasi push ke holder untuk "meng-claim" pesan pencabutan
       try {
         await NotificationService.sendVCStatusNotification(
           holder_did,
-          "Credential Revoked",
-          "Your verifiable credential has been revoked by the issuer and is no longer valid.",
+          "Credential Revocation Notice", // Judul baru
+          "A notice regarding your credential revocation is ready to be claimed.", // Body baru
           {
-            type: "VC_REVOKED_BY_ISSUER",
-            vc_id: vc_id,
+            type: "VC_REVOKE_NOTICE_PENDING", // Tipe baru
+            record_id: newRecord.id,
             request_type: RequestType.REVOKE,
-            transaction_hash: blockchainReceipt?.hash,
           }
         );
         logger.success(
-          `Push notification sent to holder (direct revoke): ${holder_did}`
+          `Push notification sent to holder (for revoke claim): ${holder_did}`
         );
       } catch (notifError: any) {
         logger.error(
@@ -2041,39 +2401,24 @@ class CredentialService {
           notifError
         );
       }
-      try {
-      await this.db.issuerActionLog.create({
-        data: {
-          action_type: RequestType.REVOKE,
-          issuer_did: issuer_did,
-          holder_did: holder_did, // Gunakan holder_did yang didapat dari pre-check
-          vc_id: vc_id,
-          transaction_hash: blockchainReceipt.hash,
-        }
-      });
-      logger.success(`Issuer action REVOKE logged for VC: ${vc_id}`);
-    } catch (logError: any) {
-      // Jangan gagalkan seluruh proses jika logging error
-      logger.error(`Failed to log issuer action for REVOKE VC ${vc_id}:`, logError);
-    }
-    // --- AKHIR LOGGING AUDIT ---
 
-    // 5. Kirim respons
-    return {
-      message: "VC revoked directly on blockchain.",
-      vc_id: vc_id,
-      transaction_hash: blockchainReceipt.hash,
-      block_number: blockchainReceipt.blockNumber,
-    };
-    }
+      // [MODIFIED] 5. Kirim respons
+      return {
+        message: "VC revoked directly on blockchain. Revocation notice stored for holder claim.",
+        record_id: newRecord.id, // [MODIFIED]
+        transaction_hash: blockchainReceipt.hash,
+        block_number: blockchainReceipt.blockNumber,
+      };
 
-    // 5. Kirim respons
-    return {
-      message: "VC revoked directly on blockchain.",
-      vc_id: vc_id,
-      transaction_hash: blockchainReceipt.hash,
-      block_number: blockchainReceipt.blockNumber,
-    };
+    } catch (dbError: any) {
+      logger.error(
+        `Database storage failed for VCinitiatedByIssuer (VC ${vc_id}) after successful TX ${blockchainReceipt?.hash}:`,
+        dbError
+      );
+      throw new InternalServerError(
+        `Blockchain revoke succeeded (TX: ${blockchainReceipt.hash}), but database save failed. Please contact support. Error: ${dbError.message}`
+      );
+    }
   }
 
   async issuerRenewVC(
@@ -2090,8 +2435,8 @@ class CredentialService {
       );
     }
 
-    // Destrukturisasi data, termasuk expiredAt
-    const { issuer_did, holder_did, vc_id, encrypted_body, expiredAt } = data; // <-- TAMBAHKAN expiredAt
+    // Destrukturisasi data, termasuk expiredAt dan hash
+    const { issuer_did, holder_did, vc_id, encrypted_body, expiredAt, hash } = data;
 
     logger.info(
       `Attempting direct renew by issuer ${issuer_did} for VC ${vc_id}`
@@ -2128,10 +2473,11 @@ class CredentialService {
     // 3. Panggil Blockchain (RenewVC)
     let blockchainReceipt: any;
     try {
-      // --- PERBAIKAN: Teruskan expiredAt ke fungsi blockchain ---
+      // Pass expiredAt and hash to blockchain
       blockchainReceipt = await VCBlockchainService.renewVCInBlockchain(
         vc_id,
-        expiredAt
+        expiredAt,
+        hash
       );
       logger.success(
         `VC ${vc_id} renewed successfully on blockchain. TX: ${blockchainReceipt?.hash}`
@@ -2154,6 +2500,7 @@ class CredentialService {
           request_type: RequestType.RENEWAL,
           issuer_did: issuer_did,
           holder_did: holder_did,
+          vc_id: vc_id, // Store vc_id for schema parsing
           encrypted_body: encrypted_body,
           status: VCResponseStatus.PENDING,
         },
@@ -2165,7 +2512,7 @@ class CredentialService {
           holder_did: holder_did,
           vc_id: vc_id, // Log VC ID yang diperbarui
           transaction_hash: blockchainReceipt.hash,
-        }
+        },
       });
 
       logger.success(
@@ -2220,25 +2567,40 @@ class CredentialService {
     // Gunakan batas aman yang sama
     const safeLimit = Math.min(Math.max(limit, 1), 100);
 
-    // Gunakan kueri raw, GANTI "VCResponse" menjadi "VCinitiatedByIssuer"
+    // Gunakan kueri raw untuk VCinitiatedByIssuer
+    // Checks claimable flag for payment verification
+    // Note: Using subqueries instead of LEFT JOIN to avoid FOR UPDATE limitation
     const result = await this.db.$queryRaw<any[]>`
       UPDATE "VCinitiatedByIssuer"
       SET status = 'PROCESSING'::"VCResponseStatus",
           processing_at = NOW(),
           "updatedAt" = NOW()
       WHERE id IN (
-        SELECT id
-        FROM "VCinitiatedByIssuer"
-        WHERE holder_did = ${holderDid}
-          AND "deletedAt" IS NULL
+        SELECT vc.id
+        FROM "VCinitiatedByIssuer" vc
+        WHERE vc.holder_did = ${holderDid}
+          AND vc."deletedAt" IS NULL
           AND (
-            status = 'PENDING'::"VCResponseStatus"
+            vc.status = 'PENDING'::"VCResponseStatus"
             OR (
-              status = 'PROCESSING'::"VCResponseStatus"
-              AND processing_at < NOW() - INTERVAL '5 minutes'
+              vc.status = 'PROCESSING'::"VCResponseStatus"
+              AND vc.processing_at < NOW() - INTERVAL '5 minutes'
             )
           )
-        ORDER BY "createdAt" ASC
+          AND (
+            -- Primary check - claimable flag must be true
+            vc.claimable = true
+            -- OR legacy check for backward compatibility:
+            OR (
+              -- 1. No order_id link (legacy data or free credentials)
+              vc.order_id IS NULL
+              -- 2. Or no ItemBlockchain record exists for this order_id
+              OR NOT EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id)
+              -- 3. Or ItemBlockchain exists and is paid
+              OR EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id AND ib."isPaid" = true)
+            )
+          )
+        ORDER BY vc."createdAt" ASC
         LIMIT ${safeLimit}
         FOR UPDATE SKIP LOCKED
       )
@@ -2470,6 +2832,380 @@ class CredentialService {
     return result;
   }
 
+  async claimCombinedVCsBatch(
+    holderDid: string,
+    limit: number = 10
+  ): Promise<CombinedClaimVCsResponseDTO> {
+    logger.info(
+      `Attempting to claim combined batch of VCs (limit: ${limit}) for holder DID: ${holderDid}`
+    );
+
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const combinedClaims: CombinedClaimVCDTO[] = [];
+
+    // 1. Try claiming from VCResponse (holder-initiated) first
+    // Checks claimable flag for payment verification
+    // Note: Using subqueries instead of LEFT JOIN to avoid FOR UPDATE limitation
+    const holderRequestVCs = await this.db.$queryRaw<any[]>`
+      UPDATE "VCResponse"
+      SET status = 'PROCESSING'::"VCResponseStatus",
+          processing_at = NOW(),
+          "updatedAt" = NOW()
+      WHERE id IN (
+        SELECT vc.id
+        FROM "VCResponse" vc
+        WHERE vc.holder_did = ${holderDid}
+          AND vc."deletedAt" IS NULL
+          AND (
+            vc.status = 'PENDING'::"VCResponseStatus"
+            OR (
+              vc.status = 'PROCESSING'::"VCResponseStatus"
+              AND vc.processing_at < NOW() - INTERVAL '5 minutes'
+            )
+          )
+          AND (
+            -- Primary check - claimable flag must be true
+            vc.claimable = true
+            -- OR legacy check for backward compatibility:
+            OR (
+              -- 1. No order_id link (legacy data or free credentials)
+              vc.order_id IS NULL
+              -- 2. Or no ItemBlockchain record exists for this order_id
+              OR NOT EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id)
+              -- 3. Or ItemBlockchain exists and is paid
+              OR EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id AND ib."isPaid" = true)
+            )
+          )
+        ORDER BY vc."createdAt" ASC
+        LIMIT ${safeLimit}
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING request_id, encrypted_body, request_type, processing_at;
+    `;
+
+    // Map results and fetch schema data for HOLDER_REQUEST
+    for (const vc of holderRequestVCs) {
+      let schema_data: VCSchemaData | null = null;
+
+      try {
+        // Get vc_id from the appropriate request table based on request_type
+        let vcId: string | null = null;
+
+        switch (vc.request_type) {
+          case "ISSUANCE": {
+            const request = await this.db.vCIssuanceRequest.findUnique({
+              where: { id: vc.request_id },
+              select: { vc_id: true },
+            });
+            vcId = request?.vc_id || null;
+            break;
+          }
+          case "RENEWAL": {
+            const request = await this.db.vCRenewalRequest.findUnique({
+              where: { id: vc.request_id },
+              select: { vc_id: true },
+            });
+            vcId = request?.vc_id || null;
+            break;
+          }
+          case "UPDATE": {
+            const request = await this.db.vCUpdateRequest.findUnique({
+              where: { id: vc.request_id },
+              select: { vc_id: true },
+            });
+            vcId = request?.vc_id || null;
+            break;
+          }
+          case "REVOKE": {
+            const request = await this.db.vCRevokeRequest.findUnique({
+              where: { id: vc.request_id },
+              select: { vc_id: true },
+            });
+            vcId = request?.vc_id || null;
+            break;
+          }
+        }
+
+        // If vc_id exists, parse it and fetch schema
+        if (vcId) {
+          // Parse vc_id format: "schema_id:schema_version:holder_did:timestamp"
+          const parts = vcId.split(":");
+          if (parts.length >= 2) {
+            const schema_id = parts[0];
+            const schema_version = parseInt(parts[1], 10);
+
+            if (schema_id && !isNaN(schema_version)) {
+              const schema = await SchemaService.getSchemaByIdAndVersion(
+                schema_id,
+                schema_version
+              );
+
+              if (schema) {
+                schema_data = {
+                  id: schema.id,
+                  version: schema.version,
+                  name: schema.name,
+                  schema: schema.schema,
+                  issuer_did: schema.issuer_did,
+                  issuer_name: schema.issuer_name,
+                  image_link: schema.image_link,
+                  expired_in: schema.expired_in,
+                  isActive: schema.isActive,
+                };
+              }
+            }
+          }
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.warn(
+          `Failed to fetch schema data for request_id ${vc.request_id}: ${errorMessage}`
+        );
+        // Continue without schema_data
+      }
+
+      combinedClaims.push({
+        source: "HOLDER_REQUEST",
+        claimId: vc.request_id, // Use request_id for confirmation
+        encrypted_body: vc.encrypted_body,
+        request_type: vc.request_type,
+        processing_at: vc.processing_at,
+        schema_data,
+      });
+    }
+
+    logger.info(
+      `Claimed ${combinedClaims.length} VCs from HOLDER_REQUEST source`
+    );
+
+    // 2. Try claiming from VCinitiatedByIssuer (issuer-initiated) if limit not reached
+    // Checks claimable flag for payment verification
+    // Note: Using subqueries instead of LEFT JOIN to avoid FOR UPDATE limitation
+    const remainingLimit = safeLimit - combinedClaims.length;
+    if (remainingLimit > 0) {
+      const issuerInitiatedVCs = await this.db.$queryRaw<any[]>`
+        UPDATE "VCinitiatedByIssuer"
+        SET status = 'PROCESSING'::"VCResponseStatus",
+            processing_at = NOW(),
+            "updatedAt" = NOW()
+        WHERE id IN (
+          SELECT vc.id
+          FROM "VCinitiatedByIssuer" vc
+          WHERE vc.holder_did = ${holderDid}
+            AND vc."deletedAt" IS NULL
+            AND (
+              vc.status = 'PENDING'::"VCResponseStatus"
+              OR (
+                vc.status = 'PROCESSING'::"VCResponseStatus"
+                AND vc.processing_at < NOW() - INTERVAL '5 minutes'
+              )
+            )
+            AND (
+              -- Primary check - claimable flag must be true
+              vc.claimable = true
+              -- OR legacy check for backward compatibility:
+              OR (
+                -- 1. No order_id link (legacy data or free credentials)
+                vc.order_id IS NULL
+                -- 2. Or no ItemBlockchain record exists for this order_id
+                OR NOT EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id)
+                -- 3. Or ItemBlockchain exists and is paid
+                OR EXISTS (SELECT 1 FROM "ItemBlockchain" ib WHERE ib.id = vc.order_id AND ib."isPaid" = true)
+              )
+            )
+          ORDER BY vc."createdAt" ASC
+          LIMIT ${remainingLimit}
+          FOR UPDATE SKIP LOCKED
+        )
+        RETURNING id, encrypted_body, request_type, processing_at, vc_id;
+      `;
+
+      // Map results and parse schema_data from vc_id
+      for (const vc of issuerInitiatedVCs) {
+        let schema_data: any = null;
+
+        // Parse vc_id to get schema information
+        try {
+          if (vc.vc_id) {
+            // Parse vc_id format: "schema_id:schema_version:holder_did:timestamp"
+            const parts = vc.vc_id.split(":");
+            if (parts.length >= 2) {
+              const schema_id = parts[0];
+              const schema_version = parseInt(parts[1], 10);
+
+              if (schema_id && !isNaN(schema_version)) {
+                const schema = await SchemaService.getSchemaByIdAndVersion(
+                  schema_id,
+                  schema_version
+                );
+
+                if (schema) {
+                  schema_data = {
+                    id: schema.id,
+                    version: schema.version,
+                    name: schema.name,
+                    schema: schema.schema,
+                    issuer_did: schema.issuer_did,
+                    issuer_name: schema.issuer_name,
+                    image_link: schema.image_link,
+                    expired_in: schema.expired_in,
+                    isActive: schema.isActive,
+                  };
+                }
+              }
+            }
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.warn(
+            `Failed to fetch schema data for issuer-initiated VC ${vc.id}: ${errorMessage}`
+          );
+          // Continue without schema_data
+        }
+
+        combinedClaims.push({
+          source: "ISSUER_INITIATED",
+          claimId: vc.id, // Use id for confirmation
+          encrypted_body: vc.encrypted_body,
+          request_type: vc.request_type,
+          processing_at: vc.processing_at,
+          schema_data,
+        });
+      }
+      logger.info(
+        `Claimed ${issuerInitiatedVCs.length} VCs from ISSUER_INITIATED source`
+      );
+    }
+
+    // 3. Check for remaining VCs
+    const remainingHolderVCs = await this.db.vCResponse.count({
+      where: {
+        holder_did: holderDid,
+        deletedAt: null,
+        OR: [
+          { status: "PENDING" },
+          {
+            status: "PROCESSING",
+            processing_at: { lt: new Date(Date.now() - 5 * 60 * 1000) },
+          },
+        ],
+      },
+    });
+
+    const remainingIssuerVCs = await this.db.vCinitiatedByIssuer.count({
+      where: {
+        holder_did: holderDid,
+        deletedAt: null,
+        OR: [
+          { status: "PENDING" },
+          {
+            status: "PROCESSING",
+            processing_at: { lt: new Date(Date.now() - 5 * 60 * 1000) },
+          },
+        ],
+      },
+    });
+
+    const totalRemaining = remainingHolderVCs + remainingIssuerVCs;
+
+    logger.success(
+      `Combined batch claimed ${combinedClaims.length} VCs for holder DID: ${holderDid}`
+    );
+
+    return {
+      claimed_vcs: combinedClaims,
+      claimed_count: combinedClaims.length,
+      remaining_count: totalRemaining,
+      has_more: totalRemaining > 0,
+    };
+  }
+
+  /**
+   * [NEW] Phase 2 Batch (Combined): Confirm VCs from both sources
+   *
+   * This method accepts an array of items, each specifying its source,
+   * and updates the correct table (VCResponse or VCinitiatedByIssuer).
+   */
+  async confirmCombinedVCsBatch(
+    items: CombinedClaimConfirmationItemDTO[],
+    holderDid: string
+  ): Promise<CombinedConfirmVCsResponseDTO> {
+    logger.info(
+      `Confirming combined batch of ${items.length} VCs for holder DID: ${holderDid}`
+    );
+
+    // 1. Separate IDs based on source
+    const holderRequestIds = items
+      .filter((item) => item.source === "HOLDER_REQUEST")
+      .map((item) => item.claimId);
+
+    const issuerInitiatedIds = items
+      .filter((item) => item.source === "ISSUER_INITIATED")
+      .map((item) => item.claimId);
+
+    let confirmedHolderCount = 0;
+    let confirmedIssuerCount = 0;
+
+    // 2. Confirm VCs from VCResponse (using request_id)
+    if (holderRequestIds.length > 0) {
+      const updatedHolderVCs = await this.db.vCResponse.updateMany({
+        where: {
+          request_id: { in: holderRequestIds },
+          holder_did: holderDid,
+          status: "PROCESSING",
+        },
+        data: {
+          status: "CLAIMED",
+          deletedAt: new Date(),
+        },
+      });
+      confirmedHolderCount = updatedHolderVCs.count;
+      logger.info(
+        `Confirmed ${confirmedHolderCount}/${holderRequestIds.length} VCs from HOLDER_REQUEST`
+      );
+    }
+
+    // 3. Confirm VCs from VCinitiatedByIssuer (using id)
+    if (issuerInitiatedIds.length > 0) {
+      const updatedIssuerVCs = await this.db.vCinitiatedByIssuer.updateMany({
+        where: {
+          id: { in: issuerInitiatedIds },
+          holder_did: holderDid,
+          status: "PROCESSING",
+        },
+        data: {
+          status: "CLAIMED",
+          deletedAt: new Date(),
+        },
+      });
+      confirmedIssuerCount = updatedIssuerVCs.count;
+      logger.info(
+        `Confirmed ${confirmedIssuerCount}/${issuerInitiatedIds.length} VCs from ISSUER_INITIATED`
+      );
+    }
+
+    const totalConfirmed = confirmedHolderCount + confirmedIssuerCount;
+
+    if (totalConfirmed === 0 && items.length > 0) {
+      logger.warn(
+        `Combined VC confirmation failed: No VCs found in PROCESSING state for holder ${holderDid}`
+      );
+      throw new NotFoundError(
+        `No VCs found in PROCESSING state for confirmation.`
+      );
+    }
+
+    logger.success(
+      `Combined batch confirmed and soft-deleted ${totalConfirmed} VCs`
+    );
+
+    return {
+      message: `Successfully confirmed ${totalConfirmed} VCs.`,
+      confirmed_count: totalConfirmed,
+      requested_count: items.length,
+    };
+  }
+
   /**
    * Upload VC document file to MinIO storage
    * Generates UUID for filename and stores original filename in response
@@ -2537,7 +3273,7 @@ class CredentialService {
       // Find file that starts with the UUID
       // Extract filename without directory path before checking
       const targetFile = files.find((file) => {
-        const filename = file.name.split('/').pop() || file.name;
+        const filename = file.name.split("/").pop() || file.name;
         return filename.startsWith(fileId);
       });
 
@@ -2546,7 +3282,7 @@ class CredentialService {
       }
 
       // Extract filename without directory path
-      const filename = targetFile.name.split('/').pop() || targetFile.name;
+      const filename = targetFile.name.split("/").pop() || targetFile.name;
 
       // Delete from MinIO in vc-document directory
       await StorageService.deleteFile("vc-document", filename);
@@ -2570,6 +3306,668 @@ class CredentialService {
       }
 
       throw new BadRequestError(`File deletion failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Store Issuer VC Data
+   * Create a new record with issuer_did and encrypted_body
+   */
+  async storeIssuerVCData(data: {
+    issuer_did: string;
+    holder_did: string;
+    vc_id: string;
+    encrypted_body: string;
+  }): Promise<{ message: string; data: any }> {
+    logger.info(`Storing VC data for issuer: ${data.issuer_did}, VC ID: ${data.vc_id}`);
+
+    try {
+      const issuerVCData = await this.db.issuerVCData.create({
+        data: {
+          issuer_did: data.issuer_did,
+          holder_did: data.holder_did,
+          vc_id: data.vc_id,
+          encrypted_body: data.encrypted_body,
+        },
+      });
+
+      logger.success(`Issuer VC data stored successfully for VC ID: ${data.vc_id}`);
+
+      return {
+        message: "Issuer VC data stored successfully",
+        data: issuerVCData,
+      };
+    } catch (error: any) {
+      logger.error(`Failed to store issuer VC data:`, error);
+
+      // Check for unique constraint violation (duplicate)
+      if (error.code === 'P2002') {
+        throw new BadRequestError("This VC data already exists for the issuer");
+      }
+
+      throw new InternalServerError(`Failed to store issuer VC data: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get Issuer VC Data by issuer_did
+   * Retrieve all VC data for a specific issuer
+   */
+  async getIssuerVCData(issuer_did: string): Promise<{
+    message: string;
+    count: number;
+    data: any[];
+  }> {
+    logger.info(`Fetching VC data for issuer: ${issuer_did}`);
+
+    try {
+      const issuerVCData = await this.db.issuerVCData.findMany({
+        where: {
+          issuer_did,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      logger.success(`Found ${issuerVCData.length} VC data records for issuer ${issuer_did}`);
+
+      return {
+        message: `Successfully retrieved VC data for issuer ${issuer_did}`,
+        count: issuerVCData.length,
+        data: issuerVCData,
+      };
+    } catch (error: any) {
+      logger.error(`Failed to fetch issuer VC data:`, error);
+      throw new InternalServerError(`Failed to fetch issuer VC data: ${error.message}`);
+    }
+  }
+
+  /**
+   * Update Issuer VC Data
+   * Update encrypted_body for a specific issuer VC data record by ID
+   * This is useful when issuer updates/renews/revokes a VC
+   */
+  async updateIssuerVCData(data: {
+    id: string;
+    issuer_did: string;
+    vc_id?: string;
+    encrypted_body: string;
+  }): Promise<{ message: string; data: any }> {
+    logger.info(`Updating VC data with ID: ${data.id}`);
+
+    try {
+      // Check if record exists
+      const existingRecord = await this.db.issuerVCData.findUnique({
+        where: { id: data.id },
+      });
+
+      if (!existingRecord) {
+        throw new NotFoundError("Issuer VC data not found");
+      }
+
+      // Verify issuer_did matches
+      if (existingRecord.issuer_did !== data.issuer_did) {
+        throw new BadRequestError(
+          "Issuer DID mismatch. The provided issuer_did does not match the record."
+        );
+      }
+
+      // Prepare update data
+      const updateData: any = {
+        encrypted_body: data.encrypted_body,
+      };
+
+      // Only update vc_id if provided (not null/undefined)
+      if (data.vc_id !== undefined && data.vc_id !== null) {
+        updateData.vc_id = data.vc_id;
+        logger.info(`Updating vc_id to: ${data.vc_id}`);
+      }
+
+      // Update the record
+      const updatedRecord = await this.db.issuerVCData.update({
+        where: { id: data.id },
+        data: updateData,
+      });
+
+      logger.success(`Issuer VC data updated successfully`);
+
+      return {
+        message: "Issuer VC data updated successfully",
+        data: updatedRecord,
+      };
+    } catch (error: any) {
+      logger.error(`Failed to update issuer VC data:`, error);
+
+      if (error instanceof NotFoundError || error instanceof BadRequestError) {
+        throw error;
+      }
+
+      throw new InternalServerError(`Failed to update issuer VC data: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get Issuer VC Data by ID
+   * Retrieve a specific VC data record by its ID
+   */
+  async getIssuerVCDataById(id: string): Promise<{
+    message: string;
+    data: any;
+  }> {
+    logger.info(`Fetching issuer VC data with ID: ${id}`);
+
+    const issuerVCData = await this.db.issuerVCData.findUnique({
+      where: { id },
+    });
+
+    if (!issuerVCData) {
+      throw new NotFoundError("Issuer VC data not found");
+    }
+
+    logger.success(`Issuer VC data retrieved successfully`);
+
+    return {
+      message: "Issuer VC data retrieved successfully",
+      data: issuerVCData,
+    };
+  }
+
+  /**
+   * Complete VC Issuance After Payment
+   * Called when ItemPaid event is received for ISSUANCE type
+   *
+   * NEW FLOW:
+   * - VCResponse was already created during approveIssuanceRequest
+   * - This function only issues to blockchain and sends notification
+   * - VCResponse is linked to ItemBlockchain via order_id
+   *
+   * @param vcId - VC ID from ItemBlockchain
+   * @param vcHash - VC Hash from ItemBlockchain
+   */
+  async completeIssuanceAfterPayment(
+    vcId: string,
+    vcHash: string
+  ): Promise<void> {
+    logger.info(`Starting issuance completion for VC: ${vcId}`);
+
+    try {
+      // 1. Find the approved issuance request by vc_id
+      const issuanceRequest = await this.db.vCIssuanceRequest.findFirst({
+        where: {
+          vc_id: vcId,
+          status: RequestStatus.APPROVED,
+        },
+      });
+
+      if (!issuanceRequest) {
+        throw new NotFoundError(
+          `No APPROVED issuance request found for VC ID: ${vcId}`
+        );
+      }
+
+      const { id: request_id, issuer_did, holder_did } = issuanceRequest;
+
+      logger.info(
+        `Found approved request ${request_id} for issuer ${issuer_did} → holder ${holder_did}`
+      );
+
+      // 2. Verify VCResponse exists (was created during approve)
+      const existingVCResponse = await this.db.vCResponse.findFirst({
+        where: {
+          request_id: request_id,
+          request_type: RequestType.ISSUANCE,
+          holder_did: holder_did,
+        },
+      });
+
+      if (!existingVCResponse) {
+        logger.warn(
+          `VCResponse not found for request ${request_id}. This may be an old request before the new flow.`
+        );
+        // For backward compatibility, we could create it here, but let's log warning
+      } else {
+        logger.info(
+          `VCResponse found: ${existingVCResponse.id} (linked to item ${existingVCResponse.order_id})`
+        );
+      }
+
+      // 3. Get schema information from vc_id (format: schema_id:version:holder_did:timestamp)
+      const { schemaId, version } = extractVCID(vcId);
+
+      const vcIdParts = vcId.split(":");
+      if (vcIdParts.length < 2) {
+        throw new BadRequestError("Invalid VC ID format");
+      }
+      const schemaVersion = parseInt(vcIdParts[1]);
+
+      // Get vc_type from VCSchema
+      const vcSchema = await this.db.vCSchema.findUnique({
+        where: {
+          id_version: {
+            id: schemaId,
+            version: schemaVersion,
+          },
+        },
+        select: { name: true, expired_in: true },
+      });
+
+      if (!vcSchema) {
+        throw new NotFoundError(
+          `VCSchema not found for ID ${schemaId} version ${schemaVersion}`
+        );
+      }
+
+      const vc_type = vcSchema.name;
+      const expired_in = vcSchema.expired_in || 0;
+      const expired_at = this.calculateExpiredAt(expired_in);
+
+      logger.info(
+        `Schema found: ${vc_type} (expires in ${expired_in} years)`
+      );
+
+      // 4. Issue VC to Blockchain (this is when the VC becomes official)
+      let blockchainReceipt: any;
+      try {
+        blockchainReceipt = await VCBlockchainService.issueVCInBlockchain(
+          vcId,
+          issuer_did,
+          holder_did,
+          vc_type,
+          schemaId,
+          schemaVersion,
+          expired_at,
+          vcHash
+        );
+        logger.success(
+          `VC issued to blockchain: ${vcId}. TX: ${blockchainReceipt?.hash}`
+        );
+      } catch (blockchainError: any) {
+        logger.error(`Blockchain issuance failed for ${vcId}:`, blockchainError);
+        throw new BlockchainError(
+          `Failed to issue VC to blockchain: ${blockchainError.message}`
+        );
+      }
+
+      // 5. Log the action
+      await this.db.issuerActionLog.create({
+        data: {
+          action_type: RequestType.ISSUANCE,
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          vc_id: vcId,
+          transaction_hash: blockchainReceipt.hash,
+        },
+      });
+      logger.success(`Action logged for issuance`);
+
+      // 6. Send push notification to holder that VC is ready to claim
+      try {
+        await NotificationService.sendVCStatusNotification(
+          holder_did,
+          "Credential Ready",
+          "Your payment is confirmed! Your credential has been issued and is ready to be claimed.",
+          {
+            type: "VC_ISSUED",
+            request_id: request_id,
+            request_type: RequestType.ISSUANCE,
+            vc_id: vcId,
+            vc_response_id: existingVCResponse?.id,
+            transaction_hash: blockchainReceipt.hash,
+          }
+        );
+        logger.success(`Push notification sent to holder: ${holder_did}`);
+      } catch (notifError: any) {
+        logger.error(
+          `Failed to send push notification to ${holder_did}:`,
+          notifError
+        );
+        // Don't throw - notification failure shouldn't fail the entire process
+      }
+
+      logger.success(
+        `🎉 Issuance completion successful for VC: ${vcId}`
+      );
+    } catch (error: any) {
+      logger.error(`Failed to complete issuance for VC ${vcId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Complete VC Renewal After Payment
+   * Called when ItemPaid event is received for RENEWAL type
+   *
+   * NEW FLOW:
+   * - VCResponse was already created during approveRenewalRequest
+   * - This function only renews on blockchain and sends notification
+   * - VCResponse is linked to ItemBlockchain via order_id
+   *
+   * @param vcId - VC ID from ItemBlockchain
+   * @param vcHash - VC Hash from ItemBlockchain
+   */
+  async completeRenewalAfterPayment(
+    vcId: string,
+    vcHash: string
+  ): Promise<void> {
+    logger.info(`Starting renewal completion for VC: ${vcId}`);
+
+    try {
+      // 1. Find the approved renewal request by vc_id
+      const renewalRequest = await this.db.vCRenewalRequest.findFirst({
+        where: {
+          vc_id: vcId,
+          status: RequestStatus.APPROVED,
+        },
+      });
+
+      if (!renewalRequest) {
+        throw new NotFoundError(
+          `No APPROVED renewal request found for VC ID: ${vcId}`
+        );
+      }
+
+      const { id: request_id, issuer_did, holder_did } = renewalRequest;
+
+      logger.info(
+        `Found approved renewal request ${request_id} for issuer ${issuer_did} → holder ${holder_did}`
+      );
+
+      // 2. Verify VCResponse exists (was created during approve)
+      const existingVCResponse = await this.db.vCResponse.findFirst({
+        where: {
+          request_id: request_id,
+          request_type: RequestType.RENEWAL,
+          holder_did: holder_did,
+        },
+      });
+
+      if (!existingVCResponse) {
+        logger.warn(
+          `VCResponse not found for renewal request ${request_id}. This may be an old request before the new flow.`
+        );
+      } else {
+        logger.info(
+          `VCResponse found: ${existingVCResponse.id} (linked to item ${existingVCResponse.order_id})`
+        );
+      }
+
+      // 3. Get schema information from vc_id
+      const { schemaId, version } = extractVCID(vcId);
+
+      const vcIdParts = vcId.split(":");
+      if (vcIdParts.length < 2) {
+        throw new BadRequestError("Invalid VC ID format");
+      }
+      const schemaVersion = parseInt(vcIdParts[1]);
+
+      // Get vc_type and expired_in from VCSchema
+      const vcSchema = await this.db.vCSchema.findUnique({
+        where: {
+          id_version: {
+            id: schemaId,
+            version: schemaVersion,
+          },
+        },
+        select: { name: true, expired_in: true },
+      });
+
+      if (!vcSchema) {
+        throw new NotFoundError(
+          `VCSchema not found for ID ${schemaId} version ${schemaVersion}`
+        );
+      }
+
+      const vc_type = vcSchema.name;
+      const expired_in = vcSchema.expired_in || 0;
+      const expired_at = this.calculateExpiredAt(expired_in);
+
+      logger.info(
+        `Schema found: ${vc_type} (expires in ${expired_in} years)`
+      );
+
+      // 4. Renew VC on Blockchain
+      let blockchainReceipt: any;
+      try {
+        blockchainReceipt = await VCBlockchainService.renewVCInBlockchain(
+          vcId,
+          expired_at,
+          vcHash
+        );
+        logger.success(
+          `VC renewed on blockchain: ${vcId}. TX: ${blockchainReceipt?.hash}`
+        );
+      } catch (blockchainError: any) {
+        logger.error(`Blockchain renewal failed for ${vcId}:`, blockchainError);
+        throw new BlockchainError(
+          `Failed to renew VC on blockchain: ${blockchainError.message}`
+        );
+      }
+
+      // 5. Log the action
+      await this.db.issuerActionLog.create({
+        data: {
+          action_type: RequestType.RENEWAL,
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          vc_id: vcId,
+          transaction_hash: blockchainReceipt.hash,
+        },
+      });
+      logger.success(`Action logged for renewal`);
+
+      // 6. Send push notification to holder that VC is ready to claim
+      try {
+        await NotificationService.sendVCStatusNotification(
+          holder_did,
+          "Credential Renewed",
+          "Your payment is confirmed! Your credential has been renewed and is ready to be claimed.",
+          {
+            type: "VC_RENEWED",
+            request_id: request_id,
+            request_type: RequestType.RENEWAL,
+            vc_id: vcId,
+            vc_response_id: existingVCResponse?.id,
+            transaction_hash: blockchainReceipt.hash,
+          }
+        );
+        logger.success(`Push notification sent to holder: ${holder_did}`);
+      } catch (notifError: any) {
+        logger.error(
+          `Failed to send push notification to ${holder_did}:`,
+          notifError
+        );
+      }
+
+      logger.success(
+        `🎉 Renewal completion successful for VC: ${vcId}`
+      );
+    } catch (error: any) {
+      logger.error(`Failed to complete renewal for VC ${vcId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Complete VC Update After Payment
+   * Called when ItemPaid event is received for UPDATE type
+   *
+   * NEW FLOW:
+   * - VCResponse was already created during approveUpdateRequest
+   * - This function only updates on blockchain and sends notification
+   * - VCResponse is linked to ItemBlockchain via order_id
+   *
+   * @param newVcId - New VC ID from ItemBlockchain
+   * @param newVcHash - New VC Hash from ItemBlockchain
+   */
+  async completeUpdateAfterPayment(
+    newVcId: string,
+    newVcHash: string
+  ): Promise<void> {
+    logger.info(`Starting update completion for new VC: ${newVcId}`);
+
+    try {
+      // 1. Find the approved update request by vc_id (new_vc_id was saved in vc_id field)
+      const updateRequest = await this.db.vCUpdateRequest.findFirst({
+        where: {
+          vc_id: newVcId,
+          status: RequestStatus.APPROVED,
+        },
+      });
+
+      if (!updateRequest) {
+        throw new NotFoundError(
+          `No APPROVED update request found for new VC ID: ${newVcId}`
+        );
+      }
+
+      const { id: request_id, issuer_did, holder_did } = updateRequest;
+
+      logger.info(
+        `Found approved update request ${request_id} for issuer ${issuer_did} → holder ${holder_did}`
+      );
+
+      // 2. Verify VCResponse exists (was created during approve)
+      const existingVCResponse = await this.db.vCResponse.findFirst({
+        where: {
+          request_id: request_id,
+          request_type: RequestType.UPDATE,
+          holder_did: holder_did,
+        },
+      });
+
+      if (!existingVCResponse) {
+        logger.warn(
+          `VCResponse not found for update request ${request_id}. This may be an old request before the new flow.`
+        );
+      } else {
+        logger.info(
+          `VCResponse found: ${existingVCResponse.id} (linked to item ${existingVCResponse.order_id})`
+        );
+      }
+
+      // 3. Get schema information from new_vc_id
+      const { schemaId, version } = extractVCID(newVcId);
+
+      const schemaVersion = parseInt(version);
+
+      // Get vc_type and expired_in from VCSchema
+      const vcSchema = await this.db.vCSchema.findUnique({
+        where: {
+          id_version: {
+            id: schemaId,
+            version: schemaVersion,
+          },
+        },
+        select: { name: true, expired_in: true },
+      });
+
+      if (!vcSchema) {
+        throw new NotFoundError(
+          `VCSchema not found for ID ${schemaId} version ${schemaVersion}`
+        );
+      }
+
+      const vc_type = vcSchema.name;
+      const expired_in = vcSchema.expired_in || 0;
+      const expired_at = this.calculateExpiredAt(expired_in);
+
+      logger.info(
+        `Schema found: ${vc_type} (expires in ${expired_in} years)`
+      );
+
+      // 4. We need the old VC ID for update - parse from encrypted_body or get from request
+      // For now, we'll extract from the request's original data
+      // Note: In approveUpdateRequest, the old vc_id should be stored somewhere
+      // For this implementation, we'll need to find the old VC from blockchain
+      // that matches the holder and schema but is different from newVcId
+
+      // Get all VCs for this holder with same schema
+      const allVCs = await VCBlockchainService.getAllVCsFromBlockchain();
+      const oldVC = allVCs.find((vc: any) =>
+        vc.holderDID === holder_did &&
+        vc.schemaID === schemaId &&
+        vc.schemaVersion === schemaVersion &&
+        vc.id !== newVcId &&
+        vc.isActive === true
+      );
+
+      if (!oldVC) {
+        throw new NotFoundError(
+          `Old active VC not found for holder ${holder_did} with schema ${schemaId}v${schemaVersion}`
+        );
+      }
+
+      const old_vc_id = oldVC.id;
+      logger.info(`Found old VC to update: ${old_vc_id}`);
+
+      // 5. Update VC on Blockchain (revoke old, issue new)
+      let blockchainReceipt: any;
+      try {
+        blockchainReceipt = await VCBlockchainService.updateVCInBlockchain(
+          old_vc_id,
+          newVcId,
+          issuer_did,
+          holder_did,
+          vc_type,
+          schemaId,
+          schemaVersion,
+          expired_at,
+          newVcHash
+        );
+        logger.success(
+          `VC updated on blockchain: ${old_vc_id} → ${newVcId}. TX: ${blockchainReceipt?.hash}`
+        );
+      } catch (blockchainError: any) {
+        logger.error(`Blockchain update failed for ${newVcId}:`, blockchainError);
+        throw new BlockchainError(
+          `Failed to update VC on blockchain: ${blockchainError.message}`
+        );
+      }
+
+      // 6. Log the action
+      await this.db.issuerActionLog.create({
+        data: {
+          action_type: RequestType.UPDATE,
+          issuer_did: issuer_did,
+          holder_did: holder_did,
+          vc_id: old_vc_id,
+          new_vc_id: newVcId,
+          transaction_hash: blockchainReceipt.hash,
+        },
+      });
+      logger.success(`Action logged for update`);
+
+      // 7. Send push notification to holder that VC is ready to claim
+      try {
+        await NotificationService.sendVCStatusNotification(
+          holder_did,
+          "Credential Updated",
+          "Your payment is confirmed! Your credential has been updated and is ready to be claimed.",
+          {
+            type: "VC_UPDATED",
+            request_id: request_id,
+            request_type: RequestType.UPDATE,
+            old_vc_id: old_vc_id,
+            new_vc_id: newVcId,
+            vc_response_id: existingVCResponse?.id,
+            transaction_hash: blockchainReceipt.hash,
+          }
+        );
+        logger.success(`Push notification sent to holder: ${holder_did}`);
+      } catch (notifError: any) {
+        logger.error(
+          `Failed to send push notification to ${holder_did}:`,
+          notifError
+        );
+      }
+
+      logger.success(
+        `🎉 Update completion successful for VC: ${old_vc_id} → ${newVcId}`
+      );
+    } catch (error: any) {
+      logger.error(`Failed to complete update for VC ${newVcId}:`, error);
+      throw error;
     }
   }
 }

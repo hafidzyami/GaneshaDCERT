@@ -11,6 +11,9 @@ dist/
 build/
 *.tsbuildinfo
 
+# RocksDB cache directory
+vcschema-cache/
+
 # Environment variables
 .env
 .env.local

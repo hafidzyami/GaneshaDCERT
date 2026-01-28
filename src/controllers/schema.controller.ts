@@ -26,8 +26,9 @@ import {
 // ============================================
 
 /**
- * Get all VC schemas with optional filters
+ * Get all VC schemas with optional filters (from RDBMS)
  * @route GET /api/schemas
+ * @query pricingOnly - Filter by price (default: true = only schemas with price > 0)
  */
 export const getAllVCSchemas = asyncHandler(
   async (req: Request, res: Response) => {
@@ -36,19 +37,106 @@ export const getAllVCSchemas = asyncHandler(
       throw new ValidationError("Validation error", errors.array());
     }
 
+    // Parse pricingOnly: default to true, only false when explicitly set to "false"
+    const pricingOnly = req.query.pricingOnly !== "false";
+
     const filter: SchemaFilterDTO = {
       issuerDid: req.query.issuerDid as string | undefined,
       isActive:
         req.query.isActive !== undefined
           ? req.query.isActive === "true"
           : undefined,
+      pricingOnly,
     };
 
     const schemas = await SchemaService.getAllSchemas(filter);
 
     return ResponseHelper.success(res, {
+      source: "rdbms",
       count: schemas.length,
       data: schemas,
+    });
+  }
+);
+
+/**
+ * Get all VC schemas directly from blockchain with pagination
+ * @route GET /api/schemas/blockchain?page=1&limit=100&latestOnly=true
+ * @query page - Page number (default: 1)
+ * @query limit - Items per page (default: 100, max: 1000)
+ * @query latestOnly - Return only latest versions (default: true)
+ */
+export const getAllVCSchemasFromBlockchain = asyncHandler(
+  async (req: Request, res: Response) => {
+    // Extract and validate query parameters
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
+    const latestOnly = req.query.latestOnly !== 'false'; // default true
+
+    const result = await SchemaService.getAllSchemasFromBlockchain(
+      page,
+      limit,
+      latestOnly
+    );
+
+    return ResponseHelper.success(res, {
+      source: "blockchain",
+      data: result.schemas,
+      pagination: result.pagination,
+    });
+  }
+);
+
+/**
+ * Get total count of schemas from blockchain
+ * @route GET /api/schemas/blockchain/count
+ */
+export const getSchemasCountFromBlockchain = asyncHandler(
+  async (req: Request, res: Response) => {
+    const count = await SchemaService.getSchemasCountFromBlockchain();
+
+    return ResponseHelper.success(res, {
+      source: "blockchain",
+      count: count,
+    });
+  }
+);
+
+/**
+ * Get specific schema version from blockchain
+ * @route GET /api/schemas/blockchain/:id/version/:version
+ */
+export const getSchemaFromBlockchain = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id, version } = req.params;
+    const versionNumber = parseInt(version);
+
+    if (isNaN(versionNumber)) {
+      throw new ValidationError("Version must be a valid number");
+    }
+
+    const schema = await SchemaService.getSchemaFromBlockchain(id, versionNumber);
+
+    return ResponseHelper.success(res, {
+      source: "blockchain",
+      data: schema,
+    });
+  }
+);
+
+/**
+ * Get latest schema version from blockchain
+ * @route GET /api/schemas/blockchain/:id/latest
+ */
+export const getLatestSchemaFromBlockchain = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const schema = await SchemaService.getLatestSchemaFromBlockchain(id);
+
+    return ResponseHelper.success(res, {
+      source: "blockchain",
+      data: schema,
     });
   }
 );
@@ -337,5 +425,86 @@ export const deleteVCSchema = asyncHandler(
       },
       result.message
     );
+  }
+);
+
+/**
+ * Create VC schema price
+ */
+export const createVCSchemaPrice = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+
+    const { schemaId, price, currency, issuerId, version } = req.body;
+
+    const result = await SchemaService.createVCSchemaPrice({
+      schemaId,
+      price,
+      currency,
+      version,
+    });
+
+    return ResponseHelper.success(
+      res,
+      {
+        schemaId,
+        price,
+        currency,
+        issuerId,
+      },
+      result.message
+    );
+  }
+);
+
+/**
+ * Update VC schema price
+ */
+export const updateVCSchemaPrice = asyncHandler(
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError("Validation error", errors.array());
+    }
+    const { schemaId, price, currency, version } = req.body;
+
+    const result = await SchemaService.updateVCSchemaPrice({
+      schemaId,
+      price,
+      currency,
+      version,
+    });
+
+    return ResponseHelper.success(
+      res,
+      {
+        schemaId,
+        price,
+        currency,
+      },
+      result.message
+    );
+  }
+);
+
+/**
+ * Get all VC schema prices
+ */
+export const getAllVCSchemaPrices = asyncHandler(
+  async (req: Request, res: Response) => {
+    const prices = await SchemaService.getAllVCSchemaPrices();
+    if (prices.length === 0) {
+      return ResponseHelper.success(res, {
+        count: 0,
+        data: [],
+      });
+    }
+    return ResponseHelper.success(res, {
+      count: prices.length,
+      data: prices,
+    });
   }
 );
