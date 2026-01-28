@@ -258,8 +258,8 @@ model VCinitiatedByIssuer {
   updatedAt      DateTime         @updatedAt
   deletedAt      DateTime?
   vc_id          String?
-  claimable      Boolean          @default(false)
   order_id       String?
+  claimable      Boolean          @default(false)
 
   @@index([vc_id])
   @@index([order_id])
