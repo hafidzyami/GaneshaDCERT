@@ -308,7 +308,7 @@ class DIDService {
 
   /**
    * Get DID Document
-   * Returns 200 with found status instead of throwing NotFoundError
+   * Returns W3C-compliant DID document format
    */
   async getDIDDocument(did: string) {
     const document = await this.blockchainService.getDIDDocument(did);
@@ -318,9 +318,62 @@ class DIDService {
       return document;
     }
 
+    // Build W3C-compliant DID Document
+    const keyId = `${did}#key-1`;
+    const publicKeyHex = document[document.keyId]; // Get public key from keyId field
+
+    // Build service endpoints for institutional DIDs
+    const services: any[] = [];
+    if (document.role === "Institutional" && document.details) {
+      services.push({
+        id: `${did}#institution`,
+        type: "InstitutionalProfile",
+        serviceEndpoint: {
+          name: document.details.name || "",
+          email: document.details.email || "",
+          phone: document.details.phone || "",
+          country: document.details.country || "",
+          website: document.details.website || "",
+          address: document.details.address || "",
+        },
+      });
+    }
+
+    // Build DID Document in W3C format
+    const didDocument: any = {
+      "@context": [
+        "https://www.w3.org/ns/did/v1.1",
+        "https://w3id.org/security/suites/secp256k1-2019/v1",
+      ],
+      id: did,
+      controller: did,
+      verificationMethod: [
+        {
+          id: keyId,
+          type: "EcdsaSecp256k1VerificationKey2019",
+          controller: did,
+          publicKeyHex: publicKeyHex,
+        },
+      ],
+      authentication: [keyId],
+      assertionMethod: [keyId],
+    };
+
+    // Add services for institutional DIDs
+    if (services.length > 0) {
+      didDocument.service = services;
+    }
+
     return {
       message: "DID document retrieved successfully",
-      ...document,
+      didDocument,
+      didDocumentMetadata: {
+        deactivated: document.status === "InActive",
+      },
+      didResolutionMetadata: {
+        contentType: "application/did+ld+json",
+        retrieved: new Date().toISOString(),
+      },
     };
   }
 

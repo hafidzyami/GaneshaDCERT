@@ -28,6 +28,7 @@ import {
 /**
  * Get all VC schemas with optional filters (from RDBMS)
  * @route GET /api/schemas
+ * @query pricingOnly - Filter by price (default: true = only schemas with price > 0)
  */
 export const getAllVCSchemas = asyncHandler(
   async (req: Request, res: Response) => {
@@ -36,12 +37,16 @@ export const getAllVCSchemas = asyncHandler(
       throw new ValidationError("Validation error", errors.array());
     }
 
+    // Parse pricingOnly: default to true, only false when explicitly set to "false"
+    const pricingOnly = req.query.pricingOnly !== "false";
+
     const filter: SchemaFilterDTO = {
       issuerDid: req.query.issuerDid as string | undefined,
       isActive:
         req.query.isActive !== undefined
           ? req.query.isActive === "true"
           : undefined,
+      pricingOnly,
     };
 
     const schemas = await SchemaService.getAllSchemas(filter);
@@ -433,7 +438,7 @@ export const createVCSchemaPrice = asyncHandler(
       throw new ValidationError("Validation error", errors.array());
     }
 
-    const { schemaId, price, currency, issuerId, version} = req.body;
+    const { schemaId, price, currency, issuerId, version } = req.body;
 
     const result = await SchemaService.createVCSchemaPrice({
       schemaId,
@@ -464,7 +469,7 @@ export const updateVCSchemaPrice = asyncHandler(
     if (!errors.isEmpty()) {
       throw new ValidationError("Validation error", errors.array());
     }
-    const { schemaId, price, currency, version} = req.body;
+    const { schemaId, price, currency, version } = req.body;
 
     const result = await SchemaService.updateVCSchemaPrice({
       schemaId,

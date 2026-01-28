@@ -34,6 +34,7 @@ export interface UpdateVCSchemaDTO {
 export interface SchemaFilterDTO {
   issuerDid?: string;
   isActive?: boolean;
+  pricingOnly?: boolean; // true (default) = only schemas with price > 0, false = all schemas
 }
 
 /**

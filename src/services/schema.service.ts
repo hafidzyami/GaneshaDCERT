@@ -99,6 +99,7 @@ class SchemaService {
 
   /**
    * Get all VC schemas with optional filters (from RDBMS)
+   * @param filter - Filter options including pricingOnly
    */
   async getAllSchemas(filter: SchemaFilterDTO = {}): Promise<VCSchema[]> {
     try {
@@ -106,10 +107,29 @@ class SchemaService {
 
       const where = this.buildWhereClause(filter);
 
-      const schemas = await prisma.vCSchema.findMany({
-        where,
-        orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
-      });
+      let schemas: VCSchema[];
+
+      if (filter.pricingOnly === true) {
+        // Only return schemas that have a price > 0
+        // VCSchemaPrices is a nullable one-to-one relation
+        schemas = await prisma.vCSchema.findMany({
+          where: {
+            ...where,
+            VCSchemaPrices: {
+              is: {
+                price: { gt: 0 }
+              }
+            }
+          },
+          orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
+        });
+      } else {
+        // pricingOnly=false: Return all schemas (no price filter)
+        schemas = await prisma.vCSchema.findMany({
+          where,
+          orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
+        });
+      }
 
       for (const schema of schemas) {
         if (!schema.issuer_name) {
@@ -531,7 +551,7 @@ class SchemaService {
         await StorageService.deleteFile(
           "background",
           uploadedImageFileName
-        ).catch(() => {});
+        ).catch(() => { });
       }
 
       this.logError("Create schema", error);
@@ -652,7 +672,7 @@ class SchemaService {
         await StorageService.deleteFile(
           "background",
           uploadedImageFileName
-        ).catch(() => {});
+        ).catch(() => { });
       }
 
       this.logError("Update schema", error);

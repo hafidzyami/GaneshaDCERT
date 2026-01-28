@@ -169,7 +169,7 @@ export const getDIDDocument = asyncHandler(
     );
 
     // Return 200 with appropriate message
-    if (!sanitizedDocument.found) {
+    if (!sanitizedDocument.found && sanitizedDocument.found !== undefined) {
       return ResponseHelper.success(
         res,
         sanitizedDocument,
@@ -177,6 +177,8 @@ export const getDIDDocument = asyncHandler(
       );
     }
 
-    return ResponseHelper.success(res, sanitizedDocument);
+    // Extract message from result for W3C format response
+    const { message, ...data } = sanitizedDocument;
+    return ResponseHelper.success(res, data, message);
   }
 );

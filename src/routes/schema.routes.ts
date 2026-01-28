@@ -16,7 +16,11 @@ import {
   createVCSchemaPriceValidator,
   updateVCSchemaPriceValidator,
 } from "../validators/schema.validator";
-import { uploadOptionalImage, requireImageFile, requireImageOrLink } from "../middlewares/upload.middleware";
+import {
+  uploadOptionalImage,
+  requireImageFile,
+  requireImageOrLink,
+} from "../middlewares/upload.middleware";
 import { parseSchemaJson } from "../middlewares/parseMultipartJson.middleware";
 import { verifyDIDSignature, adminAuthMiddleware } from "../middlewares";
 
@@ -122,6 +126,12 @@ const router: Router = express.Router();
  *           type: boolean
  *         description: Filter to show active, inactive, or all schemas
  *         example: true
+ *       - in: query
+ *         name: pricingOnly
+ *         schema:
+ *           type: boolean
+ *         description: Filter to show all or pricing schemas
+ *         required: false
  *     responses:
  *       200:
  *         description: List of VC schemas retrieved successfully
@@ -352,7 +362,10 @@ router.get("/blockchain/count", vcSchema.getSchemasCountFromBlockchain);
  *       500:
  *         description: Internal server error
  */
-router.get("/blockchain/:id/version/:version", vcSchema.getSchemaFromBlockchain);
+router.get(
+  "/blockchain/:id/version/:version",
+  vcSchema.getSchemaFromBlockchain,
+);
 
 /**
  * @swagger
@@ -468,7 +481,7 @@ router.get("/blockchain/:id/latest", vcSchema.getLatestSchemaFromBlockchain);
 router.get(
   "/latest",
   getLatestSchemaVersionValidator,
-  vcSchema.getLatestSchemaVersion
+  vcSchema.getLatestSchemaVersion,
 );
 
 /**
@@ -532,7 +545,7 @@ router.get(
 router.get(
   "/versions",
   getAllSchemaVersionsValidator,
-  vcSchema.getAllSchemaVersions
+  vcSchema.getAllSchemaVersions,
 );
 
 /**
@@ -586,7 +599,7 @@ router.get(
 router.get(
   "/:id/versions",
   getAllVersionsByIdValidator,
-  vcSchema.getAllVersionsById
+  vcSchema.getAllVersionsById,
 );
 
 /**
@@ -642,7 +655,7 @@ router.get(
 router.get(
   "/:id/version/:version",
   getSchemaByIdAndVersionValidator,
-  vcSchema.getSchemaByIdAndVersion
+  vcSchema.getSchemaByIdAndVersion,
 );
 
 /**
@@ -704,9 +717,8 @@ router.get(
 router.get(
   "/:id/version/:version/active",
   isSchemaActiveValidator,
-  vcSchema.isSchemaActive
+  vcSchema.isSchemaActive,
 );
-
 
 // /**
 //  * @swagger
@@ -775,6 +787,8 @@ router.get(
  *     summary: Update VC schema price
  *     description: Update an existing price entry for a VC schema
  *     tags: [VC Schema Management]
+ *     security:
+ *       - AdminBearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -827,7 +841,7 @@ router.put(
   "/price",
   adminAuthMiddleware,
   updateVCSchemaPriceValidator,
-  vcSchema.updateVCSchemaPrice
+  vcSchema.updateVCSchemaPrice,
 );
 
 /**
@@ -837,6 +851,8 @@ router.put(
  *     summary: Get all VC schema prices
  *     description: Retrieve all price entries for VC schemas
  *     tags: [VC Schema Management]
+ *     security:
+ *       - AdminBearerAuth: []
  *     responses:
  *       200:
  *         description: List of all schema prices
@@ -1105,7 +1121,7 @@ router.post(
   parseSchemaJson,
   verifyDIDSignature,
   createVCSchemaValidator,
-  vcSchema.createVCSchema
+  vcSchema.createVCSchema,
 );
 
 /**
@@ -1275,7 +1291,7 @@ router.put(
   parseSchemaJson,
   verifyDIDSignature,
   updateVCSchemaValidator,
-  vcSchema.updateVCSchema
+  vcSchema.updateVCSchema,
 );
 
 /**
@@ -1349,7 +1365,7 @@ router.patch(
   "/:id/version/:version/deactivate",
   deactivateVCSchemaValidator,
   verifyDIDSignature,
-  vcSchema.deactivateVCSchema
+  vcSchema.deactivateVCSchema,
 );
 
 /**
@@ -1422,7 +1438,7 @@ router.patch(
   "/:id/version/:version/reactivate",
   reactivateVCSchemaValidator,
   verifyDIDSignature,
-  vcSchema.reactivateVCSchema
+  vcSchema.reactivateVCSchema,
 );
 
 export default router;
