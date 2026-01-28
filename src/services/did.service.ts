@@ -365,6 +365,10 @@ class DIDService {
     }
 
     return {
+      found: true,
+      status: document.status,
+      keyId: document.keyId,
+      [document.keyId]: publicKeyHex,
       message: "DID document retrieved successfully",
       didDocument,
       didDocumentMetadata: {
