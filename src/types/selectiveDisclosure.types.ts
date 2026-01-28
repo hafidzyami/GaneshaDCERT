@@ -104,8 +104,8 @@ export interface SelectiveDisclosurePresentationRequest {
  * DataIntegrityProof with ecdsa-rdfc-2019 cryptosuite
  */
 export interface DataIntegrityProof {
-  type: "DataIntegrityProof";
-  cryptosuite: "ecdsa-rdfc-2019";
+  type: "DataIntegrityProof" | "BbsBlsSignatureProof2020";
+  cryptosuite?: "ecdsa-rdfc-2019" | "BbsBlsSignature2020";
   created: string;
   verificationMethod: string;
   proofPurpose: string;
@@ -327,6 +327,7 @@ export interface SelectiveDisclosureRequestResponse {
 export const SD_PROOF_TYPES = {
   DATA_INTEGRITY_PROOF: "DataIntegrityProof",
   SELECTIVE_DISCLOSURE_PROOF_2024: "SelectiveDisclosureProof2024",
+  BBS_BLS_SIGNATURE_PROOF_2020: "BbsBlsSignatureProof2020",
 } as const;
 
 /**
@@ -334,6 +335,7 @@ export const SD_PROOF_TYPES = {
  */
 export const CRYPTOSUITES = {
   ECDSA_RDFC_2019: "ecdsa-rdfc-2019",
+  BBS_BLS_SIGNATURE_2020: "BbsBlsSignature2020",
 } as const;
 
 /**

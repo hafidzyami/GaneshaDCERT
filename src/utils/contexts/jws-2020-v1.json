@@ -1,0 +1,7 @@
+{
+    "@context": {
+        "id": "@id",
+        "type": "@type",
+        "JsonWebKey2020": "https://w3id.org/security#JsonWebKey2020"
+    }
+}

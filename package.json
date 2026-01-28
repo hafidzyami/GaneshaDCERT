@@ -33,6 +33,8 @@
   "author": "Hafidz Yami",
   "license": "ISC",
   "dependencies": {
+    "@mattrglobal/bls12381-key-pair": "^2.0.0",
+    "@mattrglobal/jsonld-signatures-bbs": "^1.2.0",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",
     "@prisma/client": "^6.17.0",
@@ -40,6 +42,7 @@
     "amqplib": "^0.10.9",
     "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
+    "bs58": "^4.0.1",
     "bull": "^4.16.5",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",

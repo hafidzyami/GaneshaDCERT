@@ -59,6 +59,7 @@ import blockchainTransactionQueueService from "./blockchain/blockchainTransactio
 import StorageService from "./storage.service";
 import SchemaService from "./schema.service";
 import { v4 as uuidv4 } from "uuid";
+import zkpService from "./zkp.service";
 
 /**
  * Credential Service with Dependency Injection
@@ -618,7 +619,7 @@ class CredentialService {
 
       // --- Payment Flow: Create Item on Payment Blockchain ---
       const price = await SchemaService.getPriceBasedOnSchemaId(schema_id, schema_version);
-      
+
       // Validate price - must be greater than 0 for paid credentials
       if (price <= 0) {
         logger.error(`Invalid price for credential: ${price}. Price must be greater than 0.`);
@@ -822,7 +823,7 @@ class CredentialService {
     // 2. Get issuer_did and holder_did from database
     const issuer_did = revokeRequest.issuer_did;
     const holder_did = revokeRequest.holder_did;
-    
+
     // [NEW] Get the encrypted_body (reason) from the original request
     const encrypted_body_reason = revokeRequest.encrypted_body;
 
@@ -870,7 +871,7 @@ class CredentialService {
       };
 
     } else if (action === RequestStatus.APPROVED) {
-      
+
       if (!vc_id) {
         throw new BadRequestError("vc_id is required when action is APPROVED.");
       }
@@ -896,7 +897,7 @@ class CredentialService {
             where: { id: request_id },
             data: {
               status: RequestStatus.APPROVED,
-              vc_id: vc_id 
+              vc_id: vc_id
             },
           });
           throw new BadRequestError(
@@ -921,7 +922,7 @@ class CredentialService {
           `Failed to verify VC status before revocation: ${error.message}`
         );
       }
-      
+
       // --- Blockchain Revocation Call ---
       let blockchainReceipt: any;
       try {
@@ -1841,16 +1842,15 @@ class CredentialService {
     status?: RequestStatus | "ALL"
   ): Promise<AllIssuerRequestsResponseDTO> {
     logger.info(
-      `Fetching all requests for issuer: ${issuerDid}, status: ${
-        status || "ALL"
+      `Fetching all requests for issuer: ${issuerDid}, status: ${status || "ALL"
       }`
     );
 
     // 1. Definisikan klausa 'where' untuk tabel Request
     const whereClauseRequests: { issuer_did: string; status?: RequestStatus } =
-      {
-        issuer_did: issuerDid,
-      };
+    {
+      issuer_did: issuerDid,
+    };
 
     if (status && status !== "ALL") {
       whereClauseRequests.status = status;
@@ -1909,10 +1909,10 @@ class CredentialService {
 
       status === "ALL" || !status
         ? this.db.issuerActionLog.findMany({
-            where: whereClauseLogs,
-            select: selectFieldsLogs,
-            orderBy: { createdAt: "desc" },
-          })
+          where: whereClauseLogs,
+          select: selectFieldsLogs,
+          orderBy: { createdAt: "desc" },
+        })
         : Promise.resolve([]),
     ]);
 
@@ -2277,7 +2277,7 @@ class CredentialService {
         "Authenticated DID does not match the issuer_did in the request body."
       );
     }
-    
+
     // [MODIFIED] Destructure new fields
     const { issuer_did, holder_did, vc_id, encrypted_body } = data;
 
@@ -2299,7 +2299,7 @@ class CredentialService {
           `Authenticated issuer (${issuer_did}) did not issue this VC.`
         );
       }
-      
+
       // [NEW] Periksa apakah holder-nya cocok
       if (currentVcStatus.holderDID !== holder_did) {
         logger.warn(
@@ -3968,6 +3968,58 @@ class CredentialService {
     } catch (error: any) {
       logger.error(`Failed to complete update for VC ${newVcId}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Issue a VC with BBS+ Signature (Zero-Knowledge Proof compatible)
+   */
+  async issueZKPCredential(data: {
+    issuer_did: string;
+    holder_did: string;
+    credential_subject: any;
+    schema_id?: string;
+    expiration_date?: string;
+  }) {
+    logger.info(`Issuing ZKP/BBS+ credential for holder: ${data.holder_did}`);
+
+    try {
+      // Generate ephemeral key pair for issuer if not managing persistent keys yet
+      // In production, this should retrieve the issuer's stable private key
+      const keyPair = await zkpService.generateBlsKeyPair();
+
+      // Create unsigned credential
+      const unsignedCredential = {
+        "@context": [
+          "https://www.w3.org/2018/credentials/v1",
+          "https://w3id.org/security/bbs/v1"
+        ],
+        id: `urn:uuid:${uuidv4()}`,
+        type: ["VerifiableCredential"],
+        issuer: data.issuer_did,
+        issuanceDate: new Date().toISOString(),
+        credentialSubject: {
+          id: data.holder_did,
+          ...data.credential_subject
+        }
+      };
+
+      if (data.expiration_date) {
+        (unsignedCredential as any).expirationDate = data.expiration_date;
+      }
+
+      // Sign with BBS+
+      const signedCredential = await zkpService.signCredentialBBS(unsignedCredential, keyPair);
+
+      return {
+        credential: signedCredential,
+        // WARNING: Returning private key for demonstration/storage by caller only
+        // In production, key management should be handled securely
+        key_pair: keyPair
+      };
+    } catch (error: any) {
+      logger.error("Error issuing ZKP credential:", error);
+      throw new InternalServerError(`Failed to issue ZKP credential: ${error.message}`);
     }
   }
 }

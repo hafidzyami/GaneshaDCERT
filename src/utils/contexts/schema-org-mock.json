@@ -1,0 +1,10 @@
+{
+    "@context": {
+        "name": "https://schema.org/name",
+        "email": "https://schema.org/email",
+        "birthDate": "https://schema.org/birthDate",
+        "jobTitle": "https://schema.org/jobTitle",
+        "id": "@id",
+        "type": "@type"
+    }
+}

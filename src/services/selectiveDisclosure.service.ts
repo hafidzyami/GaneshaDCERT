@@ -38,6 +38,7 @@ import {
   BadRequestError,
   NotFoundError,
 } from "../utils/errors/AppError";
+import zkpService from "./zkp.service";
 
 /**
  * Selective Disclosure Service
@@ -368,8 +369,29 @@ class SelectiveDisclosureService {
         if (credential.proof) {
           // Just verify the proof structure exists and is a DataIntegrityProof
           if (credential.proof.type === SD_PROOF_TYPES.DATA_INTEGRITY_PROOF &&
-              credential.proof.proofValue) {
+            credential.proof.proofValue) {
             checks.vcProofValid = true;
+          } else if (credential.proof.type === SD_PROOF_TYPES.BBS_BLS_SIGNATURE_PROOF_2020) {
+            // BBS+ Verification
+            try {
+              // Verify using ZKP Service
+              // Mattr's verify function resolves the issuer key via documentLoader
+              const result = await zkpService.verifyProofBBS(credential, null);
+
+              if (result.verified) {
+                checks.vcProofValid = true;
+                // BBS+ derived proof implies selective disclosure validity
+                checks.selectiveProofValid = true;
+              } else {
+                errors.push(`BBS+ proof invalid: ${JSON.stringify(result.error)}`);
+                // If it's a "key not found" error, it's likely due to local blockchain DID
+                // In a real implementation, we'd inject a custom documentLoader to resolve DIDs from DB
+                allCredentialsValid = false;
+              }
+            } catch (e: any) {
+              errors.push(`BBS+ verification exception: ${e.message}`);
+              allCredentialsValid = false;
+            }
           } else {
             errors.push(`Credential ${i} has invalid proof structure`);
             allCredentialsValid = false;

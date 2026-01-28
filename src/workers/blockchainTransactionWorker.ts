@@ -940,29 +940,53 @@ class BlockchainTransactionWorker {
           `[BlockchainWorker] Processing ItemPaid events for order ${orderId}...`
         );
 
-        // FIX: Use Order table to find related items instead of missing 'orders' relation
-        const orderRecord = await prisma.order.findUnique({
+        // Get itemIds from the CREATE_ORDER transaction's payload
+        const createOrderTransaction = await prisma.blockchainTransaction.findUnique({
           where: { id: orderId },
-          select: { VCs_id: true },
+          select: { payload: true },
         });
 
-        if (orderRecord && orderRecord.VCs_id) {
-          const dbItems = await prisma.itemBlockchain.findMany({
-            where: {
-              id: { in: orderRecord.VCs_id },
-            },
-            select: { id: true, vcID: true },
-          });
+        if (createOrderTransaction && createOrderTransaction.payload) {
+          try {
+            const orderPayload = JSON.parse(createOrderTransaction.payload);
+            const itemIds = orderPayload.itemIds || [];
 
-          for (const dbItem of dbItems) {
-            await this.processor.handleItemPaid({
-              id: dbItem.id,
-              vcID: dbItem.vcID, // Use database value (original string)
-              timestamp: timestamp,
-              blockNumber: receipt.blockNumber,
-              transactionHash: receipt.hash,
-            });
+            if (itemIds.length > 0) {
+              const dbItems = await prisma.itemBlockchain.findMany({
+                where: {
+                  id: { in: itemIds },
+                },
+                select: { id: true, vcID: true },
+              });
+
+              for (const dbItem of dbItems) {
+                await this.processor.handleItemPaid({
+                  id: dbItem.id,
+                  vcID: dbItem.vcID, // Use database value (original string)
+                  timestamp: timestamp,
+                  blockNumber: receipt.blockNumber,
+                  transactionHash: receipt.hash,
+                });
+              }
+
+              logger.info(
+                `[BlockchainWorker] Processed ${dbItems.length} ItemPaid events for order ${orderId}`
+              );
+            } else {
+              logger.warn(
+                `[BlockchainWorker] No itemIds found in CREATE_ORDER payload for order ${orderId}`
+              );
+            }
+          } catch (parseError: any) {
+            logger.error(
+              `[BlockchainWorker] Failed to parse CREATE_ORDER payload for order ${orderId}:`,
+              parseError
+            );
           }
+        } else {
+          logger.warn(
+            `[BlockchainWorker] CREATE_ORDER transaction not found for order ${orderId}`
+          );
         }
 
         logger.success(
