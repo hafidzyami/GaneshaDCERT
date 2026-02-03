@@ -5,6 +5,7 @@
 
 export { default as authRoutes } from "./auth.routes";
 export { default as adminAuthRoutes } from "./adminAuth.routes";
+export { default as cacheRoutes } from "./cache.routes";
 export { default as didRoutes } from "./did.routes";
 export { default as credentialRoutes } from "./credential.routes";
 export { default as schemaRoutes } from "./schema.routes";
@@ -14,3 +15,4 @@ export { default as institutionRoutes } from "./institution.routes";
 export { default as performanceRoutes } from "./performance.routes";
 export { default as paymentRoutes } from "./payment.route";
 export { default as blockchainTransactionRoutes } from "./blockchainTransaction.routes";
+export { default as healthRoutes } from "./health.routes";

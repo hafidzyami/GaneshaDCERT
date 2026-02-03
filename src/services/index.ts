@@ -6,6 +6,7 @@
 // Export default singleton instances
 export { default as AuthService } from "./auth.service";
 export { default as AdminAuthService } from "./adminAuth.service";
+export { default as CacheService } from "./cache.service";
 export { default as DIDService } from "./did.service";
 export { default as CredentialService } from "./credential.service";
 export { default as SchemaService } from "./schema.service";
@@ -18,10 +19,12 @@ export { default as VCBlockchainService } from "./blockchain/vcBlockchain.servic
 export { default as PaymentService } from "./payment.service";
 export * from "./jwt.service";
 export * from "./email.service";
+export * from "./cache.service";
 
 // Export classes for custom instantiation and testing
 export { AuthService as AuthServiceClass } from "./auth.service";
 export { AdminAuthService as AdminAuthServiceClass } from "./adminAuth.service";
+export { CacheService as CacheServiceClass } from "./cache.service";
 export { DIDService as DIDServiceClass } from "./did.service";
 export { CredentialService as CredentialServiceClass } from "./credential.service";
 export { SchemaService as SchemaServiceClass } from "./schema.service";

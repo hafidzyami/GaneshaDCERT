@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import logger from "../../config/logger";
-import DIDBlockchainService from "../blockchain/didBlockchain.service";
+import DIDService from "../did.service";
+import CacheService from "../cache.service";
 
 /**
  * Check if a string is a keccak256 hash (0x + 64 hex characters)
@@ -79,14 +80,20 @@ class SchemaEventProcessor {
       const expiredIn = schemaJson && 'expired_in' in schemaJson ? schemaJson.expired_in : null;
       logger.info(`Extracted expired_in:`, { expiredIn, type: typeof expiredIn });
 
-      // Fetch issuer name from DID Document
+      // Fetch issuer name from DID Document (using cached DIDService)
       let issuerName: string | null = null;
       try {
-        const didDocument = await DIDBlockchainService.getDIDDocument(eventData.issuerDID);
-        if (didDocument.found && didDocument.details?.name) {
-          issuerName = didDocument.details.name;
-          logger.info(`Fetched issuer name from DID: ${issuerName}`);
-        } else {
+        const didDocument = await DIDService.getDIDDocument(eventData.issuerDID);
+        if (didDocument.found && didDocument.didDocument?.service) {
+          const institutionService = didDocument.didDocument.service.find(
+            (s: any) => s.type === "InstitutionalProfile"
+          );
+          if (institutionService?.serviceEndpoint?.name) {
+            issuerName = institutionService.serviceEndpoint.name;
+            logger.info(`Fetched issuer name from DID: ${issuerName}`);
+          }
+        }
+        if (!issuerName) {
           logger.warn(`Could not fetch issuer name from DID: ${eventData.issuerDID}`);
         }
       } catch (error) {
@@ -145,6 +152,10 @@ class SchemaEventProcessor {
           updatedAt: new Date(),
         },
       });
+
+      // Invalidate cache after database update
+      await CacheService.invalidateSchema(eventData.id);
+      logger.info(`[SchemaEventProcessor] Cache invalidated for schema: ${eventData.id}`);
 
       logger.success(
         `Schema upserted in database: ${eventData.id} v${eventData.version} (operation: ${result.createdAt.getTime() === result.updatedAt.getTime() ? 'CREATE' : 'UPDATE'})`
@@ -239,14 +250,20 @@ class SchemaEventProcessor {
       const expiredIn = schemaJson && 'expired_in' in schemaJson ? schemaJson.expired_in : null;
       logger.info(`Extracted expired_in:`, { expiredIn, type: typeof expiredIn });
 
-      // Fetch issuer name from DID Document
+      // Fetch issuer name from DID Document (using cached DIDService)
       let issuerName: string | null = null;
       try {
-        const didDocument = await DIDBlockchainService.getDIDDocument(eventData.issuerDID);
-        if (didDocument.found && didDocument.details?.name) {
-          issuerName = didDocument.details.name;
-          logger.info(`Fetched issuer name from DID: ${issuerName}`);
-        } else {
+        const didDocument = await DIDService.getDIDDocument(eventData.issuerDID);
+        if (didDocument.found && didDocument.didDocument?.service) {
+          const institutionService = didDocument.didDocument.service.find(
+            (s: any) => s.type === "InstitutionalProfile"
+          );
+          if (institutionService?.serviceEndpoint?.name) {
+            issuerName = institutionService.serviceEndpoint.name;
+            logger.info(`Fetched issuer name from DID: ${issuerName}`);
+          }
+        }
+        if (!issuerName) {
           logger.warn(`Could not fetch issuer name from DID: ${eventData.issuerDID}`);
         }
       } catch (error) {
@@ -292,6 +309,10 @@ class SchemaEventProcessor {
           updatedAt: new Date(),
         },
       });
+
+      // Invalidate cache after database update
+      await CacheService.invalidateSchema(eventData.id);
+      logger.info(`[SchemaEventProcessor] Cache invalidated for schema: ${eventData.id}`);
 
       logger.success(
         `Schema version created in database: ${eventData.id} v${eventData.newVersion} (operation: ${result.createdAt.getTime() === result.updatedAt.getTime() ? 'CREATE' : 'UPDATE'})`
@@ -341,6 +362,10 @@ class SchemaEventProcessor {
           `Schema ${eventData.id} v${eventData.version} not found for deactivation`
         );
       } else {
+        // Invalidate cache after database update
+        await CacheService.invalidateSchema(eventData.id);
+        logger.info(`[SchemaEventProcessor] Cache invalidated for schema: ${eventData.id}`);
+
         logger.success(
           `Schema deactivated in database: ${eventData.id} v${eventData.version}`
         );
@@ -389,6 +414,10 @@ class SchemaEventProcessor {
           `Schema ${eventData.id} v${eventData.version} not found for reactivation`
         );
       } else {
+        // Invalidate cache after database update
+        await CacheService.invalidateSchema(eventData.id);
+        logger.info(`[SchemaEventProcessor] Cache invalidated for schema: ${eventData.id}`);
+
         logger.success(
           `Schema reactivated in database: ${eventData.id} v${eventData.version}`
         );

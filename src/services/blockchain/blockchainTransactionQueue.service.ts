@@ -2,13 +2,22 @@ import Bull, { Queue, Job } from 'bull';
 import { prisma } from '../../config/database';
 import logger from '../../config/logger';
 import { BlockchainTransactionType } from '@prisma/client';
+import distributedLockService from '../distributedLock.service';
+
+/**
+ * Worker type for leader election
+ */
+const WORKER_TYPE = 'blockchain-queue-processor';
 
 /**
  * Blockchain Transaction Queue Service
  * Manages async blockchain transaction processing
+ * Supports multi-instance deployment with leader election
  */
 class BlockchainTransactionQueueService {
   private queue: Queue;
+  private isProcessing: boolean = false;
+  private processorRegistered: boolean = false;
 
   constructor() {
     // Initialize Bull queue with Redis connection
@@ -502,6 +511,198 @@ class BlockchainTransactionQueueService {
       logger.error(`[BlockchainQueue] Error cleaning failed jobs:`, error);
       throw error;
     }
+  }
+
+  // ============================================
+  // MULTI-INSTANCE SUPPORT (Leader Election)
+  // ============================================
+
+  /**
+   * Attempt to become the leader for queue processing
+   * Only the leader instance should process jobs
+   *
+   * @returns true if this instance is the leader
+   */
+  async electAsLeader(): Promise<boolean> {
+    const isLeader = await distributedLockService.electLeader(WORKER_TYPE);
+
+    if (isLeader) {
+      logger.info(`[BlockchainQueue] This instance is the leader for queue processing`);
+    } else {
+      logger.info(`[BlockchainQueue] Another instance is the leader, this instance will standby`);
+    }
+
+    return isLeader;
+  }
+
+  /**
+   * Check if this instance is currently the leader
+   */
+  async isLeader(): Promise<boolean> {
+    return distributedLockService.isLeader(WORKER_TYPE);
+  }
+
+  /**
+   * Get leader information
+   */
+  async getLeaderInfo(): Promise<{
+    isLeader: boolean;
+    leaderId: string;
+    lastHeartbeat: number;
+  } | null> {
+    return distributedLockService.getLeaderInfo(WORKER_TYPE);
+  }
+
+  /**
+   * Resign from leadership (for graceful shutdown)
+   */
+  async resignLeadership(): Promise<void> {
+    await distributedLockService.resignLeadership(WORKER_TYPE);
+    this.isProcessing = false;
+    logger.info(`[BlockchainQueue] Resigned from leadership`);
+  }
+
+  /**
+   * Start queue processing with leader election
+   * Only processes if this instance is the leader
+   *
+   * @param processor - Job processor function
+   */
+  async startProcessingAsLeader(
+    processor: (job: Job) => Promise<void>
+  ): Promise<void> {
+    // Try to become leader
+    const isLeader = await this.electAsLeader();
+
+    if (!isLeader) {
+      // Start a periodic check to become leader if current leader fails
+      this.startLeadershipMonitor(processor);
+      return;
+    }
+
+    // Register processor if not already registered
+    if (!this.processorRegistered) {
+      await this.registerProcessor(processor);
+    }
+
+    this.isProcessing = true;
+    logger.info(`[BlockchainQueue] Started processing as leader`);
+  }
+
+  /**
+   * Register job processor with distributed lock protection
+   */
+  private async registerProcessor(processor: (job: Job) => Promise<void>): Promise<void> {
+    this.queue.process(async (job: Job) => {
+      // Double-check we're still the leader before processing
+      const stillLeader = await this.isLeader();
+      if (!stillLeader) {
+        logger.warn(`[BlockchainQueue] No longer leader, skipping job: ${job.id}`);
+        throw new Error('Instance is no longer the leader');
+      }
+
+      // Acquire lock for this specific transaction
+      const lock = await distributedLockService.lockBlockchainTransaction(
+        job.id?.toString() || job.data.itemId || job.data.orderId || job.data.paymentId
+      );
+
+      if (!lock) {
+        logger.warn(`[BlockchainQueue] Could not acquire lock for job: ${job.id}`);
+        throw new Error('Could not acquire transaction lock');
+      }
+
+      try {
+        await processor(job);
+      } finally {
+        await distributedLockService.releaseLock(lock);
+      }
+    });
+
+    this.processorRegistered = true;
+    logger.info(`[BlockchainQueue] Processor registered with distributed lock protection`);
+  }
+
+  /**
+   * Monitor leadership and take over if leader fails
+   */
+  private startLeadershipMonitor(processor: (job: Job) => Promise<void>): void {
+    const checkInterval = 15000; // Check every 15 seconds
+
+    const monitor = setInterval(async () => {
+      try {
+        const isLeader = await this.electAsLeader();
+
+        if (isLeader && !this.isProcessing) {
+          // We became the leader, start processing
+          if (!this.processorRegistered) {
+            await this.registerProcessor(processor);
+          }
+          this.isProcessing = true;
+          logger.info(`[BlockchainQueue] Took over as leader, starting processing`);
+        }
+      } catch (error) {
+        logger.error(`[BlockchainQueue] Error in leadership monitor:`, error);
+      }
+    }, checkInterval);
+
+    // Store interval for cleanup
+    (this as any)._leadershipMonitor = monitor;
+    logger.info(`[BlockchainQueue] Leadership monitor started (checking every ${checkInterval}ms)`);
+  }
+
+  /**
+   * Stop leadership monitor
+   */
+  stopLeadershipMonitor(): void {
+    if ((this as any)._leadershipMonitor) {
+      clearInterval((this as any)._leadershipMonitor);
+      delete (this as any)._leadershipMonitor;
+      logger.info(`[BlockchainQueue] Leadership monitor stopped`);
+    }
+  }
+
+  /**
+   * Get multi-instance status
+   */
+  async getMultiInstanceStatus(): Promise<{
+    instanceId: string;
+    isLeader: boolean;
+    isProcessing: boolean;
+    leaderInfo: any;
+    queueStats: any;
+  }> {
+    const [isLeader, leaderInfo, queueStats] = await Promise.all([
+      this.isLeader(),
+      this.getLeaderInfo(),
+      this.getQueueStats(),
+    ]);
+
+    return {
+      instanceId: distributedLockService.getInstanceId(),
+      isLeader,
+      isProcessing: this.isProcessing,
+      leaderInfo,
+      queueStats,
+    };
+  }
+
+  /**
+   * Graceful shutdown
+   * Resigns leadership and stops processing
+   */
+  async shutdown(): Promise<void> {
+    logger.info(`[BlockchainQueue] Initiating graceful shutdown...`);
+
+    // Stop leadership monitor
+    this.stopLeadershipMonitor();
+
+    // Resign leadership
+    await this.resignLeadership();
+
+    // Close queue
+    await this.queue.close();
+
+    logger.info(`[BlockchainQueue] Shutdown complete`);
   }
 }
 

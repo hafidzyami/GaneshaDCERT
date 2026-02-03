@@ -10,6 +10,9 @@ import {
   CredentialsHistoryBlockchainConfig,
   PaymentBlockchainConfig,
   logger,
+  connectRedis,
+  disconnectRedis,
+  isRedisHealthy,
 } from "./config";
 import {
   errorHandler,
@@ -17,12 +20,13 @@ import {
   requestLogger,
   apiRateLimit,
 } from "./middlewares";
-import { HealthCheckResponse } from "./types";
+// HealthCheckResponse moved to health.routes.ts
 
 // Routes
 import {
   authRoutes,
   adminAuthRoutes,
+  cacheRoutes,
   didRoutes,
   credentialRoutes,
   schemaRoutes,
@@ -32,6 +36,7 @@ import {
   paymentRoutes,
   performanceRoutes,
   blockchainTransactionRoutes,
+  healthRoutes,
 } from "./routes";
 
 // Schedulers
@@ -246,76 +251,9 @@ app.get("/", (req: Request, res: Response) => {
   });
 });
 
-/**
- * @swagger
- * /health:
- *   get:
- *     summary: Health Check
- *     description: Check API and services health status
- *     tags:
- *       - System
- *     responses:
- *       200:
- *         description: API and services are healthy
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 timestamp:
- *                   type: string
- *                   format: date-time
- *                 uptime:
- *                   type: number
- *                   description: Server uptime in seconds
- *                   example: 3600
- *                 services:
- *                   type: object
- *                   properties:
- *                     database:
- *                       type: boolean
- *                       example: true
- *                     blockchain:
- *                       type: boolean
- *                       example: true
- *       503:
- *         description: One or more services are unhealthy
- */
-app.get("/api/v1/health", async (req: Request, res: Response) => {
-  const dbHealth = await DatabaseService.isConnected();
-  const didBCHealth = await DIDBlockchainConfig.isConnected();
-  const vcBCHealth = await VCBlockchainConfig.isConnected();
-  const credHistoryBCHealth =
-    await CredentialsHistoryBlockchainConfig.isConnected();
-  const paymentBCHealth = await PaymentBlockchainConfig.isConnected();
-
-  const response: HealthCheckResponse = {
-    success:
-      dbHealth &&
-      didBCHealth &&
-      vcBCHealth &&
-      credHistoryBCHealth &&
-      paymentBCHealth,
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    services: {
-      database: dbHealth,
-      didblockchain: didBCHealth,
-      vcblockchain: vcBCHealth,
-      credentialsHistoryBlockchain: credHistoryBCHealth,
-      paymentBlockchain: paymentBCHealth,
-    },
-  };
-
-  if (response.success) {
-    res.status(200).json(response);
-  } else {
-    res.status(503).json(response);
-  }
-});
+// Health Routes - See /api/v1/health/* endpoints
+// Endpoints: /live, /ready, /, /instance, /metrics
+app.use("/api/v1/health", healthRoutes);
 
 /**
  * @swagger
@@ -441,6 +379,7 @@ app.get("/api/v1/health/payment-sync", async (req: Request, res: Response) => {
 // API Routes with /api/v1 prefix
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/admin/auth", adminAuthRoutes);
+app.use("/api/v1/cache", cacheRoutes);
 app.use("/api/v1/dids", didRoutes);
 app.use("/api/v1/schemas", schemaRoutes);
 app.use("/api/v1/credentials", credentialRoutes);
@@ -470,6 +409,21 @@ const startServer = async () => {
     logger.info("📦 Connecting to database...");
     await DatabaseService.connect();
     logger.success("   ✓ Database connected");
+
+    // Connect to Redis
+    logger.info("🔴 Connecting to Redis...");
+    try {
+      await connectRedis();
+      const redisHealthy = await isRedisHealthy();
+      if (redisHealthy) {
+        logger.success("   ✓ Redis connected");
+      } else {
+        logger.warn("   ⚠ Redis connected but not responding to ping");
+      }
+    } catch (error) {
+      logger.warn("   ⚠ Redis connection failed, caching will be disabled");
+      logger.debug("Redis error:", error);
+    }
 
     // Test Blockchain Connections
     logger.info("⛓️  Testing blockchain connections...");
@@ -604,6 +558,7 @@ process.on("SIGINT", async () => {
   await credentialsHistoryEventPublisher.stop();
   await paymentEventPublisher.stop();
   await blockchainTransactionWorker.stop();
+  await disconnectRedis();
   await DatabaseService.disconnect();
   process.exit(0);
 });
@@ -614,6 +569,7 @@ process.on("SIGTERM", async () => {
   await credentialsHistoryEventPublisher.stop();
   await paymentEventPublisher.stop();
   await blockchainTransactionWorker.stop();
+  await disconnectRedis();
   await DatabaseService.disconnect();
   process.exit(0);
 });

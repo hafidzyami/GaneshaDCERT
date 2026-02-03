@@ -1,7 +1,9 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Institution } from "@prisma/client";
 import { prisma } from "../config/database";
 import { NotFoundError, BadRequestError } from "../utils/errors/AppError";
 import { GetInstitutionsQueryDTO, InstitutionListResponseDTO } from "../dtos";
+import CacheService, { CachedInstitution } from "./cache.service";
+import logger from "../config/logger";
 
 /**
  * Institution Service
@@ -9,13 +11,36 @@ import { GetInstitutionsQueryDTO, InstitutionListResponseDTO } from "../dtos";
  */
 class InstitutionService {
   private prisma: PrismaClient;
+  private cacheService: typeof CacheService;
 
   /**
    * Constructor with dependency injection
    * @param dependencies - Optional dependencies for testing
    */
-  constructor(dependencies?: { prisma?: PrismaClient }) {
+  constructor(dependencies?: {
+    prisma?: PrismaClient;
+    cacheService?: typeof CacheService;
+  }) {
     this.prisma = dependencies?.prisma || prisma;
+    this.cacheService = dependencies?.cacheService || CacheService;
+  }
+
+  /**
+   * Convert Institution to CachedInstitution format
+   */
+  private toCachedInstitution(institution: Institution): CachedInstitution {
+    return {
+      id: institution.id,
+      did: institution.did,
+      name: institution.name,
+      email: institution.email,
+      phone: institution.phone || undefined,
+      country: institution.country || undefined,
+      website: institution.website || undefined,
+      address: institution.address || undefined,
+      createdAt: institution.createdAt.toISOString(),
+      updatedAt: institution.updatedAt.toISOString(),
+    };
   }
 
   /**
@@ -65,6 +90,10 @@ class InstitutionService {
         address: data.address,
       },
     });
+
+    // Invalidate institution list caches (new institution added)
+    await this.cacheService.invalidateAllInstitutions();
+    logger.info(`[InstitutionService] Cache invalidated after creating institution: ${data.did}`);
 
     return institution;
   }
@@ -131,8 +160,23 @@ class InstitutionService {
 
   /**
    * Get institution by DID
+   * Uses Redis cache to improve performance (TTL: 1 hour)
    */
   async getInstitutionByDID(did: string) {
+    // Try to get from cache first
+    const cached = await this.cacheService.getInstitution(did);
+    if (cached) {
+      logger.debug(`[InstitutionService] Cache hit for institution: ${did}`);
+      // Convert cached data back to Institution format
+      return {
+        ...cached,
+        createdAt: new Date(cached.createdAt),
+        updatedAt: new Date(cached.updatedAt),
+      } as Institution;
+    }
+
+    logger.debug(`[InstitutionService] Cache miss for institution: ${did}`);
+
     const institution = await this.prisma.institution.findUnique({
       where: { did },
     });
@@ -140,6 +184,10 @@ class InstitutionService {
     if (!institution) {
       throw new NotFoundError(`Institution with DID ${did} not found`);
     }
+
+    // Cache the result
+    await this.cacheService.setInstitution(did, this.toCachedInstitution(institution));
+    logger.debug(`[InstitutionService] Cached institution: ${did}`);
 
     return institution;
   }
@@ -157,7 +205,7 @@ class InstitutionService {
       address?: string;
     }
   ) {
-    // Check if institution exists
+    // Check if institution exists (this will use cache)
     await this.getInstitutionByDID(did);
 
     // Update institution
@@ -166,6 +214,10 @@ class InstitutionService {
       data,
     });
 
+    // Invalidate cache for this institution (data changed)
+    await this.cacheService.invalidateInstitution(did);
+    logger.info(`[InstitutionService] Cache invalidated after updating institution: ${did}`);
+
     return updatedInstitution;
   }
 
@@ -173,13 +225,17 @@ class InstitutionService {
    * Delete institution by DID
    */
   async deleteInstitution(did: string) {
-    // Check if institution exists
+    // Check if institution exists (this will use cache)
     await this.getInstitutionByDID(did);
 
     // Delete institution
     await this.prisma.institution.delete({
       where: { did },
     });
+
+    // Invalidate cache for this institution
+    await this.cacheService.invalidateInstitution(did);
+    logger.info(`[InstitutionService] Cache invalidated after deleting institution: ${did}`);
 
     return {
       message: "Institution deleted successfully",

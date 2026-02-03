@@ -1,7 +1,8 @@
 import { BadRequestError, NotFoundError } from "../utils/errors/AppError";
 import logger from "../config/logger";
 import VCBlockchainService from "./blockchain/vcBlockchain.service";
-import DIDBlockchainService from "./blockchain/didBlockchain.service";
+import DIDService from "./did.service";
+import CacheService, { CachedSchema } from "./cache.service";
 import StorageService from "./storage.service";
 import { prisma } from "../config/database";
 import { VCSchema, Prisma } from "@prisma/client";
@@ -34,14 +35,17 @@ import { v4 as uuidv4 } from "uuid";
  */
 class SchemaService {
   private vcBlockchainService: typeof VCBlockchainService;
-  private didBlockchainService: typeof DIDBlockchainService;
+  private didService: typeof DIDService;
+  private cacheService: typeof CacheService;
 
   constructor(
     vcBlockchainService?: typeof VCBlockchainService,
-    didBlockchainService?: typeof DIDBlockchainService
+    didService?: typeof DIDService,
+    cacheService?: typeof CacheService
   ) {
     this.vcBlockchainService = vcBlockchainService || VCBlockchainService;
-    this.didBlockchainService = didBlockchainService || DIDBlockchainService;
+    this.didService = didService || DIDService;
+    this.cacheService = cacheService || CacheService;
   }
 
   // ============================================
@@ -93,17 +97,63 @@ class SchemaService {
     return where;
   }
 
+  /**
+   * Convert VCSchema to CachedSchema format
+   */
+  private toCachedSchema(schema: VCSchema): CachedSchema {
+    return {
+      id: schema.id,
+      version: schema.version,
+      name: schema.name,
+      issuer_did: schema.issuer_did,
+      issuer_name: schema.issuer_name,
+      schema: schema.schema,
+      image_link: schema.image_link,
+      expired_in: schema.expired_in,
+      isActive: schema.isActive,
+      createdAt: schema.createdAt.toISOString(),
+      updatedAt: schema.updatedAt.toISOString(),
+    };
+  }
+
+  /**
+   * Build cache key for schema list filtering
+   */
+  private buildSchemaListCacheKey(filter: SchemaFilterDTO): string {
+    const parts: string[] = [];
+    if (filter.issuerDid) parts.push(`issuer:${filter.issuerDid}`);
+    if (filter.isActive !== undefined) parts.push(`active:${filter.isActive}`);
+    if (filter.pricingOnly) parts.push(`pricing:true`);
+    return parts.length > 0 ? parts.join(':') : 'all';
+  }
+
   // ============================================
   // 🔹 PUBLIC GETTER METHODS (Database Only)
   // ============================================
 
   /**
    * Get all VC schemas with optional filters (from RDBMS)
+   * Uses Redis cache to improve performance (TTL: 24 hours)
    * @param filter - Filter options including pricingOnly
    */
   async getAllSchemas(filter: SchemaFilterDTO = {}): Promise<VCSchema[]> {
     try {
       this.logStart("Get all schemas from RDBMS", JSON.stringify(filter));
+
+      // Try to get from cache first
+      const cacheKey = this.buildSchemaListCacheKey(filter);
+      const cached = await this.cacheService.getSchemaList(cacheKey);
+      if (cached) {
+        logger.debug(`[SchemaService] Cache hit for schema list: ${cacheKey}`);
+        // Convert cached data back to VCSchema format
+        return cached.map(s => ({
+          ...s,
+          createdAt: new Date(s.createdAt),
+          updatedAt: new Date(s.updatedAt),
+        })) as VCSchema[];
+      }
+
+      logger.debug(`[SchemaService] Cache miss for schema list: ${cacheKey}`);
 
       const where = this.buildWhereClause(filter);
 
@@ -131,16 +181,25 @@ class SchemaService {
         });
       }
 
+      // Populate issuer names for schemas that don't have them
       for (const schema of schemas) {
         if (!schema.issuer_name) {
           try {
-            // Get DID document from blockchain
-            const didDocument = await DIDBlockchainService.getDIDDocument(
+            // Get DID document using cached DIDService
+            const didDocument = await this.didService.getDIDDocument(
               schema.issuer_did
             );
 
-            // Extract name from DID document
-            const issuerName = didDocument.details?.name || null;
+            // Extract name from DID document (W3C format)
+            let issuerName: string | null = null;
+            if (didDocument.found && didDocument.didDocument?.service) {
+              const institutionService = didDocument.didDocument.service.find(
+                (s: any) => s.type === "InstitutionalProfile"
+              );
+              if (institutionService?.serviceEndpoint?.name) {
+                issuerName = institutionService.serviceEndpoint.name;
+              }
+            }
 
             if (issuerName) {
               // Update schema with issuer name using composite key
@@ -153,12 +212,19 @@ class SchemaService {
                 },
                 data: { issuer_name: issuerName },
               });
+              // Update in-memory schema object too
+              schema.issuer_name = issuerName;
             }
           } catch (error) {
-            console.error(`❌ Failed to process schema ${schema.id}`);
+            logger.warn(`[SchemaService] Failed to get issuer name for schema ${schema.id}`);
           }
         }
       }
+
+      // Cache the result
+      const cachedSchemas = schemas.map(s => this.toCachedSchema(s));
+      await this.cacheService.setSchemaList(cachedSchemas, cacheKey);
+      logger.debug(`[SchemaService] Cached schema list: ${cacheKey}`);
 
       this.logSuccess(
         "Get all schemas from RDBMS",
@@ -305,6 +371,7 @@ class SchemaService {
 
   /**
    * Get schema by ID and Version (both required)
+   * Uses Redis cache to improve performance (TTL: 24 hours)
    */
   async getSchemaByIdAndVersion(
     id: string,
@@ -312,6 +379,20 @@ class SchemaService {
   ): Promise<VCSchema> {
     try {
       this.logStart("Get schema by ID and version", `${id} v${version}`);
+
+      // Try to get from cache first
+      const cached = await this.cacheService.getSchema(id, version);
+      if (cached) {
+        logger.debug(`[SchemaService] Cache hit for schema: ${id} v${version}`);
+        // Convert cached data back to VCSchema format
+        return {
+          ...cached,
+          createdAt: new Date(cached.createdAt),
+          updatedAt: new Date(cached.updatedAt),
+        } as VCSchema;
+      }
+
+      logger.debug(`[SchemaService] Cache miss for schema: ${id} v${version}`);
 
       const schema = await prisma.vCSchema.findUnique({
         where: {
@@ -327,6 +408,10 @@ class SchemaService {
           `${SCHEMA_CONSTANTS.MESSAGES.NOT_FOUND}: ${id} v${version}`
         );
       }
+
+      // Cache the result
+      await this.cacheService.setSchema(id, version, this.toCachedSchema(schema));
+      logger.debug(`[SchemaService] Cached schema: ${id} v${version}`);
 
       this.logSuccess(
         "Get schema by ID and version",
@@ -525,6 +610,10 @@ class SchemaService {
 
       this.logSuccess("Create schema in blockchain", `TX: ${receipt.hash}`);
 
+      // Invalidate schema list caches (new schema added)
+      await this.cacheService.invalidateAllSchemas();
+      logger.info(`[SchemaService] Cache invalidated after creating schema: ${schemaId}`);
+
       return {
         message: `${SCHEMA_CONSTANTS.MESSAGES.CREATED} (Database will be synced via event listener)`,
         schema: {
@@ -642,6 +731,10 @@ class SchemaService {
 
       this.logSuccess("Update schema in blockchain", `TX: ${receipt.hash}`);
 
+      // Invalidate cache for this schema (new version created)
+      await this.cacheService.invalidateSchema(existingSchema.id);
+      logger.info(`[SchemaService] Cache invalidated after updating schema: ${existingSchema.id}`);
+
       const newVersion = existingSchema.version + 1;
       return {
         message: `${SCHEMA_CONSTANTS.MESSAGES.UPDATED} (Database will be synced via event listener)`,
@@ -714,6 +807,10 @@ class SchemaService {
 
       this.logSuccess("Deactivate schema in blockchain", `TX: ${receipt.hash}`);
 
+      // Invalidate cache for this schema (status changed)
+      await this.cacheService.invalidateSchema(schema.id);
+      logger.info(`[SchemaService] Cache invalidated after deactivating schema: ${schema.id} v${schema.version}`);
+
       return {
         message: `${SCHEMA_CONSTANTS.MESSAGES.DEACTIVATED} (Database will be synced via event listener)`,
         schema: {
@@ -767,6 +864,10 @@ class SchemaService {
         );
 
       this.logSuccess("Reactivate schema in blockchain", `TX: ${receipt.hash}`);
+
+      // Invalidate cache for this schema (status changed)
+      await this.cacheService.invalidateSchema(schema.id);
+      logger.info(`[SchemaService] Cache invalidated after reactivating schema: ${schema.id} v${schema.version}`);
 
       return {
         message: `${SCHEMA_CONSTANTS.MESSAGES.REACTIVATED} (Database will be synced via event listener)`,

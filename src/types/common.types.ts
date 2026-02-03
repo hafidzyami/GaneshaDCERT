@@ -30,6 +30,7 @@ export interface HealthCheckResponse {
   uptime: number;
   services: {
     database: boolean;
+    redis: boolean;
     didblockchain: boolean;
     vcblockchain: boolean;
     credentialsHistoryBlockchain: boolean;

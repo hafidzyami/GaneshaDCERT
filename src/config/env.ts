@@ -59,6 +59,12 @@ const envSchema = z.object({
     .transform((val) => val === "true"),
   MINIO_BUCKET_NAME: z.string().default("dcert-storage"),
   MINIO_PUBLIC_URL: z.string().optional(), // Public URL for presigned URLs (e.g., https://dev-dcert.ganeshait.com)
+
+  // Redis (optional - will use defaults if not provided)
+  REDIS_URL: z.string().optional(), // Full URL: redis://redis:6379
+  REDIS_HOST: z.string().default("localhost"),
+  REDIS_PORT: z.string().default("6379").transform(Number),
+  REDIS_PASSWORD: z.string().optional(),
 });
 
 type Env = z.infer<typeof envSchema>;

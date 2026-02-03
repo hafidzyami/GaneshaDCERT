@@ -1,5 +1,6 @@
 import BlockchainService from "./blockchain/didBlockchain.service";
 import InstitutionService from "./institution.service";
+import CacheService from "./cache.service";
 import { BadRequestError, NotFoundError } from "../utils/errors/AppError";
 import { PrismaClient, RequestStatus } from "@prisma/client";
 import { prisma } from "../config/database";
@@ -12,6 +13,7 @@ import { encryptWithPublicKey } from "../utils/encryptUtil";
  */
 class DIDService {
   private blockchainService: typeof BlockchainService;
+  private cacheService: typeof CacheService;
   private prisma: PrismaClient;
 
   /**
@@ -20,10 +22,12 @@ class DIDService {
    */
   constructor(dependencies?: {
     blockchainService?: typeof BlockchainService;
+    cacheService?: typeof CacheService;
     prisma?: PrismaClient;
   }) {
     this.blockchainService =
       dependencies?.blockchainService || BlockchainService;
+    this.cacheService = dependencies?.cacheService || CacheService;
     this.prisma = dependencies?.prisma || prisma;
   }
 
@@ -53,6 +57,9 @@ class DIDService {
         did_string,
         public_key
       );
+
+      // Invalidate any stale cache entry (in case of re-registration after deactivation)
+      await this.cacheService.invalidateDID(did_string);
 
       return {
         message: "Individual DID registered successfully",
@@ -120,6 +127,9 @@ class DIDService {
         website: institution.website,
         address: institution.address,
       });
+
+      // Invalidate any stale cache entry (in case of re-registration after deactivation)
+      await this.cacheService.invalidateDID(did_string);
 
       return {
         message: "Institutional DID registered successfully",
@@ -190,6 +200,10 @@ class DIDService {
       did,
       newPublicKey
     );
+
+    // Invalidate cache since public key has changed
+    await this.cacheService.invalidateDID(did);
+    logger.info(`[DIDService] Cache invalidated after key rotation for DID: ${did}`);
 
     return {
       message: "DID key rotated successfully",
@@ -293,6 +307,10 @@ class DIDService {
     // Deactivate DID
     const receipt = await this.blockchainService.deactivateDID(did);
 
+    // Invalidate cache since DID status has changed
+    await this.cacheService.invalidateDID(did);
+    logger.info(`[DIDService] Cache invalidated after deactivation for DID: ${did}`);
+
     logger.success(
       `DID ${did} deactivated successfully. Created ${requestCount}/${vcs.length} revoke requests.`
     );
@@ -309,11 +327,30 @@ class DIDService {
   /**
    * Get DID Document
    * Returns W3C-compliant DID document format
+   * Uses Redis cache to improve performance (TTL: 1 hour)
    */
   async getDIDDocument(did: string) {
+    // Try to get from cache first
+    const cached = await this.cacheService.getDIDDocument(did);
+    if (cached) {
+      logger.debug(`[DIDService] Cache hit for DID Document: ${did}`);
+      // Update the retrieved timestamp for cached response
+      return {
+        ...cached,
+        didResolutionMetadata: {
+          ...cached.didResolutionMetadata,
+          retrieved: new Date().toISOString(),
+          cached: true,
+        },
+      };
+    }
+
+    logger.debug(`[DIDService] Cache miss for DID Document: ${did}, fetching from blockchain`);
+
+    // Cache miss - fetch from blockchain
     const document = await this.blockchainService.getDIDDocument(did);
 
-    // If DID not found, return the error response with 200 status
+    // If DID not found, return the error response (don't cache not-found)
     if (!document.found) {
       return document;
     }
@@ -364,7 +401,7 @@ class DIDService {
       didDocument.service = services;
     }
 
-    return {
+    const result = {
       found: true,
       status: document.status,
       keyId: document.keyId,
@@ -377,8 +414,17 @@ class DIDService {
       didResolutionMetadata: {
         contentType: "application/did+ld+json",
         retrieved: new Date().toISOString(),
+        cached: false,
       },
     };
+
+    // Cache the result (only cache active DIDs)
+    if (document.status !== "InActive") {
+      await this.cacheService.setDIDDocument(did, result);
+      logger.debug(`[DIDService] Cached DID Document: ${did}`);
+    }
+
+    return result;
   }
 
   /**
