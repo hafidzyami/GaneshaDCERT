@@ -68,6 +68,11 @@ const router: Router = express.Router();
  *           pattern: '^did:dcert:[iu](?:[a-zA-Z0-9_-]{44}|[a-zA-Z0-9_-]{87})$'
  *           description: DID of the issuer (55 chars total - did:dcert:[i/u] + 44 identifier chars)
  *           example: "did:dcert:iABCD1234567890-xyz_12345678901234567890abcd"
+ *         issuer_name:
+ *           type: string
+ *           nullable: true
+ *           description: Name of the issuer institution
+ *           example: "University of Example"
  *         version:
  *           type: integer
  *           minimum: 1
@@ -76,12 +81,44 @@ const router: Router = express.Router();
  *         image_link:
  *           type: string
  *           format: uri
+ *           nullable: true
  *           description: URL to the background image for the VC schema (optional)
  *           example: "https://minio.example.com/bucket/background/uuid-filename?X-Amz-..."
+ *         expired_in:
+ *           type: integer
+ *           nullable: true
+ *           description: Expiration duration in days (null means no expiration)
+ *           example: 365
  *         isActive:
  *           type: boolean
  *           description: Whether the schema is active
  *           example: true
+ *         VCSchemaPrices:
+ *           type: object
+ *           nullable: true
+ *           description: Pricing information for the schema
+ *           properties:
+ *             schemaId:
+ *               type: string
+ *               format: uuid
+ *               description: Schema ID reference
+ *               example: "550e8400-e29b-41d4-a716-446655440000"
+ *             version:
+ *               type: integer
+ *               description: Schema version this price applies to
+ *               example: 1
+ *             price:
+ *               type: number
+ *               description: Price in the specified currency
+ *               example: 50000
+ *             currency:
+ *               type: string
+ *               description: Currency code
+ *               example: "IDR"
+ *             updatedAt:
+ *               type: string
+ *               format: date-time
+ *               description: Last price update timestamp
  *         createdAt:
  *           type: string
  *           format: date-time

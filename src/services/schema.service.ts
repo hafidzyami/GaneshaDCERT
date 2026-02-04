@@ -121,12 +121,18 @@ class SchemaService {
               }
             }
           },
+          include: {
+            VCSchemaPrices: true
+          },
           orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
         });
       } else {
         // pricingOnly=false: Return all schemas (no price filter)
         schemas = await prisma.vCSchema.findMany({
           where,
+          include: {
+            VCSchemaPrices: true
+          },
           orderBy: [{ issuer_did: "asc" }, { name: "asc" }, { version: "desc" }],
         });
       }

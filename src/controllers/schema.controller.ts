@@ -109,13 +109,13 @@ export const getSchemasCountFromBlockchain = asyncHandler(
 export const getSchemaFromBlockchain = asyncHandler(
   async (req: Request, res: Response) => {
     const { id, version } = req.params;
-    const versionNumber = parseInt(version);
+    const versionNumber = parseInt(version as string);
 
     if (isNaN(versionNumber)) {
       throw new ValidationError("Version must be a valid number");
     }
 
-    const schema = await SchemaService.getSchemaFromBlockchain(id, versionNumber);
+    const schema = await SchemaService.getSchemaFromBlockchain(id as string, versionNumber);
 
     return ResponseHelper.success(res, {
       source: "blockchain",
@@ -132,7 +132,7 @@ export const getLatestSchemaFromBlockchain = asyncHandler(
   async (req: Request, res: Response) => {
     const { id } = req.params;
 
-    const schema = await SchemaService.getLatestSchemaFromBlockchain(id);
+    const schema = await SchemaService.getLatestSchemaFromBlockchain(id as string);
 
     return ResponseHelper.success(res, {
       source: "blockchain",
@@ -153,7 +153,7 @@ export const getAllVersionsById = asyncHandler(
     }
 
     const { id } = req.params;
-    const schemas = await SchemaService.getAllVersionsById(id);
+    const schemas = await SchemaService.getAllVersionsById(id as string);
 
     return ResponseHelper.success(res, {
       count: schemas.length,
@@ -174,14 +174,14 @@ export const getSchemaByIdAndVersion = asyncHandler(
     }
 
     const { id, version } = req.params;
-    const versionNumber = parseInt(version);
+    const versionNumber = parseInt(version as string);
 
     if (isNaN(versionNumber)) {
       throw new ValidationError("Version must be a valid number");
     }
 
     const schema = await SchemaService.getSchemaByIdAndVersion(
-      id,
+      id as string,
       versionNumber
     );
 
@@ -248,13 +248,13 @@ export const isSchemaActive = asyncHandler(
     }
 
     const { id, version } = req.params;
-    const versionNumber = parseInt(version);
+    const versionNumber = parseInt(version as string);
 
     if (isNaN(versionNumber)) {
       throw new ValidationError("Version must be a valid number");
     }
 
-    const status = await SchemaService.isActive(id, versionNumber);
+    const status = await SchemaService.isActive(id as string, versionNumber);
 
     return ResponseHelper.success(res, status);
   }
@@ -323,7 +323,7 @@ export const updateVCSchema = asyncHandler(
     const imageBuffer = imageFile?.buffer;
     const imageMimeType = imageFile?.mimetype;
 
-    const result = await SchemaService.update(id, dto, imageBuffer, imageMimeType);
+    const result = await SchemaService.update(id as string, dto, imageBuffer, imageMimeType);
 
     return ResponseHelper.success(
       res,
@@ -348,13 +348,13 @@ export const deactivateVCSchema = asyncHandler(
     }
 
     const { id, version } = req.params;
-    const versionNumber = parseInt(version);
+    const versionNumber = parseInt(version as string);
 
     if (isNaN(versionNumber)) {
       throw new ValidationError("Version must be a valid number");
     }
 
-    const result = await SchemaService.deactivate(id, versionNumber);
+    const result = await SchemaService.deactivate(id as string, versionNumber);
 
     return ResponseHelper.success(
       res,
@@ -379,13 +379,13 @@ export const reactivateVCSchema = asyncHandler(
     }
 
     const { id, version } = req.params;
-    const versionNumber = parseInt(version);
+    const versionNumber = parseInt(version as string);
 
     if (isNaN(versionNumber)) {
       throw new ValidationError("Version must be a valid number");
     }
 
-    const result = await SchemaService.reactivate(id, versionNumber);
+    const result = await SchemaService.reactivate(id as string, versionNumber);
 
     return ResponseHelper.success(
       res,
@@ -410,13 +410,13 @@ export const deleteVCSchema = asyncHandler(
     }
 
     const { id, version } = req.params;
-    const versionNumber = parseInt(version);
+    const versionNumber = parseInt(version as string);
 
     if (isNaN(versionNumber)) {
       throw new ValidationError("Version must be a valid number");
     }
 
-    const result = await SchemaService.delete(id, versionNumber);
+    const result = await SchemaService.delete(id as string, versionNumber);
 
     return ResponseHelper.success(
       res,
